@@ -294,7 +294,7 @@
 <div class="toast" id="toast"></div>
 
 <!-- MSAL -->
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" crossorigin="anonymous"></script>
 
 <script>
 /* ── Config ── */
@@ -311,11 +311,12 @@ const loginRequest = { scopes: ['Sites.ReadWrite.All', 'User.Read'] };
 let msalClient = null;
 
 function initMsal() {
+  const lib = window._msallib;
   const msalConfig = {
     auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: REDIRECT },
     cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
   };
-  msalClient = new msal.PublicClientApplication(msalConfig);
+  msalClient = new lib.PublicClientApplication(msalConfig);
 }
 
 /* ── State ── */
@@ -914,10 +915,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelect
 
 /* ── Boot ── */
 function waitForMsal(cb, tries = 0) {
-  if (typeof msal !== 'undefined' && msal.PublicClientApplication) {
+  // unpkg exports as msalBrowser, alcdn exports as msal
+  const lib = typeof msalBrowser !== 'undefined' ? msalBrowser
+             : typeof msal !== 'undefined' ? msal
+             : null;
+  if (lib && lib.PublicClientApplication) {
+    window._msallib = lib;
     initMsal();
     cb();
-  } else if (tries < 20) {
+  } else if (tries < 30) {
     setTimeout(() => waitForMsal(cb, tries + 1), 100);
   } else {
     document.getElementById('signinStatus').textContent = 'Failed to load Microsoft auth library. Please refresh.';
