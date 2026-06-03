@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART Blinds Project Tracker</title>
+<style>
+  :root {
+    --bg: #f9f8f6;
+    --surface: #ffffff;
+    --surface-2: #f4f3f0;
+    --border: rgba(0,0,0,0.1);
+    --border-md: rgba(0,0,0,0.18);
+    --text: #1a1a18;
+    --text-2: #6b6b67;
+    --text-3: #9b9b96;
+    --blue: #1a6bbf;
+    --blue-bg: #e8f0fa;
+    --green: #2d7a3a;
+    --green-bg: #e6f4e8;
+    --amber: #8a5500;
+    --amber-bg: #fdf3dc;
+    --red: #b03030;
+    --red-bg: #fdeaea;
+    --radius: 8px;
+    --radius-lg: 12px;
+    --shadow: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 0.5px rgba(0,0,0,0.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #18181a;
+      --surface: #222224;
+      --surface-2: #2c2c2e;
+      --border: rgba(255,255,255,0.1);
+      --border-md: rgba(255,255,255,0.18);
+      --text: #f0efec;
+      --text-2: #a0a09c;
+      --text-3: #68686a;
+      --blue: #5da0e8;
+      --blue-bg: rgba(93,160,232,0.12);
+      --green: #5ab868;
+      --green-bg: rgba(90,184,104,0.12);
+      --amber: #e0a840;
+      --amber-bg: rgba(224,168,64,0.12);
+      --red: #e06060;
+      --red-bg: rgba(224,96,96,0.12);
+      --shadow: 0 1px 4px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.06);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
+
+  /* Layout */
+  .app { max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
+  .app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .app-title { font-size: 20px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 10px; }
+  .app-title span { font-size: 13px; font-weight: 400; color: var(--text-2); }
+  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 7px 14px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); cursor: pointer; font-family: inherit; transition: background 0.1s; white-space: nowrap; }
+  .btn:hover { background: var(--surface-2); }
+  .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-sm { font-size: 12px; padding: 5px 10px; }
+  .btn-icon { padding: 6px 8px; }
+
+  /* Summary bar */
+  .summary-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+  .summary-card { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 14px 16px; text-align: center; }
+  .summary-num { font-size: 26px; font-weight: 600; }
+  .summary-label { font-size: 11px; color: var(--text-2); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* Tabs */
+  .tabs { display: flex; border-bottom: 0.5px solid var(--border); margin-bottom: 16px; gap: 0; }
+  .tab { font-size: 13px; padding: 9px 18px; border: none; background: none; color: var(--text-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -0.5px; font-family: inherit; transition: color 0.1s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--text); }
+
+  /* Stage filter chips */
+  .filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-chip { font-size: 11px; padding: 4px 12px; border-radius: 20px; border: 0.5px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; font-family: inherit; }
+  .filter-chip:hover, .filter-chip.active { background: var(--surface-2); color: var(--text); border-color: var(--border-md); }
+
+  /* Project list */
+  .project-list { display: flex; flex-direction: column; gap: 10px; }
+  .empty-state { text-align: center; padding: 48px 24px; color: var(--text-2); font-size: 13px; }
+  .empty-state p { margin-top: 8px; }
+
+  /* Project card */
+  .project-card { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; }
+  .card-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; user-select: none; }
+  .card-header:hover { background: var(--surface-2); }
+  .card-left { flex: 1; min-width: 0; }
+  .card-name { font-size: 14px; font-weight: 600; color: var(--text); }
+  .card-meta { font-size: 12px; color: var(--text-2); margin-top: 3px; }
+  .card-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .chevron { font-size: 18px; color: var(--text-3); transition: transform 0.2s; }
+  .chevron.open { transform: rotate(180deg); }
+
+  /* Badges */
+  .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; white-space: nowrap; font-weight: 500; }
+  .badge-stage { background: var(--surface-2); color: var(--text-2); border: 0.5px solid var(--border); }
+  .badge-ready { background: var(--green-bg); color: var(--green); }
+  .badge-info { background: var(--amber-bg); color: var(--amber); }
+  .badge-ordered { background: var(--blue-bg); color: var(--blue); }
+
+  /* Progress bar */
+  .progress-bar { height: 3px; background: var(--surface-2); }
+  .progress-fill { height: 100%; background: var(--blue); transition: width 0.4s; }
+
+  /* Detail panel */
+  .detail-panel { display: none; padding: 0 16px 16px; border-top: 0.5px solid var(--border); }
+  .detail-panel.open { display: block; }
+  .detail-panel-inner { padding-top: 16px; }
+
+  /* Info tags */
+  .info-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .info-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 4px 10px; border-radius: 20px; background: var(--amber-bg); color: var(--amber); }
+
+  /* Fabric box */
+  .fabric-box { background: var(--surface-2); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; border: 0.5px solid var(--border); }
+  .fabric-box h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .fabric-current { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; min-height: 20px; }
+  .fabric-current.empty { font-weight: 400; color: var(--amber); font-style: italic; }
+  .fabric-source { font-size: 11px; color: var(--text-3); margin-bottom: 12px; }
+  .fabric-inputs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .fabric-input { flex: 1; min-width: 180px; font-size: 13px; padding: 7px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; }
+  .fabric-who { font-size: 13px; padding: 7px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; cursor: pointer; }
+
+  /* Detail grid */
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  @media (max-width: 560px) { .detail-grid { grid-template-columns: 1fr; } .summary-bar { grid-template-columns: repeat(2,1fr); } }
+  .detail-section { background: var(--surface-2); border-radius: var(--radius); padding: 12px; border: 0.5px solid var(--border); }
+  .detail-section h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .field-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 0.5px solid var(--border); }
+  .field-row:last-child { border-bottom: none; }
+  .field-label { font-size: 12px; color: var(--text-2); }
+  .field-value { font-size: 12px; font-weight: 600; text-align: right; max-width: 60%; }
+  .field-value.confirmed { color: var(--green); }
+  .field-value.pending { color: var(--amber); }
+
+  /* Rooms */
+  .rooms-section { margin-bottom: 14px; }
+  .rooms-section h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; margin-bottom: 8px; }
+  .room-chip { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--surface-2); border-radius: var(--radius); border: 0.5px solid var(--border); }
+  .room-name { font-size: 12px; flex: 1; }
+  .room-dots { display: flex; gap: 4px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; border: 0.5px solid var(--border-md); background: var(--surface); }
+  .dot.m1 { background: #1a6bbf; border-color: #1a6bbf; }
+  .dot.m2 { background: #2d7a3a; border-color: #2d7a3a; }
+
+  /* Timeline */
+  .timeline { margin-bottom: 14px; }
+  .timeline h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .tl-entries { display: flex; flex-direction: column; gap: 8px; }
+  .tl-entry { display: flex; gap: 10px; align-items: flex-start; }
+  .tl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+  .tl-dot.normal { background: var(--blue); }
+  .tl-dot.fabric { background: var(--green); }
+  .tl-dot.email { background: var(--amber); }
+  .tl-body { flex: 1; }
+  .tl-text { font-size: 12px; color: var(--text-2); }
+  .tl-meta { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+  /* Actions */
+  .divider { border: none; border-top: 0.5px solid var(--border); margin: 14px 0; }
+  .actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .stage-select { font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; cursor: pointer; }
+  .note-input { flex: 1; min-width: 120px; font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; }
+  .note-input::placeholder { color: var(--text-3); }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border-radius: var(--radius-lg); box-shadow: 0 8px 32px rgba(0,0,0,0.2); padding: 24px; width: 540px; max-width: 100%; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; font-weight: 500; }
+  .form-group input, .form-group select, .form-group textarea { width: 100%; font-size: 13px; padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; }
+  .form-group textarea { resize: vertical; min-height: 70px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; border-top: 0.5px solid var(--border); padding-top: 16px; }
+  .room-builder { border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px; margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+  .room-entry { display: flex; gap: 6px; align-items: center; }
+  .room-entry input { flex: 1; }
+  .rm-del { background: none; border: none; cursor: pointer; color: var(--text-3); font-size: 18px; padding: 0 4px; line-height: 1; }
+  .rm-del:hover { color: var(--red); }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .chip { font-size: 12px; padding: 4px 12px; border-radius: 20px; background: var(--surface-2); color: var(--text-2); cursor: pointer; border: 0.5px solid var(--border); font-family: inherit; }
+  .chip.active { background: var(--amber-bg); color: var(--amber); border-color: var(--amber); }
+
+  /* Digest */
+  .digest-body { font-size: 13px; line-height: 1.8; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .digest-section { margin-bottom: 16px; }
+  .digest-section:last-child { margin-bottom: 0; }
+  .digest-section-title { font-weight: 600; margin-bottom: 6px; }
+  .digest-item { padding-left: 14px; color: var(--text-2); margin-bottom: 4px; }
+  .digest-sub { padding-left: 24px; color: var(--text-3); font-size: 12px; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); font-size: 13px; padding: 10px 20px; border-radius: var(--radius-lg); opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+
+  /* Room update modal specific */
+  .room-update-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
+  .room-update-row:last-child { border-bottom: none; }
+  .room-update-name { flex: 1; font-size: 13px; }
+  .room-update-checks { display: flex; gap: 16px; }
+  .check-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+  .check-label input { cursor: pointer; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 3px; }
+
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-header">
+    <div class="app-title">
+      ART — Blinds tracker
+      <span id="lastSaved"></span>
+    </div>
+    <div class="header-actions">
+      <button class="btn" onclick="openDigest()">📧 Weekly digest</button>
+      <button class="btn btn-primary" onclick="openNewProject()">+ New project</button>
+    </div>
+  </div>
+
+  <div class="summary-bar" id="summaryBar"></div>
+
+  <div class="tabs">
+    <button class="tab active" id="tab-all" onclick="setTab('all')">All projects</button>
+    <button class="tab" id="tab-needs-info" onclick="setTab('needs-info')">Needs information</button>
+    <button class="tab" id="tab-ready" onclick="setTab('ready')">Ready to order</button>
+    <button class="tab" id="tab-ordered" onclick="setTab('ordered')">Ordered</button>
+  </div>
+
+  <div class="filters" id="filterBar"></div>
+  <div class="project-list" id="projectList"></div>
+</div>
+
+<!-- New / Edit Project Modal -->
+<div class="modal-overlay" id="projectModal">
+  <div class="modal">
+    <h3 id="projectModalTitle">New blind project</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Client name *</label><input id="pm-client" placeholder="e.g. Merkel"></div>
+      <div class="form-group"><label>Project / address</label><input id="pm-project" placeholder="e.g. FR29 LOT26 Cottage"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Lead</label>
+        <select id="pm-lead"><option>Bruno</option><option>Trevor</option></select>
+      </div>
+      <div class="form-group"><label>Quote type</label>
+        <select id="pm-type">
+          <option>Lutron (Trevor quotes)</option>
+          <option>Hunter Douglas (Francisco quotes)</option>
+          <option>Mixed</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Mount type</label>
+        <select id="pm-mount">
+          <option value="">Unknown</option>
+          <option>Recessed ceiling</option>
+          <option>Inside mount w/ valance</option>
+          <option>Mixed</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Power type</label>
+        <select id="pm-power">
+          <option value="">Unknown</option>
+          <option>Wired</option>
+          <option>Battery</option>
+          <option>Mixed</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Fabric selection (if known)</label>
+      <input id="pm-fabric" placeholder="e.g. Mosaic Flint &lt;2% / Blackout primary bedroom">
+    </div>
+    <div class="form-group">
+      <label>Rooms / areas</label>
+      <div class="room-builder" id="roomBuilder"></div>
+      <button class="btn btn-sm" style="margin-top:8px" onclick="addRoomEntry()">+ Add room</button>
+    </div>
+    <div class="form-group">
+      <label>Needs information — waiting on:</label>
+      <div class="chip-row" id="needsInfoChips">
+        <button class="chip" onclick="toggleChip(this)">Floor plans</button>
+        <button class="chip" onclick="toggleChip(this)">Window schedule</button>
+        <button class="chip" onclick="toggleChip(this)">Fabric selection</button>
+        <button class="chip" onclick="toggleChip(this)">Client approval</button>
+        <button class="chip" onclick="toggleChip(this)">Measurements</button>
+        <button class="chip" onclick="toggleChip(this)">Builder access</button>
+      </div>
+    </div>
+    <div class="form-group"><label>Initial note</label>
+      <textarea id="pm-note" placeholder="Any context to capture about this project..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('projectModal')">Cancel</button>
+      <button class="btn btn-primary" id="saveProjectBtn" onclick="saveProject()">Save project</button>
+    </div>
+  </div>
+</div>
+
+<!-- Room Measurements Modal -->
+<div class="modal-overlay" id="roomModal">
+  <div class="modal">
+    <h3 id="roomModalTitle">Room measurements</h3>
+    <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">● Blue = Adrian (M1) &nbsp;·&nbsp; ● Green = Chris (M2)</p>
+    <div id="roomModalContent"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveRoomMeasures()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Digest / General Modal -->
+<div class="modal-overlay" id="digestModal">
+  <div class="modal" style="width:600px">
+    <h3 id="digestModalTitle">Weekly digest</h3>
+    <div id="digestModalContent"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('digestModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ─── Constants ─── */
+const STAGES = [
+  { id:'meeting',        label:'Initial meeting',             pct:5  },
+  { id:'waiting-info',   label:'Waiting on information',      pct:15 },
+  { id:'budgetary-sent', label:'Budgetary quote sent',        pct:25 },
+  { id:'quote-approved', label:'Quote approved',              pct:35 },
+  { id:'waiting-fabric', label:'Waiting on fabric',           pct:45 },
+  { id:'final-quote',    label:'Final quote done',            pct:55 },
+  { id:'measure-1',      label:'Measurement 1 done',          pct:65 },
+  { id:'measure-2',      label:'Measurement 2 done',          pct:75 },
+  { id:'ready',          label:'Ready to order',              pct:85 },
+  { id:'ordered',        label:'Ordered',                     pct:95 },
+  { id:'received',       label:'Received / install scheduled',pct:100},
+];
+const STAGE_COLORS = {
+  'meeting':'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf',
+  'quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf',
+  'measure-1':'#2a7a35','measure-2':'#2a7a35','ready':'#2d7a3a',
+  'ordered':'#2d7a3a','received':'#2d7a3a'
+};
+const STORAGE_KEY = 'art_blinds_tracker_v1';
+
+/* ─── State ─── */
+let state = { projects: [], nextId: 1 };
+let activeTab = 'all';
+let activeFilter = 'all';
+let expandedId = null;
+let editingId = null;
+let roomEditId = null;
+let roomEditTemp = [];
+
+/* ─── Persistence ─── */
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const el = document.getElementById('lastSaved');
+    if (el) el.textContent = 'Saved ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  } catch(e) { console.warn('Save failed', e); }
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      state = JSON.parse(raw);
+    } else {
+      // Seed with demo data
+      state = {
+        nextId: 4,
+        projects: [
+          { id:1, client:'Merkel', project:'FR29 LOT26 Cottage', lead:'Bruno', type:'Lutron (Trevor quotes)', stage:'measure-1', mount:'Recessed ceiling', power:'Wired', fabric:'Mosaic Flint <2% / Blackout primary bedroom', fabricBy:'Bruno', fabricDate:'May 2026', blockers:[], rooms:[{name:'Living / dining / kitchen',m1:false,m2:false},{name:'Primary bedroom',m1:true,m2:false},{name:'Guest bedroom 1',m1:true,m2:false},{name:'Guest bedroom 2',m1:true,m2:false},{name:'Office',m1:true,m2:false},{name:'Ensuite',m1:true,m2:false}], log:[{text:'Adrian measured 5 of 6 rooms. Living/dining/kitchen pending — heat trace flooring, no ladders.',time:'May 7, 2026',type:'normal'},{text:'Fabric confirmed: Mosaic Flint <2%, primary bedroom blackout.',time:'May 2026',by:'Bruno',type:'fabric'},{text:'Budgetary quote sent to client.',time:'Aug 2025',type:'normal'}] },
+          { id:2, client:'Harvey Goldman', project:'732 South Drive', lead:'Bruno', type:'Lutron (Trevor quotes)', stage:'waiting-fabric', mount:'Inside mount w/ valance', power:'Wired', fabric:'', fabricBy:'', fabricDate:'', blockers:['Fabric selection'], rooms:[{name:'Living room',m1:false,m2:false},{name:'Master bedroom',m1:false,m2:false},{name:'Den',m1:false,m2:false}], log:[{text:'Site meeting arranged. Blinds scope largely unresolved.',time:'Apr 2026',type:'normal'}] },
+          { id:3, client:'Bras', project:'585 Langevin', lead:'Bruno', type:'Lutron (Trevor quotes)', stage:'waiting-info', mount:'', power:'', fabric:'', fabricBy:'', fabricDate:'', blockers:['Floor plans','Window schedule'], rooms:[], log:[{text:'Fabric selections finalized. Waiting on measurements — room access pending.',time:'May 2026',type:'normal'}] }
+        ]
+      };
+    }
+  } catch(e) { console.warn('Load failed', e); }
+}
+
+/* ─── Helpers ─── */
+const stageObj = id => STAGES.find(s => s.id === id) || STAGES[0];
+const needsInfo = p => p.blockers && p.blockers.length > 0;
+const isReady = p => p.stage === 'ready' || p.stage === 'ordered' || p.stage === 'received' ||
+  (!needsInfo(p) && p.fabric && p.mount && p.power && p.rooms.length > 0 && p.rooms.every(r => r.m1 && r.m2));
+const isOrdered = p => p.stage === 'ordered' || p.stage === 'received';
+const nowStr = () => new Date().toLocaleDateString('en-CA', {year:'numeric',month:'short',day:'numeric'});
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+/* ─── Render ─── */
+function render() {
+  renderSummary();
+  renderFilters();
+  renderProjects();
+}
+
+function renderSummary() {
+  const p = state.projects;
+  const ni = p.filter(needsInfo).length;
+  const ready = p.filter(x => isReady(x) && !isOrdered(x)).length;
+  const ordered = p.filter(isOrdered).length;
+  document.getElementById('summaryBar').innerHTML = `
+    <div class="summary-card"><div class="summary-num">${p.length}</div><div class="summary-label">Active</div></div>
+    <div class="summary-card"><div class="summary-num" style="color:var(--amber)">${ni}</div><div class="summary-label">Needs info</div></div>
+    <div class="summary-card"><div class="summary-num" style="color:var(--green)">${ready}</div><div class="summary-label">Ready to order</div></div>
+    <div class="summary-card"><div class="summary-num" style="color:var(--blue)">${ordered}</div><div class="summary-label">Ordered</div></div>`;
+}
+
+function renderFilters() {
+  const stages = ['all', ...new Set(state.projects.map(p => p.stage))];
+  document.getElementById('filterBar').innerHTML = stages.map(s =>
+    `<button class="filter-chip${s === activeFilter ? ' active' : ''}" onclick="setFilter('${s}')">${s === 'all' ? 'All stages' : stageObj(s).label}</button>`
+  ).join('');
+}
+
+function getFilteredProjects() {
+  let list = [...state.projects];
+  if (activeTab === 'needs-info') list = list.filter(needsInfo);
+  else if (activeTab === 'ready') list = list.filter(p => isReady(p) && !isOrdered(p));
+  else if (activeTab === 'ordered') list = list.filter(isOrdered);
+  if (activeFilter !== 'all') list = list.filter(p => p.stage === activeFilter);
+  return list;
+}
+
+function renderProjects() {
+  const list = getFilteredProjects();
+  const el = document.getElementById('projectList');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div style="font-size:32px">🪟</div>
+      <p>No projects match this filter.</p>
+      <p style="margin-top:8px"><button class="btn btn-primary" onclick="openNewProject()">+ Add your first project</button></p>
+    </div>`;
+    return;
+  }
+  el.innerHTML = list.map(p => renderCard(p)).join('');
+}
+
+function renderCard(p) {
+  const st = stageObj(p.stage);
+  const ready = isReady(p) && !isOrdered(p);
+  const ordered = isOrdered(p);
+  const ni = needsInfo(p);
+  const exp = p.id === expandedId;
+  const m1done = p.rooms.filter(r => r.m1).length;
+  const m2done = p.rooms.filter(r => r.m2).length;
+  const total = p.rooms.length;
+
+  let badge = '';
+  if (ordered) badge = `<span class="badge badge-ordered">Ordered</span>`;
+  else if (ready) badge = `<span class="badge badge-ready">✓ Ready to order</span>`;
+  else if (ni) badge = `<span class="badge badge-info">⚠ Needs information</span>`;
+  else badge = `<span class="badge badge-stage" style="color:${STAGE_COLORS[p.stage]}">${st.label}</span>`;
+
+  const infoTagsHtml = ni ? `<div class="info-tags">${p.blockers.map(b =>
+    `<span class="info-tag">⏳ ${b}</span>`).join('')}${!p.fabric ? `<span class="info-tag">⏳ Fabric not confirmed</span>` : ''}</div>` : '';
+
+  const fabricCurrentHtml = p.fabric
+    ? `<div class="fabric-current">${escHtml(p.fabric)}</div><div class="fabric-source">${p.fabricBy ? 'Entered by ' + p.fabricBy + (p.fabricDate ? ' · ' + p.fabricDate : '') : ''}</div>`
+    : `<div class="fabric-current empty">Not yet confirmed</div><div class="fabric-source"></div>`;
+
+  const roomsHtml = !total
+    ? `<div style="font-size:12px;color:var(--text-3)">No rooms added yet</div>`
+    : p.rooms.map(r => `<div class="room-chip">
+        <span class="room-name">${escHtml(r.name)}</span>
+        <span class="room-dots">
+          <span class="dot${r.m1 ? ' m1' : ''}" title="M1 — Adrian"></span>
+          <span class="dot${r.m2 ? ' m2' : ''}" title="M2 — Chris"></span>
+        </span>
+      </div>`).join('');
+
+  const logHtml = (p.log || []).slice(0, 6).map(e =>
+    `<div class="tl-entry">
+      <div class="tl-dot ${e.type || 'normal'}"></div>
+      <div class="tl-body">
+        <div class="tl-text">${escHtml(e.text)}</div>
+        <div class="tl-meta">${e.time}${e.by ? ' · ' + e.by : ''}</div>
+      </div>
+    </div>`).join('');
+
+  const stageOptions = STAGES.map(s =>
+    `<option value="${s.id}"${p.stage === s.id ? ' selected' : ''}>${s.label}</option>`).join('');
+
+  return `<div class="project-card" id="card-${p.id}">
+    <div class="card-header" onclick="toggleCard(${p.id})">
+      <div class="card-left">
+        <div class="card-name">${escHtml(p.client)}${p.project && p.project !== '—' ? ' — ' + escHtml(p.project) : ''}</div>
+        <div class="card-meta">Lead: ${p.lead} &nbsp;·&nbsp; ${p.type}${total ? ` &nbsp;·&nbsp; ${total} rooms &nbsp; M1: ${m1done}/${total} &nbsp; M2: ${m2done}/${total}` : ''}</div>
+      </div>
+      <div class="card-right">
+        ${badge}
+        <span class="chevron${exp ? ' open' : ''}">⌄</span>
+      </div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${st.pct}%"></div></div>
+    <div class="detail-panel${exp ? ' open' : ''}">
+      <div class="detail-panel-inner">
+        ${infoTagsHtml}
+
+        <div class="fabric-box">
+          <h4>Fabric selection</h4>
+          ${fabricCurrentHtml}
+          <div class="fabric-inputs">
+            <input class="fabric-input" id="fab-${p.id}" placeholder="Fabric name, colour, openness %" value="${escAttr(p.fabric || '')}">
+            <select class="fabric-who" id="fabwho-${p.id}">
+              <option value="Bruno">Bruno</option>
+              <option value="Trevor">Trevor</option>
+              <option value="Francisco">Francisco</option>
+              <option value="Designer">Designer</option>
+              <option value="Client">Client</option>
+            </select>
+            <button class="btn btn-sm btn-primary" onclick="saveFabric(${p.id})">Save fabric</button>
+          </div>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-section">
+            <h4>Project details</h4>
+            <div class="field-row"><span class="field-label">Mount type</span><span class="field-value ${p.mount ? 'confirmed' : 'pending'}">${escHtml(p.mount || 'Not confirmed')}</span></div>
+            <div class="field-row"><span class="field-label">Power type</span><span class="field-value ${p.power ? 'confirmed' : 'pending'}">${escHtml(p.power || 'Not confirmed')}</span></div>
+            <div class="field-row"><span class="field-label">Quote type</span><span class="field-value">${escHtml(p.type)}</span></div>
+            <div class="field-row"><span class="field-label">Lead</span><span class="field-value">${escHtml(p.lead)}</span></div>
+          </div>
+          <div class="detail-section">
+            <h4>Measurements</h4>
+            <div class="field-row"><span class="field-label">M1 — Adrian</span><span class="field-value ${m1done === total && total ? 'confirmed' : 'pending'}">${total ? m1done + '/' + total + ' rooms' : 'No rooms yet'}</span></div>
+            <div class="field-row"><span class="field-label">M2 — Chris</span><span class="field-value ${m2done === total && total ? 'confirmed' : 'pending'}">${total ? m2done + '/' + total + ' rooms' : 'No rooms yet'}</span></div>
+            <div style="margin-top:10px;font-size:11px;color:var(--text-3)">● Blue = Adrian &nbsp;·&nbsp; ● Green = Chris</div>
+          </div>
+        </div>
+
+        <div class="rooms-section">
+          <h4>Rooms</h4>
+          <div class="rooms-grid">${roomsHtml}</div>
+          <button class="btn btn-sm" onclick="openRoomModal(${p.id})">Update room measurements</button>
+        </div>
+
+        <div class="timeline">
+          <h4>Activity log</h4>
+          <div class="tl-entries">${logHtml || '<div style="font-size:12px;color:var(--text-3)">No activity yet.</div>'}</div>
+        </div>
+
+        <hr class="divider">
+        <div class="actions-row">
+          <select class="stage-select" onchange="updateStage(${p.id}, this.value)">
+            ${stageOptions}
+          </select>
+          <input class="note-input" id="note-${p.id}" placeholder="Add a note...">
+          <button class="btn btn-sm" onclick="addNote(${p.id})">Log note</button>
+          <button class="btn btn-sm" onclick="openEditProject(${p.id})">Edit project</button>
+        </div>
+        <div class="actions-row" style="margin-top:8px">
+          <button class="btn btn-sm" onclick="searchEmails(${p.id})">🔍 Search emails for updates</button>
+          <button class="btn btn-sm" onclick="draftEmail(${p.id})">✉ Draft follow-up email</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ─── Card interactions ─── */
+function toggleCard(id) {
+  expandedId = expandedId === id ? null : id;
+  render();
+}
+
+function setTab(tab) {
+  activeTab = tab;
+  activeFilter = 'all';
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  render();
+}
+
+function setFilter(f) {
+  activeFilter = f;
+  render();
+}
+
+function updateStage(id, stage) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  const old = stageObj(p.stage).label;
+  p.stage = stage;
+  p.log = p.log || [];
+  p.log.unshift({ text: `Stage: ${old} → ${stageObj(stage).label}`, time: nowStr(), type: 'normal' });
+  save(); render();
+}
+
+function addNote(id) {
+  const p = state.projects.find(x => x.id === id);
+  const inp = document.getElementById('note-' + id);
+  if (!p || !inp || !inp.value.trim()) return;
+  p.log = p.log || [];
+  p.log.unshift({ text: inp.value.trim(), time: nowStr(), type: 'normal' });
+  inp.value = '';
+  save(); render();
+}
+
+function saveFabric(id) {
+  const p = state.projects.find(x => x.id === id);
+  const fab = document.getElementById('fab-' + id);
+  const who = document.getElementById('fabwho-' + id);
+  if (!p || !fab || !fab.value.trim()) { toast('Please enter a fabric name.'); return; }
+  p.fabric = fab.value.trim();
+  p.fabricBy = who.value;
+  p.fabricDate = nowStr();
+  p.blockers = (p.blockers || []).filter(b => b !== 'Fabric selection');
+  p.log = p.log || [];
+  p.log.unshift({ text: `Fabric updated: ${p.fabric}`, time: nowStr(), by: who.value, type: 'fabric' });
+  toast('Fabric saved ✓');
+  save(); render();
+}
+
+/* ─── Room modal ─── */
+function openRoomModal(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  roomEditId = id;
+  roomEditTemp = p.rooms.map(r => ({ ...r }));
+  document.getElementById('roomModalTitle').textContent = 'Room measurements — ' + p.client;
+  document.getElementById('roomModalContent').innerHTML = roomEditTemp.length
+    ? roomEditTemp.map((r, i) => `
+        <div class="room-update-row">
+          <span class="room-update-name">${escHtml(r.name)}</span>
+          <div class="room-update-checks">
+            <label class="check-label"><input type="checkbox" ${r.m1 ? 'checked' : ''} onchange="roomEditTemp[${i}].m1=this.checked"> M1 Adrian</label>
+            <label class="check-label"><input type="checkbox" ${r.m2 ? 'checked' : ''} onchange="roomEditTemp[${i}].m2=this.checked"> M2 Chris</label>
+          </div>
+        </div>`).join('')
+    : '<p style="font-size:13px;color:var(--text-2)">No rooms added to this project yet. Edit the project to add rooms first.</p>';
+  document.getElementById('roomModal').classList.add('open');
+}
+
+function saveRoomMeasures() {
+  const p = state.projects.find(x => x.id === roomEditId);
+  if (!p) return;
+  p.rooms = roomEditTemp;
+  const allM1 = p.rooms.every(r => r.m1);
+  const allM2 = p.rooms.every(r => r.m2);
+  if (allM1 && !p.log.some(e => e.text.startsWith('All M1'))) {
+    p.log.unshift({ text: 'All M1 measurements confirmed (Adrian)', time: nowStr(), type: 'normal' });
+  }
+  if (allM2 && !p.log.some(e => e.text.startsWith('All M2'))) {
+    p.log.unshift({ text: 'All M2 measurements confirmed (Chris)', time: nowStr(), type: 'normal' });
+  }
+  closeModal('roomModal');
+  toast('Measurements saved ✓');
+  save(); render();
+}
+
+/* ─── New / Edit project ─── */
+function openNewProject() {
+  editingId = null;
+  document.getElementById('projectModalTitle').textContent = 'New blind project';
+  document.getElementById('saveProjectBtn').textContent = 'Save project';
+  clearProjectForm();
+  addRoomEntry();
+  document.getElementById('projectModal').classList.add('open');
+}
+
+function openEditProject(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  editingId = id;
+  document.getElementById('projectModalTitle').textContent = 'Edit project — ' + p.client;
+  document.getElementById('saveProjectBtn').textContent = 'Update project';
+  clearProjectForm();
+  document.getElementById('pm-client').value = p.client || '';
+  document.getElementById('pm-project').value = p.project !== '—' ? (p.project || '') : '';
+  document.getElementById('pm-lead').value = p.lead || 'Bruno';
+  document.getElementById('pm-type').value = p.type || '';
+  document.getElementById('pm-mount').value = p.mount || '';
+  document.getElementById('pm-power').value = p.power || '';
+  document.getElementById('pm-fabric').value = p.fabric || '';
+  // Rooms
+  const rb = document.getElementById('roomBuilder');
+  rb.innerHTML = '';
+  (p.rooms || []).forEach(r => addRoomEntry(r.name));
+  if (!p.rooms || !p.rooms.length) addRoomEntry();
+  // Blockers
+  document.querySelectorAll('#needsInfoChips .chip').forEach(c => {
+    if ((p.blockers || []).includes(c.textContent.trim())) c.classList.add('active');
+  });
+  document.getElementById('projectModal').classList.add('open');
+}
+
+function clearProjectForm() {
+  ['pm-client','pm-project','pm-fabric','pm-note'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  const mount = document.getElementById('pm-mount'); if(mount) mount.value = '';
+  const power = document.getElementById('pm-power'); if(power) power.value = '';
+  document.querySelectorAll('#needsInfoChips .chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('roomBuilder').innerHTML = '';
+}
+
+function addRoomEntry(name = '') {
+  const rb = document.getElementById('roomBuilder');
+  const div = document.createElement('div');
+  div.className = 'room-entry';
+  div.innerHTML = `<input placeholder="Room name e.g. Living room" value="${escAttr(name)}"><button class="rm-del" onclick="this.parentElement.remove()" title="Remove">×</button>`;
+  rb.appendChild(div);
+}
+
+function toggleChip(el) { el.classList.toggle('active'); }
+
+function saveProject() {
+  const client = (document.getElementById('pm-client').value || '').trim();
+  if (!client) { toast('Please enter a client name.'); return; }
+  const blockers = [...document.querySelectorAll('#needsInfoChips .chip.active')].map(c => c.textContent.trim());
+  const rooms = [...document.querySelectorAll('#roomBuilder .room-entry input')]
+    .map(i => i.value.trim()).filter(Boolean);
+  const note = (document.getElementById('pm-note').value || '').trim();
+  const fabric = (document.getElementById('pm-fabric').value || '').trim();
+
+  if (editingId) {
+    const p = state.projects.find(x => x.id === editingId);
+    if (!p) return;
+    const oldRoomNames = p.rooms.map(r => r.name);
+    // Preserve existing measurement data for unchanged rooms
+    p.rooms = rooms.map(name => {
+      const existing = p.rooms.find(r => r.name === name);
+      return existing ? existing : { name, m1: false, m2: false };
+    });
+    p.client = client;
+    p.project = (document.getElementById('pm-project').value || '').trim() || '—';
+    p.lead = document.getElementById('pm-lead').value;
+    p.type = document.getElementById('pm-type').value;
+    p.mount = document.getElementById('pm-mount').value;
+    p.power = document.getElementById('pm-power').value;
+    if (fabric && fabric !== p.fabric) {
+      p.fabric = fabric;
+      p.fabricBy = 'Trevor';
+      p.fabricDate = nowStr();
+      p.log.unshift({ text: `Fabric updated: ${fabric}`, time: nowStr(), by: 'Trevor', type: 'fabric' });
+    }
+    p.blockers = blockers;
+    if (note) p.log.unshift({ text: note, time: nowStr(), type: 'normal' });
+    p.log.unshift({ text: 'Project updated.', time: nowStr(), type: 'normal' });
+    toast('Project updated ✓');
+  } else {
+    const log = [];
+    if (note) log.push({ text: note, time: nowStr(), type: 'normal' });
+    log.push({ text: 'Project created.', time: nowStr(), type: 'normal' });
+    state.projects.unshift({
+      id: state.nextId++,
+      client,
+      project: (document.getElementById('pm-project').value || '').trim() || '—',
+      lead: document.getElementById('pm-lead').value,
+      type: document.getElementById('pm-type').value,
+      stage: blockers.length ? 'waiting-info' : 'meeting',
+      mount: document.getElementById('pm-mount').value,
+      power: document.getElementById('pm-power').value,
+      fabric,
+      fabricBy: fabric ? 'Trevor' : '',
+      fabricDate: fabric ? nowStr() : '',
+      blockers,
+      rooms: rooms.map(name => ({ name, m1: false, m2: false })),
+      log
+    });
+    toast('Project created ✓');
+  }
+  closeModal('projectModal');
+  save(); render();
+}
+
+/* ─── Email actions (hand off to Claude in chat) ─── */
+function searchEmails(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  const waiting = p.blockers.length ? p.blockers.join(', ') : 'any updates';
+  const prompt = `Search my emails for the ${p.client} ${p.project !== '—' ? p.project + ' ' : ''}blinds project. Look for: ${waiting}${!p.fabric ? ', fabric selection' : ''}. Report what you find and flag anything I should act on.`;
+  openInChat(prompt);
+}
+
+function draftEmail(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  const prompt = `Draft a follow-up email for the ${p.client}${p.project !== '—' ? ' ' + p.project : ''} blinds project. Current stage: ${stageObj(p.stage).label}. Needs information: ${p.blockers.length ? p.blockers.join(', ') : 'none'}. Fabric: ${p.fabric || 'not yet confirmed'}. Mount: ${p.mount || 'unknown'}. Power: ${p.power || 'unknown'}.`;
+  openInChat(prompt);
+}
+
+function openInChat(prompt) {
+  // Copy to clipboard and show instruction
+  navigator.clipboard.writeText(prompt).then(() => {
+    toast('Prompt copied — paste into Claude chat ✓');
+  }).catch(() => {
+    // Fallback: show in a prompt dialog
+    window.prompt('Copy this prompt and paste into Claude chat:', prompt);
+  });
+}
+
+/* ─── Digest ─── */
+function openDigest() {
+  const p = state.projects;
+  const ni = p.filter(needsInfo);
+  const ready = p.filter(x => isReady(x) && !isOrdered(x));
+  const inProgress = p.filter(x => !needsInfo(x) && !isReady(x) && !isOrdered(x));
+  const ordered = p.filter(isOrdered);
+  const today = new Date().toLocaleDateString('en-CA', {year:'numeric',month:'long',day:'numeric'});
+
+  let html = `<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">To: Trevor, Bruno, Terry &nbsp;·&nbsp; ${today}</div><div class="digest-body">`;
+
+  if (ready.length) {
+    html += `<div class="digest-section"><div class="digest-section-title" style="color:var(--green)">✅ Ready to order (${ready.length})</div>`;
+    ready.forEach(x => { html += `<div class="digest-item">· ${escHtml(x.client)} — ${escHtml(x.project)}</div>`; });
+    html += `</div>`;
+  }
+  if (ni.length) {
+    html += `<div class="digest-section"><div class="digest-section-title" style="color:var(--amber)">⚠️ Needs information (${ni.length})</div>`;
+    ni.forEach(x => {
+      html += `<div class="digest-item"><strong>${escHtml(x.client)} — ${escHtml(x.project)}</strong></div>`;
+      x.blockers.forEach(b => { html += `<div class="digest-sub">→ ${escHtml(b)}</div>`; });
+      if (!x.fabric) html += `<div class="digest-sub">→ Fabric not confirmed</div>`;
+    });
+    html += `</div>`;
+  }
+  if (inProgress.length) {
+    html += `<div class="digest-section"><div class="digest-section-title">🔄 In progress (${inProgress.length})</div>`;
+    inProgress.forEach(x => { html += `<div class="digest-item">· ${escHtml(x.client)} — ${escHtml(x.project)} <span style="color:var(--text-3)">(${stageObj(x.stage).label})</span></div>`; });
+    html += `</div>`;
+  }
+  if (ordered.length) {
+    html += `<div class="digest-section"><div class="digest-section-title" style="color:var(--blue)">📦 Ordered (${ordered.length})</div>`;
+    ordered.forEach(x => { html += `<div class="digest-item">· ${escHtml(x.client)} — ${escHtml(x.project)}</div>`; });
+    html += `</div>`;
+  }
+  if (!p.length) html += `<div style="color:var(--text-3);font-size:13px">No active projects.</div>`;
+  html += `</div>`;
+
+  document.getElementById('digestModalTitle').textContent = 'Weekly digest';
+  document.getElementById('digestModalContent').innerHTML = html;
+  document.getElementById('digestModal').classList.add('open');
+}
+
+/* ─── Modal helpers ─── */
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+});
+
+/* ─── Safety helpers ─── */
+function escHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(str) {
+  return String(str || '').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ─── Boot ─── */
+load();
+render();
+</script>
+</body>
+</html>
