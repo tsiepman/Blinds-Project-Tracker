@@ -310,7 +310,7 @@ const msalConfig = {
   cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
 };
 const loginRequest = { scopes: ['Sites.ReadWrite.All', 'User.Read'] };
-const msal = new msal.PublicClientApplication(msalConfig);
+const msalClient = new msal.PublicClientApplication(msalConfig);
 
 /* ── State ── */
 const STAGES = [
@@ -364,8 +364,8 @@ function setSyncStatus(msg, cls='') {
 async function signIn() {
   document.getElementById('signinStatus').textContent = 'Signing in...';
   try {
-    await msal.handleRedirectPromise();
-    const result = await msal.loginPopup(loginRequest);
+    await msalClient.handleRedirectPromise();
+    const result = await msalClient.loginPopup(loginRequest);
     currentUser = result.account;
     accessToken = result.accessToken;
     await initApp();
@@ -376,24 +376,24 @@ async function signIn() {
 }
 
 async function getToken() {
-  const accounts = msal.getAllAccounts();
+  const accounts = msalClient.getAllAccounts();
   if (!accounts.length) return null;
   try {
-    const result = await msal.acquireTokenSilent({ ...loginRequest, account: accounts[0] });
+    const result = await msalClient.acquireTokenSilent({ ...loginRequest, account: accounts[0] });
     return result.accessToken;
   } catch(e) {
-    const result = await msal.acquireTokenPopup({ ...loginRequest, account: accounts[0] });
+    const result = await msalClient.acquireTokenPopup({ ...loginRequest, account: accounts[0] });
     return result.accessToken;
   }
 }
 
 function signOut() {
-  msal.logoutPopup();
+  msalClient.logoutPopup();
 }
 
 async function checkExistingSession() {
-  await msal.handleRedirectPromise();
-  const accounts = msal.getAllAccounts();
+  await msalClient.handleRedirectPromise();
+  const accounts = msalClient.getAllAccounts();
   if (accounts.length) {
     currentUser = accounts[0];
     try {
