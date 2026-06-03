@@ -294,7 +294,7 @@
 <div class="toast" id="toast"></div>
 
 <!-- MSAL -->
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js" crossorigin="anonymous"></script>
 
 <script>
 /* ── Config ── */
@@ -305,12 +305,18 @@ const LIST_NAME   = 'Blinds Projects';
 const GRAPH_BASE  = 'https://graph.microsoft.com/v1.0';
 const REDIRECT    = 'https://tsiepman.github.io/Blinds-Project-Tracker';
 
-const msalConfig = {
-  auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: REDIRECT },
-  cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
-};
 const loginRequest = { scopes: ['Sites.ReadWrite.All', 'User.Read'] };
-const msalClient = new msal.PublicClientApplication(msalConfig);
+
+// msalClient initialized after DOM ready to ensure MSAL library is loaded
+let msalClient = null;
+
+function initMsal() {
+  const msalConfig = {
+    auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: REDIRECT },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
+  };
+  msalClient = new msal.PublicClientApplication(msalConfig);
+}
 
 /* ── State ── */
 const STAGES = [
@@ -907,7 +913,10 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'))});
 
 /* ── Boot ── */
-checkExistingSession();
+window.addEventListener('DOMContentLoaded', () => {
+  initMsal();
+  checkExistingSession();
+});
 </script>
 </body>
 </html>
