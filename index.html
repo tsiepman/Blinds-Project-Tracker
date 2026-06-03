@@ -913,9 +913,18 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'))});
 
 /* ── Boot ── */
+function waitForMsal(cb, tries = 0) {
+  if (typeof msal !== 'undefined' && msal.PublicClientApplication) {
+    initMsal();
+    cb();
+  } else if (tries < 20) {
+    setTimeout(() => waitForMsal(cb, tries + 1), 100);
+  } else {
+    document.getElementById('signinStatus').textContent = 'Failed to load Microsoft auth library. Please refresh.';
+  }
+}
 window.addEventListener('DOMContentLoaded', () => {
-  initMsal();
-  checkExistingSession();
+  waitForMsal(checkExistingSession);
 });
 </script>
 </body>
