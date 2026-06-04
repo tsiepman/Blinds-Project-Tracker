@@ -550,7 +550,7 @@ function buildCard(p,idx){
           <button class="btn btn-sm btn-primary" data-pidx="${idx}" onclick="savePO(this)">Save PO</button>
         </div>
       </div>
-      ${buildQuoteSection(p, idx)}
+      ${(()=>{try{return buildQuoteSection(p,idx);}catch(e){console.error("buildQuoteSection error:",e);return "";}})()}
       <div class="dg">
         <div class="ds">
           <h4>Project details</h4>
