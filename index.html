@@ -369,13 +369,9 @@ function setSyncStatus(msg, cls='') {
 
 /* ── Auth ── */
 async function signIn() {
-  document.getElementById('signinStatus').textContent = 'Signing in...';
+  document.getElementById('signinStatus').textContent = 'Redirecting to Microsoft...';
   try {
-    await msalClient.handleRedirectPromise();
-    const result = await msalClient.loginPopup(loginRequest);
-    currentUser = result.account;
-    accessToken = result.accessToken;
-    await initApp();
+    await msalClient.loginRedirect(loginRequest);
   } catch(e) {
     console.error(e);
     document.getElementById('signinStatus').textContent = 'Sign-in failed: ' + (e.message || e);
@@ -389,27 +385,38 @@ async function getToken() {
     const result = await msalClient.acquireTokenSilent({ ...loginRequest, account: accounts[0] });
     return result.accessToken;
   } catch(e) {
-    const result = await msalClient.acquireTokenPopup({ ...loginRequest, account: accounts[0] });
-    return result.accessToken;
+    await msalClient.acquireTokenRedirect({ ...loginRequest, account: accounts[0] });
+    return null;
   }
 }
 
 function signOut() {
-  msalClient.logoutPopup();
+  msalClient.logoutRedirect();
 }
 
 async function checkExistingSession() {
-  await msalClient.handleRedirectPromise();
-  const accounts = msalClient.getAllAccounts();
-  if (accounts.length) {
-    currentUser = accounts[0];
-    try {
-      accessToken = await getToken();
+  try {
+    const result = await msalClient.handleRedirectPromise();
+    if (result) {
+      currentUser = result.account;
+      accessToken = result.accessToken;
       await initApp();
-    } catch(e) {
+      return;
+    }
+    const accounts = msalClient.getAllAccounts();
+    if (accounts.length) {
+      currentUser = accounts[0];
+      try {
+        accessToken = await getToken();
+        await initApp();
+      } catch(e) {
+        showSignIn();
+      }
+    } else {
       showSignIn();
     }
-  } else {
+  } catch(e) {
+    console.error(e);
     showSignIn();
   }
 }
