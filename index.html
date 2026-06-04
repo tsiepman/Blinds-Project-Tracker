@@ -632,12 +632,12 @@ function renderCard(p) {
     ${p.poNumber?`<div class="po-current">${escHtml(p.poNumber)}</div>`:`<div class="po-current empty">Not yet assigned</div>`}
     <div class="po-inputs">
       <input class="po-input" id="po-${p.id}" placeholder="Enter PO number" value="${escAttr(p.poNumber||'')}">
-      <button class="btn btn-sm btn-primary" onclick="savePO(${JSON.stringify(p.id)})">Save PO</button>
+      <button class="btn btn-sm btn-primary" data-id="${escAttr(String(p.id))}" onclick="savePO(this.dataset.id)">Save PO</button>
     </div>
   </div>`;
 
   return `<div class="project-card" id="card-${p.id}">
-    <div class="card-header" onclick="toggleCard(${JSON.stringify(p.id)})">
+    <div class="card-header" data-id="${escAttr(String(p.id))}" onclick="toggleCard(this.dataset.id)">
       <div class="card-left">
         <div class="card-name">${escHtml(p.client)}${p.project&&p.project!=='—'?' — '+escHtml(p.project):''}</div>
         <div class="card-meta">Lead: ${escHtml(p.lead)} &nbsp;·&nbsp; ${escHtml(p.type)}${total?` &nbsp;·&nbsp; ${total} rooms &nbsp; M1: ${m1done}/${total} M2: ${m2done}/${total}`:''}</div>
@@ -655,7 +655,7 @@ function renderCard(p) {
             <select class="fabric-who" id="fabwho-${p.id}">
               <option>Bruno</option><option>Trevor</option><option>Francisco</option><option>Designer</option><option>Client</option>
             </select>
-            <button class="btn btn-sm btn-primary" onclick="saveFabric(${JSON.stringify(p.id)})">Save fabric</button>
+            <button class="btn btn-sm btn-primary" data-id="${escAttr(String(p.id))}" onclick="saveFabric(this.dataset.id)">Save fabric</button>
           </div>
         </div>
         ${poHtml}
@@ -677,7 +677,7 @@ function renderCard(p) {
         <div class="rooms-section">
           <h4>Rooms</h4>
           <div class="rooms-grid">${roomsHtml}</div>
-          <button class="btn btn-sm" onclick="openRoomModal(${JSON.stringify(p.id)})">Update room measurements</button>
+          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="openRoomModal(this.dataset.id)">Update room measurements</button>
         </div>
         <div class="timeline">
           <h4>Activity log</h4>
@@ -685,16 +685,16 @@ function renderCard(p) {
         </div>
         <hr class="divider">
         <div class="actions-row">
-          <select class="stage-select" onchange="updateStage(${JSON.stringify(p.id)}, this.value)">
+          <select class="stage-select" data-id="${escAttr(String(p.id))}" onchange="updateStage(this.dataset.id, this.value)">
             ${STAGES.map(s=>`<option value="${s.id}"${p.stage===s.id?' selected':''}>${s.label}</option>`).join('')}
           </select>
           <input class="note-input" id="note-${p.id}" placeholder="Add a note...">
-          <button class="btn btn-sm" onclick="addNote(${JSON.stringify(p.id)})">Log note</button>
-          <button class="btn btn-sm" onclick="openEditProject(${JSON.stringify(p.id)})">Edit</button>
+          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="addNote(this.dataset.id)">Log note</button>
+          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="openEditProject(this.dataset.id)">Edit</button>
         </div>
         <div class="actions-row" style="margin-top:8px">
-          <button class="btn btn-sm" onclick="searchEmails(${JSON.stringify(p.id)})">🔍 Search emails for updates</button>
-          <button class="btn btn-sm" onclick="draftEmail(${JSON.stringify(p.id)})">✉ Draft follow-up email</button>
+          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="searchEmails(this.dataset.id)">🔍 Search emails for updates</button>
+          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="draftEmail(this.dataset.id)">✉ Draft follow-up email</button>
         </div>
       </div>
     </div>
