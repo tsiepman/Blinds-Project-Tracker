@@ -139,6 +139,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .upbtn:hover{background:var(--s2)}
 .upbtn input[type=file]{display:none}
 .uploading{font-size:11px;color:var(--amber);margin-top:2px}
+.qbox{background:var(--s2);border-radius:var(--r);padding:12px;margin-bottom:14px;border:.5px solid var(--border)}
+.qbox h4{font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.qlist{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.qitem{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface);border-radius:var(--r);border:.5px solid var(--border)}
+.qitem-info{flex:1;min-width:0}
+.qitem-name{font-size:12px;font-weight:500;color:var(--blue);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;display:block}
+.qitem-name:hover{text-decoration:underline}
+.qitem-meta{font-size:11px;color:var(--t3);margin-top:1px}
+.qdel{background:none;border:none;cursor:pointer;color:var(--t3);font-size:14px;padding:2px 4px;flex-shrink:0}
+.qdel:hover{color:var(--red)}
+.qempty{font-size:12px;color:var(--t3);font-style:italic;margin-bottom:8px}
 .cl2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t2);cursor:pointer}
 .db{font-size:13px;line-height:1.8;border:.5px solid var(--border);border-radius:var(--r);padding:16px}
 .dbs{margin-bottom:16px}
@@ -384,7 +395,9 @@ function spToP(item){
     stage:f.Stage||'meeting', mount:f.Mount||'', power:f.Power||'',
     fabric:f.Fabric||'', fabricBy:f.FabricBy||'', fabricDate:f.FabricDate||'',
     blockers:safeJSON(f.Blockers,[]), rooms:safeJSON(f.Rooms,[]),
-    log:safeJSON(f.Log,[]), poNumber:f.PONumber||''
+    log:safeJSON(f.Log,[]), poNumber:f.PONumber||'',
+    lutronQuotes:safeJSON(f.LutronQuotes,[]),
+    hdQuotes:safeJSON(f.HDQuotes,[])
   };
 }
 function pToSp(p){
@@ -395,7 +408,9 @@ function pToSp(p){
     Blockers:JSON.stringify(p.blockers||[]),
     Rooms:JSON.stringify(p.rooms||[]),
     Log:JSON.stringify(p.log||[]),
-    PONumber:p.poNumber||''
+    PONumber:p.poNumber||'',
+    LutronQuotes:JSON.stringify(p.lutronQuotes||[]),
+    HDQuotes:JSON.stringify(p.hdQuotes||[])
   };
 }
 
@@ -531,6 +546,7 @@ function buildCard(p,idx){
           <button class="btn btn-sm btn-primary" data-pidx="${idx}" onclick="savePO(this)">Save PO</button>
         </div>
       </div>
+      ${buildQuoteSection(p, idx)}
       <div class="dg">
         <div class="ds">
           <h4>Project details</h4>
@@ -642,6 +658,107 @@ async function savePO(el){
 }
 
 // ── Room modal ──
+// ── Quote upload ──
+const QUOTE_FOLDER = 'Blinds Quotes';
+
+async function ensureQuoteFolder(){
+  try{ await gGet(`/sites/${spSiteId}/drive/root:/${QUOTE_FOLDER}`); }
+  catch(e){
+    await gPost(`/sites/${spSiteId}/drive/root/children`,{
+      name:QUOTE_FOLDER, folder:{}, '@microsoft.graph.conflictBehavior':'rename'
+    });
+  }
+}
+
+async function uploadQuote(file, projectClient, quoteType){
+  await getIds();
+  await ensureQuoteFolder();
+  const ts = new Date().toISOString().slice(0,10);
+  const safe = s => s.replace(/[^a-zA-Z0-9]/g,'-');
+  const filename = `${safe(projectClient)}-${safe(quoteType)}-${ts}-${Date.now()}.pdf`;
+  const tok = await getToken();
+  const url = `${GRAPH}/sites/${spSiteId}/drive/root:/${QUOTE_FOLDER}/${filename}:/content`;
+  const res = await fetch(url,{
+    method:'PUT',
+    headers:{Authorization:'Bearer '+tok,'Content-Type':'application/pdf'},
+    body:file
+  });
+  if(!res.ok){const t=await res.text();throw new Error('Upload failed: '+t);}
+  const data = await res.json();
+  const linkRes = await gPost(`/sites/${spSiteId}/drive/items/${data.id}/createLink`,{
+    type:'view', scope:'organization'
+  });
+  return {
+    name: file.name,
+    url: linkRes.link.webUrl,
+    id: data.id,
+    uploadedBy: currentUser?.name||'',
+    uploadedAt: nowStr()
+  };
+}
+
+function buildQuoteSection(p, idx){
+  function quoteList(quotes, type){
+    const items = (quotes||[]).map((q,qi)=>
+      `<div class="qitem">
+        <div class="qitem-info">
+          <a class="qitem-name" href="${h(q.url)}" target="_blank" title="${h(q.name)}">${h(q.name)}</a>
+          <div class="qitem-meta">${h(q.uploadedAt)} · ${h(q.uploadedBy)}</div>
+        </div>
+        <button class="qdel" data-pidx="${idx}" data-type="${type}" data-qi="${qi}" onclick="deleteQuote(this)" title="Remove">🗑</button>
+      </div>`
+    ).join('');
+    return `${items||'<div class="qempty">No quote uploaded yet</div>'}
+      <label class="upbtn" style="margin-top:4px">
+        📄 Upload ${type} quote
+        <input type="file" accept=".pdf,application/pdf" onchange="handleQuoteUpload(this,'${type}',${idx})" style="display:none">
+      </label>
+      <div class="uploading" id="qupl-${type}-${h(p.id)}" style="display:none">Uploading…</div>`;
+  }
+  return `<div class="qbox">
+    <h4>Lutron quote</h4>
+    ${quoteList(p.lutronQuotes,'Lutron')}
+  </div>
+  <div class="qbox">
+    <h4>Hunter Douglas quote</h4>
+    ${quoteList(p.hdQuotes,'HunterDouglas')}
+  </div>`;
+}
+
+async function handleQuoteUpload(input, type, idx){
+  const p = getFiltered()[idx]; if(!p||!input.files.length) return;
+  const statusEl = document.getElementById(`qupl-${type}-${p.id}`);
+  if(statusEl) statusEl.style.display='block';
+  try{
+    const q = await uploadQuote(input.files[0], p.client, type);
+    if(type==='Lutron') p.lutronQuotes=[...(p.lutronQuotes||[]),q];
+    else p.hdQuotes=[...(p.hdQuotes||[]),q];
+    p.log.unshift({text:`${type} quote uploaded: ${q.name}`,time:nowStr(),by:currentUser?.name||'',type:'normal'});
+    toast('Quote uploaded ✓');
+    await saveToSp(p);
+    render();
+  }catch(e){
+    toast('Upload failed: '+e.message,4000);
+    console.error(e);
+  }finally{
+    if(statusEl) statusEl.style.display='none';
+    input.value='';
+  }
+}
+
+async function deleteQuote(btn){
+  const idx=parseInt(btn.getAttribute('data-pidx'));
+  const type=btn.getAttribute('data-type');
+  const qi=parseInt(btn.getAttribute('data-qi'));
+  const p=getFiltered()[idx]; if(!p) return;
+  if(!confirm('Remove this quote?')) return;
+  if(type==='Lutron') p.lutronQuotes=(p.lutronQuotes||[]).filter((_,i)=>i!==qi);
+  else p.hdQuotes=(p.hdQuotes||[]).filter((_,i)=>i!==qi);
+  p.log.unshift({text:`${type} quote removed.`,time:nowStr(),by:currentUser?.name||'',type:'normal'});
+  try{ await saveToSp(p); toast('Quote removed ✓'); }catch(e){ toast('Save failed: '+e.message,4000); }
+  render();
+}
+
 // ── Photo upload ──
 const PHOTO_FOLDER = 'Blinds Measurement Photos';
 
