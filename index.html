@@ -126,10 +126,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sync.err{color:var(--red)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-size:13px;padding:10px 20px;border-radius:var(--rl);opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap}
 .toast.show{opacity:1}
-.rup{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:.5px solid var(--border)}
+.rup{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:.5px solid var(--border)}
 .rup:last-child{border-bottom:none}
-.run{flex:1;font-size:13px}
+.rup-top{display:flex;align-items:center;gap:12px}
+.run{flex:1;font-size:13px;font-weight:500}
 .ruc{display:flex;gap:16px}
+.rph{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.rph-thumb{position:relative;width:72px;height:72px;border-radius:var(--r);overflow:hidden;border:.5px solid var(--border)}
+.rph-thumb img{width:100%;height:100%;object-fit:cover;cursor:pointer}
+.rph-del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;line-height:1}
+.upbtn{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:4px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);cursor:pointer}
+.upbtn:hover{background:var(--s2)}
+.uploading{font-size:11px;color:var(--amber);margin-top:2px}
 .cl2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t2);cursor:pointer}
 .db{font-size:13px;line-height:1.8;border:.5px solid var(--border);border-radius:var(--r);padding:16px}
 .dbs{margin-bottom:16px}
@@ -483,7 +491,10 @@ function buildCard(p,idx){
     :`<div class="fc2 empty">Not yet confirmed</div><div class="fsrc"></div>`;
 
   const roomsHtml=!tot?'<div style="font-size:12px;color:var(--t3)">No rooms added yet</div>'
-    :p.rooms.map(r=>`<div class="rc"><span class="rn">${h(r.name)}</span><span class="rd"><span class="dot${r.m1?' m1':''}" title="M1 Adrian"></span><span class="dot${r.m2?' m2':''}" title="M2 Chris"></span></span></div>`).join('');
+    :p.rooms.map(r=>{
+      const pc=(r.photos||[]).length;
+      return `<div class="rc"><span class="rn">${h(r.name)}</span><span class="rd"><span class="dot${r.m1?' m1':''}" title="M1 Adrian"></span><span class="dot${r.m2?' m2':''}" title="M2 Chris"></span>${pc?`<span style="font-size:10px;color:var(--blue);margin-left:2px" title="${pc} photo${pc>1?'s':''}">📷${pc}</span>`:''}  </span></div>`;
+    }).join('');
 
   const logHtml=(p.log||[]).slice(0,6).map(e=>
     `<div class="te"><div class="td ${e.type||'normal'}"></div><div class="tb"><div class="tt">${h(e.text)}</div><div class="tm">${h(e.time)}${e.by?' · '+h(e.by):''}</div></div></div>`
@@ -630,16 +641,114 @@ async function savePO(el){
 }
 
 // ── Room modal ──
+// ── Photo upload ──
+const PHOTO_FOLDER = 'Blinds Measurement Photos';
+
+async function ensurePhotoFolder(){
+  const tok = await getToken();
+  // Try to get the folder, create if missing
+  try {
+    await gGet(`/sites/${spSiteId}/drive/root:/${PHOTO_FOLDER}`);
+  } catch(e) {
+    await gPost(`/sites/${spSiteId}/drive/root/children`, {
+      name: PHOTO_FOLDER,
+      folder: {},
+      '@microsoft.graph.conflictBehavior': 'rename'
+    });
+  }
+}
+
+async function uploadPhoto(file, projectClient, roomName) {
+  await getIds();
+  await ensurePhotoFolder();
+  const ts = new Date().toISOString().slice(0,10);
+  const safe = s => s.replace(/[^a-zA-Z0-9]/g,'-');
+  const filename = `${safe(projectClient)}-${safe(roomName)}-${ts}-${Date.now()}${file.name.match(/\.[^.]+$/)?.[0]||'.jpg'}`;
+  const tok = await getToken();
+  const url = `${GRAPH}/sites/${spSiteId}/drive/root:/${PHOTO_FOLDER}/${filename}:/content`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer '+tok, 'Content-Type': file.type||'image/jpeg' },
+    body: file
+  });
+  if (!res.ok) { const t=await res.text(); throw new Error('Upload failed: '+t); }
+  const data = await res.json();
+  // Get sharing link
+  const linkRes = await gPost(`/sites/${spSiteId}/drive/items/${data.id}/createLink`, {
+    type: 'view', scope: 'organization'
+  });
+  return { name: filename, url: linkRes.link.webUrl, id: data.id };
+}
+
+function renderRoomPhotos(i) {
+  const r = roomEditTemp[i];
+  const photos = r.photos||[];
+  const thumbs = photos.map((ph,pi) =>
+    `<div class="rph-thumb">
+      <img src="${h(ph.url)}" onclick="window.open('${h(ph.url)}','_blank')" title="${h(ph.name)}">
+      <button class="rph-del" onclick="removePhoto(${i},${pi})" title="Remove">×</button>
+    </div>`
+  ).join('');
+  return `<div class="rph" id="rph-${i}">${thumbs}</div>
+    <div class="uploading" id="upl-${i}" style="display:none">Uploading…</div>`;
+}
+
+function removePhoto(roomIdx, photoIdx) {
+  roomEditTemp[roomIdx].photos = (roomEditTemp[roomIdx].photos||[]).filter((_,i)=>i!==photoIdx);
+  // Re-render just the photo section
+  document.getElementById('rph-'+roomIdx).outerHTML = renderRoomPhotos(roomIdx).split('<div class="uploading"')[0];
+}
+
+async function handlePhotoUpload(input, roomIdx) {
+  const p = projects.find(x=>String(x.id)===String(roomEditId));
+  if (!p||!input.files.length) return;
+  const statusEl = document.getElementById('upl-'+roomIdx);
+  if (statusEl) statusEl.style.display='block';
+  try {
+    for (const file of input.files) {
+      const ph = await uploadPhoto(file, p.client, roomEditTemp[roomIdx].name);
+      roomEditTemp[roomIdx].photos = roomEditTemp[roomIdx].photos||[];
+      roomEditTemp[roomIdx].photos.push(ph);
+      // Re-render photo strip
+      const strip = document.getElementById('rph-'+roomIdx);
+      if (strip) {
+        const thumb = document.createElement('div');
+        thumb.className='rph-thumb';
+        thumb.innerHTML=`<img src="${h(ph.url)}" onclick="window.open('${h(ph.url)}','_blank')" title="${h(ph.name)}">
+          <button class="rph-del" onclick="removePhoto(${roomIdx},${(roomEditTemp[roomIdx].photos.length-1)})" title="Remove">×</button>`;
+        strip.appendChild(thumb);
+      }
+    }
+    toast('Photo uploaded ✓');
+  } catch(e) {
+    toast('Upload failed: '+e.message, 4000);
+    console.error(e);
+  } finally {
+    if (statusEl) statusEl.style.display='none';
+    input.value='';
+  }
+}
+
 function openRoomModal(el){
   const p=pFromEl(el); if(!p) return;
   roomEditId=p.id;
-  roomEditTemp=p.rooms.map(r=>({...r}));
+  roomEditTemp=p.rooms.map(r=>({...r, photos:[...(r.photos||[])]}));
   document.getElementById('roomModalTitle').textContent='Room measurements — '+p.client;
   document.getElementById('roomModalContent').innerHTML=roomEditTemp.length
-    ?roomEditTemp.map((r,i)=>`<div class="rup"><span class="run">${h(r.name)}</span><div class="ruc">
-        <label class="cl2"><input type="checkbox" ${r.m1?'checked':''} onchange="roomEditTemp[${i}].m1=this.checked"> M1 Adrian</label>
-        <label class="cl2"><input type="checkbox" ${r.m2?'checked':''} onchange="roomEditTemp[${i}].m2=this.checked"> M2 Chris</label>
-      </div></div>`).join('')
+    ?roomEditTemp.map((r,i)=>`<div class="rup">
+        <div class="rup-top">
+          <span class="run">${h(r.name)}</span>
+          <div class="ruc">
+            <label class="cl2"><input type="checkbox" ${r.m1?'checked':''} onchange="roomEditTemp[${i}].m1=this.checked"> M1 Adrian</label>
+            <label class="cl2"><input type="checkbox" ${r.m2?'checked':''} onchange="roomEditTemp[${i}].m2=this.checked"> M2 Chris</label>
+          </div>
+          <label class="upbtn" title="Attach photo">
+            📷 Add photo
+            <input type="file" accept="image/*" multiple onchange="handlePhotoUpload(this,${i})">
+          </label>
+        </div>
+        ${renderRoomPhotos(i)}
+      </div>`).join('')
     :'<p style="font-size:13px;color:var(--t2)">No rooms on this project yet. Edit the project first.</p>';
   document.getElementById('roomModal').classList.add('open');
 }
