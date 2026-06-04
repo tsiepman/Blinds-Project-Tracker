@@ -62,8 +62,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .fins{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .fi{flex:1;min-width:180px;font-size:13px;padding:7px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit}
 .fw{font-size:13px;padding:7px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
-.dg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
-@media(max-width:560px){.dg{grid-template-columns:1fr}.summary-bar{grid-template-columns:repeat(2,1fr)}}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+@media(max-width:560px){.detail-grid{grid-template-columns:1fr}.summary-bar{grid-template-columns:repeat(2,1fr)}}
 .ds{background:var(--s2);border-radius:var(--r);padding:12px;border:.5px solid var(--border)}
 .fr{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:.5px solid var(--border)}
 .fr:last-child{border-bottom:none}
@@ -551,7 +551,7 @@ function buildCard(p,idx){
         </div>
       </div>
       ${(()=>{try{return buildQuoteSection(p,idx);}catch(e){console.error("buildQuoteSection error:",e);return "";}})()}
-      <div class="dg">
+      <div class="detail-grid">
         <div class="ds">
           <h4>Project details</h4>
           <div class="fr"><span class="fl">Mount type</span><span class="fv ${p.mount?'ok':'pend'}">${h(p.mount||'Not confirmed')}</span></div>
