@@ -601,7 +601,7 @@ function renderCard(p) {
   const ready = isReady(p) && !isOrdered(p);
   const ordered = isOrdered(p);
   const ni = needsInfo(p);
-  const exp = p.id === expandedId;
+  const exp = String(p.id) === String(expandedId);
   const m1done = p.rooms.filter(r=>r.m1).length;
   const m2done = p.rooms.filter(r=>r.m2).length;
   const total  = p.rooms.length;
@@ -702,7 +702,11 @@ function renderCard(p) {
 }
 
 /* ── Interactions ── */
-function toggleCard(id) { expandedId = expandedId===id ? null : id; render(); }
+function toggleCard(id) { 
+  const sid = String(id);
+  expandedId = expandedId === sid ? null : sid; 
+  render(); 
+}
 function setTab(tab) {
   activeTab=tab; activeFilter='all';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
