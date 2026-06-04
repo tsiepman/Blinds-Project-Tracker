@@ -5,194 +5,161 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ART Blinds Project Tracker</title>
 <style>
-  :root {
-    --bg: #f9f8f6; --surface: #ffffff; --surface-2: #f4f3f0;
-    --border: rgba(0,0,0,0.1); --border-md: rgba(0,0,0,0.18);
-    --text: #1a1a18; --text-2: #6b6b67; --text-3: #9b9b96;
-    --blue: #1a6bbf; --blue-bg: #e8f0fa;
-    --green: #2d7a3a; --green-bg: #e6f4e8;
-    --amber: #8a5500; --amber-bg: #fdf3dc;
-    --red: #b03030; --red-bg: #fdeaea;
-    --radius: 8px; --radius-lg: 12px;
-    --shadow: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 0.5px rgba(0,0,0,0.07);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #18181a; --surface: #222224; --surface-2: #2c2c2e;
-      --border: rgba(255,255,255,0.1); --border-md: rgba(255,255,255,0.18);
-      --text: #f0efec; --text-2: #a0a09c; --text-3: #68686a;
-      --blue: #5da0e8; --blue-bg: rgba(93,160,232,0.12);
-      --green: #5ab868; --green-bg: rgba(90,184,104,0.12);
-      --amber: #e0a840; --amber-bg: rgba(224,168,64,0.12);
-      --red: #e06060; --red-bg: rgba(224,96,96,0.12);
-      --shadow: 0 1px 4px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.06);
-    }
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
-  .app { max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
-  .app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
-  .app-title { font-size: 20px; font-weight: 600; }
-  .app-title span { font-size: 13px; font-weight: 400; color: var(--text-2); margin-left: 8px; }
-  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .user-badge { font-size: 12px; padding: 4px 10px; border-radius: 20px; background: var(--blue-bg); color: var(--blue); }
-  .btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 7px 14px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); cursor: pointer; font-family: inherit; transition: background 0.1s; white-space: nowrap; }
-  .btn:hover { background: var(--surface-2); }
-  .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
-  .btn-primary:hover { opacity: 0.88; }
-  .btn-sm { font-size: 12px; padding: 5px 10px; }
-  .btn-danger { background: var(--red-bg); color: var(--red); border-color: var(--red); }
-  .summary-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
-  .summary-card { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 14px 16px; text-align: center; }
-  .summary-num { font-size: 26px; font-weight: 600; }
-  .summary-label { font-size: 11px; color: var(--text-2); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .tabs { display: flex; border-bottom: 0.5px solid var(--border); margin-bottom: 16px; }
-  .tab { font-size: 13px; padding: 9px 18px; border: none; background: none; color: var(--text-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -0.5px; font-family: inherit; }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--text); }
-  .filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
-  .filter-chip { font-size: 11px; padding: 4px 12px; border-radius: 20px; border: 0.5px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; font-family: inherit; }
-  .filter-chip.active { background: var(--surface-2); color: var(--text); border-color: var(--border-md); }
-  .project-list { display: flex; flex-direction: column; gap: 10px; }
-  .empty-state { text-align: center; padding: 48px 24px; color: var(--text-2); font-size: 13px; }
-  .project-card { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; }
-  .card-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; user-select: none; }
-  .card-header:hover { background: var(--surface-2); }
-  .card-left { flex: 1; min-width: 0; }
-  .card-name { font-size: 14px; font-weight: 600; }
-  .card-meta { font-size: 12px; color: var(--text-2); margin-top: 3px; }
-  .card-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .chevron { font-size: 18px; color: var(--text-3); transition: transform 0.2s; display: inline-block; }
-  .chevron.open { transform: rotate(180deg); }
-  .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; white-space: nowrap; font-weight: 500; }
-  .badge-stage { background: var(--surface-2); color: var(--text-2); border: 0.5px solid var(--border); }
-  .badge-ready { background: var(--green-bg); color: var(--green); }
-  .badge-info { background: var(--amber-bg); color: var(--amber); }
-  .badge-ordered { background: var(--blue-bg); color: var(--blue); }
-  .progress-bar { height: 3px; background: var(--surface-2); }
-  .progress-fill { height: 100%; background: var(--blue); transition: width 0.4s; }
-  .detail-panel { display: none; padding: 0 16px 16px; border-top: 0.5px solid var(--border); }
-  .detail-panel.open { display: block; }
-  .detail-panel-inner { padding-top: 16px; }
-  .info-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-  .info-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 4px 10px; border-radius: 20px; background: var(--amber-bg); color: var(--amber); }
-  .fabric-box { background: var(--surface-2); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; border: 0.5px solid var(--border); }
-  .fabric-box h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
-  .fabric-current { font-size: 14px; font-weight: 600; margin-bottom: 4px; min-height: 20px; }
-  .fabric-current.empty { font-weight: 400; color: var(--amber); font-style: italic; }
-  .fabric-source { font-size: 11px; color: var(--text-3); margin-bottom: 12px; }
-  .fabric-inputs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .fabric-input { flex: 1; min-width: 180px; font-size: 13px; padding: 7px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; }
-  .fabric-who { font-size: 13px; padding: 7px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; cursor: pointer; }
-  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-  @media (max-width: 560px) { .detail-grid { grid-template-columns: 1fr; } .summary-bar { grid-template-columns: repeat(2,1fr); } }
-  .detail-section { background: var(--surface-2); border-radius: var(--radius); padding: 12px; border: 0.5px solid var(--border); }
-  .detail-section h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
-  .field-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 0.5px solid var(--border); }
-  .field-row:last-child { border-bottom: none; }
-  .field-label { font-size: 12px; color: var(--text-2); }
-  .field-value { font-size: 12px; font-weight: 600; text-align: right; max-width: 60%; }
-  .field-value.confirmed { color: var(--green); }
-  .field-value.pending { color: var(--amber); }
-  .rooms-section { margin-bottom: 14px; }
-  .rooms-section h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-  .rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; margin-bottom: 8px; }
-  .room-chip { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--surface-2); border-radius: var(--radius); border: 0.5px solid var(--border); }
-  .room-name { font-size: 12px; flex: 1; }
-  .room-dots { display: flex; gap: 4px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; border: 0.5px solid var(--border-md); background: var(--surface); }
-  .dot.m1 { background: #1a6bbf; border-color: #1a6bbf; }
-  .dot.m2 { background: #2d7a3a; border-color: #2d7a3a; }
-  .po-box { background: var(--surface-2); border-radius: var(--radius); padding: 12px; margin-bottom: 14px; border: 0.5px solid var(--border); }
-  .po-box h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
-  .po-current { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-  .po-current.empty { font-weight: 400; color: var(--text-3); font-style: italic; }
-  .po-inputs { display: flex; gap: 6px; align-items: center; }
-  .po-input { flex: 1; font-size: 13px; padding: 7px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; }
-  .timeline { margin-bottom: 14px; }
-  .timeline h4 { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
-  .tl-entries { display: flex; flex-direction: column; gap: 8px; }
-  .tl-entry { display: flex; gap: 10px; align-items: flex-start; }
-  .tl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
-  .tl-dot.normal { background: var(--blue); }
-  .tl-dot.fabric { background: var(--green); }
-  .tl-dot.po { background: var(--amber); }
-  .tl-body { flex: 1; }
-  .tl-text { font-size: 12px; color: var(--text-2); }
-  .tl-meta { font-size: 11px; color: var(--text-3); margin-top: 1px; }
-  .divider { border: none; border-top: 0.5px solid var(--border); margin: 14px 0; }
-  .actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-  .stage-select { font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; cursor: pointer; }
-  .note-input { flex: 1; min-width: 120px; font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; }
-  .note-input::placeholder { color: var(--text-3); }
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 16px; }
-  .modal-overlay.open { display: flex; }
-  .modal { background: var(--surface); border-radius: var(--radius-lg); box-shadow: 0 8px 32px rgba(0,0,0,0.2); padding: 24px; width: 540px; max-width: 100%; max-height: 90vh; overflow-y: auto; }
-  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
-  .form-group { margin-bottom: 14px; }
-  .form-group label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; font-weight: 500; }
-  .form-group input, .form-group select, .form-group textarea { width: 100%; font-size: 13px; padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-md); background: var(--surface); color: var(--text); font-family: inherit; }
-  .form-group textarea { resize: vertical; min-height: 70px; }
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
-  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; border-top: 0.5px solid var(--border); padding-top: 16px; }
-  .room-builder { border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px; margin-top: 6px; display: flex; flex-direction: column; gap: 6px; min-height: 44px; }
-  .room-entry { display: flex; gap: 6px; align-items: center; }
-  .room-entry input { flex: 1; }
-  .rm-del { background: none; border: none; cursor: pointer; color: var(--text-3); font-size: 18px; padding: 0 4px; line-height: 1; }
-  .rm-del:hover { color: var(--red); }
-  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .chip { font-size: 12px; padding: 4px 12px; border-radius: 20px; background: var(--surface-2); color: var(--text-2); cursor: pointer; border: 0.5px solid var(--border); font-family: inherit; }
-  .chip.active { background: var(--amber-bg); color: var(--amber); border-color: var(--amber); }
-  .signin-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 16px; text-align: center; }
-  .signin-screen h2 { font-size: 22px; font-weight: 600; }
-  .signin-screen p { color: var(--text-2); font-size: 14px; max-width: 380px; }
-  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .sync-status { font-size: 11px; color: var(--text-3); }
-  .sync-status.syncing { color: var(--amber); }
-  .sync-status.error { color: var(--red); }
-  .room-update-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
-  .room-update-row:last-child { border-bottom: none; }
-  .room-update-name { flex: 1; font-size: 13px; }
-  .room-update-checks { display: flex; gap: 16px; }
-  .check-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; }
-  .digest-body { font-size: 13px; line-height: 1.8; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px; }
-  .digest-section { margin-bottom: 16px; }
-  .digest-section:last-child { margin-bottom: 0; }
-  .digest-section-title { font-weight: 600; margin-bottom: 6px; }
-  .digest-item { padding-left: 14px; color: var(--text-2); margin-bottom: 4px; }
-  .digest-sub { padding-left: 24px; color: var(--text-3); font-size: 12px; }
-  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); font-size: 13px; padding: 10px 20px; border-radius: var(--radius-lg); opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; white-space: nowrap; }
-  .toast.show { opacity: 1; }
-  input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+:root{--bg:#f9f8f6;--surface:#fff;--s2:#f4f3f0;--border:rgba(0,0,0,.1);--bmd:rgba(0,0,0,.18);--text:#1a1a18;--t2:#6b6b67;--t3:#9b9b96;--blue:#1a6bbf;--bbg:#e8f0fa;--green:#2d7a3a;--gbg:#e6f4e8;--amber:#8a5500;--abg:#fdf3dc;--red:#b03030;--rbg:#fdeaea;--r:8px;--rl:12px;--sh:0 1px 4px rgba(0,0,0,.07),0 0 0 .5px rgba(0,0,0,.07)}
+@media(prefers-color-scheme:dark){:root{--bg:#18181a;--surface:#222224;--s2:#2c2c2e;--border:rgba(255,255,255,.1);--bmd:rgba(255,255,255,.18);--text:#f0efec;--t2:#a0a09c;--t3:#68686a;--blue:#5da0e8;--bbg:rgba(93,160,232,.12);--green:#5ab868;--gbg:rgba(90,184,104,.12);--amber:#e0a840;--abg:rgba(224,168,64,.12);--red:#e06060;--rbg:rgba(224,96,96,.12);--sh:0 1px 4px rgba(0,0,0,.3),0 0 0 .5px rgba(255,255,255,.06)}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100vh}
+.app{max-width:900px;margin:0 auto;padding:24px 16px 80px}
+.app-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.app-title{font-size:20px;font-weight:600}
+.app-title span{font-size:13px;font-weight:400;color:var(--t2);margin-left:8px}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.user-badge{font-size:12px;padding:4px 10px;border-radius:20px;background:var(--bbg);color:var(--blue)}
+.btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:7px 14px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);cursor:pointer;font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--s2)}
+.btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn-primary:hover{opacity:.88}
+.btn-sm{font-size:12px;padding:5px 10px}
+.summary-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.sc{background:var(--surface);border-radius:var(--rl);box-shadow:var(--sh);padding:14px 16px;text-align:center}
+.sn{font-size:26px;font-weight:600}
+.sl{font-size:11px;color:var(--t2);margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.tabs{display:flex;border-bottom:.5px solid var(--border);margin-bottom:16px}
+.tab{font-size:13px;padding:9px 18px;border:none;background:none;color:var(--t2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-.5px;font-family:inherit}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);font-weight:600;border-bottom-color:var(--text)}
+.filters{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.fc{font-size:11px;padding:4px 12px;border-radius:20px;border:.5px solid var(--border);background:var(--surface);color:var(--t2);cursor:pointer;font-family:inherit}
+.fc.active{background:var(--s2);color:var(--text);border-color:var(--bmd)}
+.project-list{display:flex;flex-direction:column;gap:10px}
+.empty-state{text-align:center;padding:48px 24px;color:var(--t2);font-size:13px}
+.pc{background:var(--surface);border-radius:var(--rl);box-shadow:var(--sh);overflow:hidden}
+.ch{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;user-select:none}
+.ch:hover{background:var(--s2)}
+.cl{flex:1;min-width:0}
+.cn{font-size:14px;font-weight:600}
+.cm{font-size:12px;color:var(--t2);margin-top:3px}
+.cr{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.chv{font-size:18px;color:var(--t3);transition:transform .2s;display:inline-block}
+.chv.open{transform:rotate(180deg)}
+.badge{font-size:11px;padding:3px 10px;border-radius:20px;white-space:nowrap;font-weight:500}
+.bs{background:var(--s2);color:var(--t2);border:.5px solid var(--border)}
+.br{background:var(--gbg);color:var(--green)}
+.bi{background:var(--abg);color:var(--amber)}
+.bo{background:var(--bbg);color:var(--blue)}
+.pb{height:3px;background:var(--s2)}
+.pf{height:100%;background:var(--blue);transition:width .4s}
+.dp{display:none;padding:0 16px 16px;border-top:.5px solid var(--border)}
+.dp.open{display:block}
+.dpi{padding-top:16px}
+.itags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.it{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 10px;border-radius:20px;background:var(--abg);color:var(--amber)}
+.fb{background:var(--s2);border-radius:var(--r);padding:14px;margin-bottom:14px;border:.5px solid var(--border)}
+.fb h4,.ds h4,.rs h4,.tl h4,.pob h4{font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.fc2{font-size:14px;font-weight:600;margin-bottom:4px;min-height:20px}
+.fc2.empty{font-weight:400;color:var(--amber);font-style:italic}
+.fsrc{font-size:11px;color:var(--t3);margin-bottom:12px}
+.fins{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.fi{flex:1;min-width:180px;font-size:13px;padding:7px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit}
+.fw{font-size:13px;padding:7px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
+.dg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+@media(max-width:560px){.dg{grid-template-columns:1fr}.summary-bar{grid-template-columns:repeat(2,1fr)}}
+.ds{background:var(--s2);border-radius:var(--r);padding:12px;border:.5px solid var(--border)}
+.fr{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:.5px solid var(--border)}
+.fr:last-child{border-bottom:none}
+.fl{font-size:12px;color:var(--t2)}
+.fv{font-size:12px;font-weight:600;text-align:right;max-width:60%}
+.fv.ok{color:var(--green)}
+.fv.pend{color:var(--amber)}
+.rs{margin-bottom:14px}
+.rg{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;margin-bottom:8px}
+.rc{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s2);border-radius:var(--r);border:.5px solid var(--border)}
+.rn{font-size:12px;flex:1}
+.rd{display:flex;gap:4px}
+.dot{width:9px;height:9px;border-radius:50%;border:.5px solid var(--bmd);background:var(--surface)}
+.dot.m1{background:#1a6bbf;border-color:#1a6bbf}
+.dot.m2{background:#2d7a3a;border-color:#2d7a3a}
+.pob{background:var(--s2);border-radius:var(--r);padding:12px;margin-bottom:14px;border:.5px solid var(--border)}
+.poc{font-size:14px;font-weight:600;margin-bottom:8px}
+.poc.empty{font-weight:400;color:var(--t3);font-style:italic}
+.poi{display:flex;gap:6px;align-items:center}
+.pi{flex:1;font-size:13px;padding:7px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit}
+.tl{margin-bottom:14px}
+.tle{display:flex;flex-direction:column;gap:8px}
+.te{display:flex;gap:10px;align-items:flex-start}
+.td{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.td.normal{background:var(--blue)}
+.td.fabric{background:var(--green)}
+.td.po{background:var(--amber)}
+.tb{flex:1}
+.tt{font-size:12px;color:var(--t2)}
+.tm{font-size:11px;color:var(--t3);margin-top:1px}
+.div{border:none;border-top:.5px solid var(--border);margin:14px 0}
+.ar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.ss{font-size:12px;padding:6px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
+.ni{flex:1;min-width:120px;font-size:12px;padding:6px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit}
+.ni::placeholder{color:var(--t3)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:var(--rl);box-shadow:0 8px 32px rgba(0,0,0,.2);padding:24px;width:540px;max-width:100%;max-height:90vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:600;margin-bottom:18px}
+.fg{margin-bottom:14px}
+.fg label{display:block;font-size:12px;color:var(--t2);margin-bottom:5px;font-weight:500}
+.fg input,.fg select,.fg textarea{width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);font-family:inherit}
+.fg textarea{resize:vertical;min-height:70px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:480px){.form-row{grid-template-columns:1fr}}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;border-top:.5px solid var(--border);padding-top:16px}
+.rb{border:.5px solid var(--border);border-radius:var(--r);padding:10px;margin-top:6px;display:flex;flex-direction:column;gap:6px;min-height:44px}
+.re{display:flex;gap:6px;align-items:center}
+.re input{flex:1}
+.rdel{background:none;border:none;cursor:pointer;color:var(--t3);font-size:18px;padding:0 4px;line-height:1}
+.rdel:hover{color:var(--red)}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chip{font-size:12px;padding:4px 12px;border-radius:20px;background:var(--s2);color:var(--t2);cursor:pointer;border:.5px solid var(--border);font-family:inherit}
+.chip.active{background:var(--abg);color:var(--amber);border-color:var(--amber)}
+.signin-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;gap:16px;text-align:center}
+.signin-screen h2{font-size:22px;font-weight:600}
+.signin-screen p{color:var(--t2);font-size:14px;max-width:380px}
+.sync{font-size:11px;color:var(--t3)}
+.sync.syncing{color:var(--amber)}
+.sync.err{color:var(--red)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-size:13px;padding:10px 20px;border-radius:var(--rl);opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap}
+.toast.show{opacity:1}
+.rup{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:.5px solid var(--border)}
+.rup:last-child{border-bottom:none}
+.run{flex:1;font-size:13px}
+.ruc{display:flex;gap:16px}
+.cl2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t2);cursor:pointer}
+.db{font-size:13px;line-height:1.8;border:.5px solid var(--border);border-radius:var(--r);padding:16px}
+.dbs{margin-bottom:16px}
+.dbs:last-child{margin-bottom:0}
+.dbst{font-weight:600;margin-bottom:6px}
+.dbi{padding-left:14px;color:var(--t2);margin-bottom:4px}
+.dbsb{padding-left:24px;color:var(--t3);font-size:12px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:1px}
 </style>
 </head>
 <body>
 
-<!-- Sign-in screen -->
 <div class="app" id="signinScreen">
   <div class="signin-screen">
     <div style="font-size:48px">🪟</div>
     <h2>ART Blinds Tracker</h2>
     <p>Sign in with your Advance Electronics Microsoft account to access the shared project tracker.</p>
-    <button class="btn btn-primary" onclick="signIn()" style="font-size:15px;padding:10px 24px">Sign in with Microsoft</button>
-    <div id="signinStatus" style="font-size:13px;color:var(--text-2);min-height:20px"></div>
+    <button class="btn btn-primary" id="signinBtn" style="font-size:15px;padding:10px 24px">Sign in with Microsoft</button>
+    <div id="signinStatus" style="font-size:13px;color:var(--t2);min-height:20px"></div>
   </div>
 </div>
 
-<!-- Main app (hidden until signed in) -->
 <div class="app" id="mainApp" style="display:none">
   <div class="app-header">
-    <div class="app-title">
-      ART — Blinds tracker
-      <span id="syncStatus" class="sync-status">—</span>
-    </div>
+    <div class="app-title">ART — Blinds tracker <span id="syncStatus" class="sync">—</span></div>
     <div class="header-actions">
       <span class="user-badge" id="userBadge">—</span>
       <button class="btn" onclick="openDigest()">📧 Weekly digest</button>
       <button class="btn btn-primary" onclick="openNewProject()">+ New project</button>
-      <button class="btn btn-sm" onclick="signOut()">Sign out</button>
+      <button class="btn btn-sm" onclick="doSignOut()">Sign out</button>
     </div>
   </div>
   <div class="summary-bar" id="summaryBar"></div>
@@ -206,48 +173,28 @@
   <div class="project-list" id="projectList"></div>
 </div>
 
-<!-- New/Edit Project Modal -->
 <div class="modal-overlay" id="projectModal">
   <div class="modal">
-    <h3 id="projectModalTitle">New blind project</h3>
+    <h3 id="pmTitle">New blind project</h3>
     <div class="form-row">
-      <div class="form-group"><label>Client name *</label><input id="pm-client" placeholder="e.g. Merkel"></div>
-      <div class="form-group"><label>Project / address</label><input id="pm-project" placeholder="e.g. FR29 LOT26 Cottage"></div>
+      <div class="fg"><label>Client name *</label><input id="pm-client" placeholder="e.g. Merkel"></div>
+      <div class="fg"><label>Project / address</label><input id="pm-project" placeholder="e.g. FR29 LOT26 Cottage"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Lead</label>
-        <select id="pm-lead"><option>Bruno</option><option>Trevor</option></select></div>
-      <div class="form-group"><label>Quote type</label>
-        <select id="pm-type">
-          <option>Lutron (Trevor quotes)</option>
-          <option>Hunter Douglas (Francisco quotes)</option>
-          <option>Mixed</option>
-        </select></div>
+      <div class="fg"><label>Lead</label><select id="pm-lead"><option>Bruno</option><option>Trevor</option></select></div>
+      <div class="fg"><label>Quote type</label><select id="pm-type"><option>Lutron (Trevor quotes)</option><option>Hunter Douglas (Francisco quotes)</option><option>Mixed</option></select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Mount type</label>
-        <select id="pm-mount">
-          <option value="">Unknown</option>
-          <option>Recessed ceiling</option>
-          <option>Inside mount w/ valance</option>
-          <option>Mixed</option>
-        </select></div>
-      <div class="form-group"><label>Power type</label>
-        <select id="pm-power">
-          <option value="">Unknown</option>
-          <option>Wired</option>
-          <option>Battery</option>
-          <option>Mixed</option>
-        </select></div>
+      <div class="fg"><label>Mount type</label><select id="pm-mount"><option value="">Unknown</option><option>Recessed ceiling</option><option>Inside mount w/ valance</option><option>Mixed</option></select></div>
+      <div class="fg"><label>Power type</label><select id="pm-power"><option value="">Unknown</option><option>Wired</option><option>Battery</option><option>Mixed</option></select></div>
     </div>
-    <div class="form-group"><label>Fabric selection (if known)</label>
-      <input id="pm-fabric" placeholder="e.g. Mosaic Flint &lt;2% / Blackout primary bedroom"></div>
-    <div class="form-group">
+    <div class="fg"><label>Fabric selection (if known)</label><input id="pm-fabric" placeholder="e.g. Mosaic Flint &lt;2% / Blackout primary bedroom"></div>
+    <div class="fg">
       <label>Rooms / areas</label>
-      <div class="room-builder" id="roomBuilder"></div>
+      <div class="rb" id="roomBuilder"></div>
       <button class="btn btn-sm" style="margin-top:8px" onclick="addRoomEntry()">+ Add room</button>
     </div>
-    <div class="form-group">
+    <div class="fg">
       <label>Needs information — waiting on:</label>
       <div class="chip-row" id="needsInfoChips">
         <button class="chip" onclick="toggleChip(this)">Floor plans</button>
@@ -258,8 +205,7 @@
         <button class="chip" onclick="toggleChip(this)">Builder access</button>
       </div>
     </div>
-    <div class="form-group"><label>Initial note</label>
-      <textarea id="pm-note" placeholder="Any context to capture..."></textarea></div>
+    <div class="fg"><label>Initial note</label><textarea id="pm-note" placeholder="Any context to capture..."></textarea></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal('projectModal')">Cancel</button>
       <button class="btn btn-primary" id="saveProjectBtn" onclick="saveProject()">Save project</button>
@@ -267,11 +213,10 @@
   </div>
 </div>
 
-<!-- Room Measurements Modal -->
 <div class="modal-overlay" id="roomModal">
   <div class="modal">
     <h3 id="roomModalTitle">Room measurements</h3>
-    <p style="font-size:12px;color:var(--text-2);margin-bottom:14px">● Blue = Adrian (M1) &nbsp;·&nbsp; ● Green = Chris (M2)</p>
+    <p style="font-size:12px;color:var(--t2);margin-bottom:14px">● Blue = Adrian (M1) &nbsp;·&nbsp; ● Green = Chris (M2)</p>
     <div id="roomModalContent"></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal('roomModal')">Cancel</button>
@@ -280,46 +225,27 @@
   </div>
 </div>
 
-<!-- Digest Modal -->
 <div class="modal-overlay" id="digestModal">
   <div class="modal" style="width:600px">
-    <h3 id="digestModalTitle">Weekly digest</h3>
-    <div id="digestModalContent"></div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal('digestModal')">Close</button>
-    </div>
+    <h3 id="digestTitle">Weekly digest</h3>
+    <div id="digestContent"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('digestModal')">Close</button></div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<!-- MSAL -->
 <script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" crossorigin="anonymous"></script>
-
 <script>
-/* ── Config ── */
-const CLIENT_ID   = '7b0d92bf-6e34-497e-9938-7860ba268631';
-const TENANT_ID   = '2e6ff905-d709-43db-94a5-c11d318118ee';
-const SP_SITE     = 'https://advanceelectronics.sharepoint.com/sites/ART43';
-const LIST_NAME   = 'ART Blinds Tracker';
-const GRAPH_BASE  = 'https://graph.microsoft.com/v1.0';
-const REDIRECT    = 'https://tsiepman.github.io/Blinds-Project-Tracker';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const REDIRECT  = 'https://tsiepman.github.io/Blinds-Project-Tracker';
+const SP_HOST   = 'advanceelectronics.sharepoint.com';
+const SP_PATH   = '/sites/ART43';
+const LIST_NAME = 'ART Blinds Tracker';
+const GRAPH     = 'https://graph.microsoft.com/v1.0';
+const SCOPES    = ['Sites.ReadWrite.All','User.Read'];
 
-const loginRequest = { scopes: ['Sites.ReadWrite.All', 'User.Read'] };
-
-// msalClient initialized after DOM ready to ensure MSAL library is loaded
-let msalClient = null;
-
-function initMsal() {
-  const lib = window._msallib;
-  const msalConfig = {
-    auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: REDIRECT },
-    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
-  };
-  msalClient = new lib.PublicClientApplication(msalConfig);
-}
-
-/* ── State ── */
 const STAGES = [
   {id:'meeting',        label:'Initial meeting',              pct:5  },
   {id:'waiting-info',   label:'Waiting on information',       pct:15 },
@@ -333,452 +259,393 @@ const STAGES = [
   {id:'ordered',        label:'Ordered',                      pct:95 },
   {id:'received',       label:'Received / install scheduled', pct:100},
 ];
-const STAGE_COLORS = {
-  'meeting':'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf',
-  'quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf',
-  'measure-1':'#2a7a35','measure-2':'#2a7a35','ready':'#2d7a3a','ordered':'#2d7a3a','received':'#2d7a3a'
-};
+const SC = {meeting:'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf','quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf','measure-1':'#2a7a35','measure-2':'#2a7a35',ready:'#2d7a3a',ordered:'#2d7a3a',received:'#2d7a3a'};
 
-let projects = [];
-let activeTab = 'all', activeFilter = 'all', expandedId = null;
+let msalClient = null;
+let projects = [], expandedId = null, activeTab = 'all', activeFilter = 'all';
 let editingId = null, roomEditId = null, roomEditTemp = [];
 let currentUser = null, spSiteId = null, spListId = null;
-let accessToken = null;
 
-/* ── Helpers ── */
-const stageObj   = id => STAGES.find(s => s.id === id) || STAGES[0];
-const needsInfo  = p  => (p.blockers||[]).length > 0;
-const isReady    = p  => p.stage==='ready'||p.stage==='ordered'||p.stage==='received'||
-  (!needsInfo(p)&&p.fabric&&p.mount&&p.power&&p.rooms.length>0&&p.rooms.every(r=>r.m1&&r.m2));
-const isOrdered  = p  => p.stage==='ordered'||p.stage==='received';
-const nowStr     = () => new Date().toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'});
-const escHtml    = s  => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const escAttr    = s  => String(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// ── Helpers ──
+const stageObj  = id => STAGES.find(s=>s.id===id)||STAGES[0];
+const needsInfo = p  => (p.blockers||[]).length > 0;
+const isReady   = p  => p.stage==='ready'||p.stage==='ordered'||p.stage==='received'||
+  (!needsInfo(p)&&!!p.fabric&&!!p.mount&&!!p.power&&p.rooms.length>0&&p.rooms.every(r=>r.m1&&r.m2));
+const isOrdered = p  => p.stage==='ordered'||p.stage==='received';
+const nowStr    = () => new Date().toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'});
+const h = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const safeJSON  = (s,f) => { try{return s?JSON.parse(s):f;}catch(e){return f;} };
 
-function toast(msg, dur=2400) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), dur);
+function toast(msg,dur=2400){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),dur);
 }
-function setSyncStatus(msg, cls='') {
-  const el = document.getElementById('syncStatus');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = 'sync-status ' + cls;
+function setSS(msg,cls=''){
+  const el=document.getElementById('syncStatus');
+  if(el){el.textContent=msg;el.className='sync '+cls;}
 }
 
-/* ── Auth ── */
-async function signIn() {
-  document.getElementById('signinStatus').textContent = 'Redirecting to Microsoft...';
-  try {
-    await msalClient.loginRedirect(loginRequest);
-  } catch(e) {
-    console.error(e);
-    document.getElementById('signinStatus').textContent = 'Sign-in failed: ' + (e.message || e);
-  }
+// ── MSAL ──
+function initMsal(lib){
+  msalClient = new lib.PublicClientApplication({
+    auth:{clientId:CLIENT_ID,authority:`https://login.microsoftonline.com/${TENANT_ID}`,redirectUri:REDIRECT},
+    cache:{cacheLocation:'localStorage',storeAuthStateInCookie:false}
+  });
 }
 
-async function getToken() {
-  const accounts = msalClient.getAllAccounts();
-  if (!accounts.length) return null;
-  try {
-    const result = await msalClient.acquireTokenSilent({ ...loginRequest, account: accounts[0] });
-    return result.accessToken;
-  } catch(e) {
-    await msalClient.acquireTokenRedirect({ ...loginRequest, account: accounts[0] });
+function waitForLib(cb,n=0){
+  const lib = typeof msalBrowser!=='undefined'?msalBrowser:typeof msal!=='undefined'?msal:null;
+  if(lib&&lib.PublicClientApplication){initMsal(lib);cb();}
+  else if(n<40) setTimeout(()=>waitForLib(cb,n+1),100);
+  else document.getElementById('signinStatus').textContent='Could not load auth library. Please refresh.';
+}
+
+async function checkSession(){
+  try{
+    const r = await msalClient.handleRedirectPromise();
+    if(r){currentUser=r.account;await initApp();return;}
+    const accs = msalClient.getAllAccounts();
+    if(accs.length){currentUser=accs[0];await initApp();}
+    else showSignIn();
+  }catch(e){console.error(e);showSignIn();}
+}
+
+async function getToken(){
+  const accs=msalClient.getAllAccounts();
+  if(!accs.length) return null;
+  try{
+    const r=await msalClient.acquireTokenSilent({scopes:SCOPES,account:accs[0]});
+    return r.accessToken;
+  }catch(e){
+    await msalClient.acquireTokenRedirect({scopes:SCOPES,account:accs[0]});
     return null;
   }
 }
 
-function signOut() {
-  msalClient.logoutRedirect();
+function showSignIn(){
+  document.getElementById('signinScreen').style.display='';
+  document.getElementById('mainApp').style.display='none';
 }
 
-async function checkExistingSession() {
-  try {
-    const result = await msalClient.handleRedirectPromise();
-    if (result) {
-      currentUser = result.account;
-      accessToken = result.accessToken;
-      await initApp();
-      return;
-    }
-    const accounts = msalClient.getAllAccounts();
-    if (accounts.length) {
-      currentUser = accounts[0];
-      try {
-        accessToken = await getToken();
-        await initApp();
-      } catch(e) {
-        showSignIn();
-      }
-    } else {
-      showSignIn();
-    }
-  } catch(e) {
-    console.error(e);
-    showSignIn();
-  }
+document.getElementById('signinBtn').addEventListener('click',async()=>{
+  document.getElementById('signinStatus').textContent='Redirecting to Microsoft...';
+  try{ await msalClient.loginRedirect({scopes:SCOPES}); }
+  catch(e){ document.getElementById('signinStatus').textContent='Error: '+e.message; }
+});
+
+function doSignOut(){ msalClient.logoutRedirect(); }
+
+// ── Graph ──
+async function gGet(url){
+  const tok=await getToken();
+  const r=await fetch(GRAPH+url,{headers:{Authorization:'Bearer '+tok}});
+  if(!r.ok) throw new Error('GET failed '+r.status+' '+url);
+  return r.json();
+}
+async function gPost(url,body){
+  const tok=await getToken();
+  const r=await fetch(GRAPH+url,{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){const t=await r.text();throw new Error('POST failed '+r.status+' '+t);}
+  return r.json();
+}
+async function gPatch(url,body){
+  const tok=await getToken();
+  const r=await fetch(GRAPH+url,{method:'PATCH',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){const t=await r.text();throw new Error('PATCH failed '+r.status+' '+t);}
+  return r.status===204?{}:r.json();
 }
 
-function showSignIn() {
-  document.getElementById('signinScreen').style.display = '';
-  document.getElementById('mainApp').style.display = 'none';
+// ── SharePoint ──
+async function getIds(){
+  if(spSiteId&&spListId) return;
+  const sd=await gGet(`/sites/${SP_HOST}:${SP_PATH}`);
+  spSiteId=sd.id;
+  const ld=await gGet(`/sites/${spSiteId}/lists?$filter=displayName eq '${encodeURIComponent(LIST_NAME)}'`);
+  if(!ld.value.length) throw new Error(`SharePoint list "${LIST_NAME}" not found.`);
+  spListId=ld.value[0].id;
 }
 
-/* ── Graph API ── */
-async function graphGet(url) {
-  const token = await getToken();
-  const res = await fetch(GRAPH_BASE + url, {
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
-  });
-  if (!res.ok) throw new Error('Graph GET failed: ' + res.status + ' ' + url);
-  return res.json();
-}
-
-async function graphPost(url, body) {
-  const token = await getToken();
-  const res = await fetch(GRAPH_BASE + url, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) { const t = await res.text(); throw new Error('Graph POST failed: ' + res.status + ' ' + t); }
-  return res.json();
-}
-
-async function graphPatch(url, body) {
-  const token = await getToken();
-  const res = await fetch(GRAPH_BASE + url, {
-    method: 'PATCH',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) { const t = await res.text(); throw new Error('Graph PATCH failed: ' + res.status + ' ' + t); }
-  return res.status === 204 ? {} : res.json();
-}
-
-/* ── SharePoint helpers ── */
-async function getSiteAndList() {
-  if (spSiteId && spListId) return;
-  const hostname = 'advanceelectronics.sharepoint.com';
-  const sitePath = '/sites/ART43';
-  const siteData = await graphGet(`/sites/${hostname}:${sitePath}`);
-  spSiteId = siteData.id;
-  const listsData = await graphGet(`/sites/${spSiteId}/lists?$filter=displayName eq '${LIST_NAME}'`);
-  if (!listsData.value.length) throw new Error(`SharePoint list "${LIST_NAME}" not found.`);
-  spListId = listsData.value[0].id;
-}
-
-function spToProject(item) {
-  const f = item.fields;
+function spToP(item){
+  const f=item.fields;
   return {
-    id: item.id,
-    spId: item.id,
-    client: f.Client || '',
-    project: f.Project || '—',
-    lead: f.Lead || 'Bruno',
-    type: f.QuoteType || '',
-    stage: f.Stage || 'meeting',
-    mount: f.Mount || '',
-    power: f.Power || '',
-    fabric: f.Fabric || '',
-    fabricBy: f.FabricBy || '',
-    fabricDate: f.FabricDate || '',
-    blockers: safeParseJSON(f.Blockers, []),
-    rooms: safeParseJSON(f.Rooms, []),
-    log: safeParseJSON(f.Log, []),
-    poNumber: f.PONumber || '',
+    id:item.id, spId:item.id,
+    client:f.Client||'', project:f.Project||'—',
+    lead:f.Lead||'Bruno', type:f.QuoteType||'',
+    stage:f.Stage||'meeting', mount:f.Mount||'', power:f.Power||'',
+    fabric:f.Fabric||'', fabricBy:f.FabricBy||'', fabricDate:f.FabricDate||'',
+    blockers:safeJSON(f.Blockers,[]), rooms:safeJSON(f.Rooms,[]),
+    log:safeJSON(f.Log,[]), poNumber:f.PONumber||''
+  };
+}
+function pToSp(p){
+  return {
+    Client:p.client, Project:p.project, Lead:p.lead, QuoteType:p.type,
+    Stage:p.stage, Mount:p.mount, Power:p.power,
+    Fabric:p.fabric, FabricBy:p.fabricBy, FabricDate:p.fabricDate,
+    Blockers:JSON.stringify(p.blockers||[]),
+    Rooms:JSON.stringify(p.rooms||[]),
+    Log:JSON.stringify(p.log||[]),
+    PONumber:p.poNumber||''
   };
 }
 
-function projectToSp(p) {
-  return {
-    Client: p.client,
-    Project: p.project,
-    Lead: p.lead,
-    QuoteType: p.type,
-    Stage: p.stage,
-    Mount: p.mount,
-    Power: p.power,
-    Fabric: p.fabric,
-    FabricBy: p.fabricBy,
-    FabricDate: p.fabricDate,
-    Blockers: JSON.stringify(p.blockers),
-    Rooms: JSON.stringify(p.rooms),
-    Log: JSON.stringify(p.log),
-    PONumber: p.poNumber || '',
-  };
-}
-
-function safeParseJSON(str, fallback) {
-  try { return str ? JSON.parse(str) : fallback; } catch(e) { return fallback; }
-}
-
-async function loadProjects() {
-  setSyncStatus('Syncing…', 'syncing');
-  await getSiteAndList();
-  const data = await graphGet(`/sites/${spSiteId}/lists/${spListId}/items?expand=fields&$top=200`);
-  projects = data.value.map(spToProject);
-  setSyncStatus('Synced ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+async function loadProjects(){
+  setSS('Syncing…','syncing');
+  await getIds();
+  const d=await gGet(`/sites/${spSiteId}/lists/${spListId}/items?expand=fields&$top=200`);
+  projects=d.value.map(spToP);
+  setSS('Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
   render();
 }
 
-async function saveProjectToSp(p) {
-  setSyncStatus('Saving…', 'syncing');
-  await getSiteAndList();
-  const fields = projectToSp(p);
-  if (p.spId) {
-    await graphPatch(`/sites/${spSiteId}/lists/${spListId}/items/${p.spId}/fields`, fields);
-  } else {
-    const result = await graphPost(`/sites/${spSiteId}/lists/${spListId}/items`, { fields });
-    p.spId = result.id;
-    p.id = result.id;
+async function saveToSp(p){
+  setSS('Saving…','syncing');
+  await getIds();
+  if(p.spId){
+    await gPatch(`/sites/${spSiteId}/lists/${spListId}/items/${p.spId}/fields`,pToSp(p));
+  }else{
+    const r=await gPost(`/sites/${spSiteId}/lists/${spListId}/items`,{fields:pToSp(p)});
+    p.spId=r.id; p.id=r.id;
   }
-  setSyncStatus('Saved ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+  setSS('Saved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
 }
 
-/* ── App init ── */
-async function initApp() {
-  document.getElementById('signinScreen').style.display = 'none';
-  document.getElementById('mainApp').style.display = '';
-  document.getElementById('userBadge').textContent = currentUser.name || currentUser.username;
-  try {
-    await loadProjects();
-  } catch(e) {
-    console.error(e);
-    setSyncStatus('Sync error — check console', 'error');
-    toast('Could not load SharePoint data. ' + e.message, 4000);
-    render();
-  }
+async function initApp(){
+  document.getElementById('signinScreen').style.display='none';
+  document.getElementById('mainApp').style.display='';
+  document.getElementById('userBadge').textContent=currentUser.name||currentUser.username;
+  try{ await loadProjects(); }
+  catch(e){ console.error(e); setSS('Sync error','err'); toast('Could not load data: '+e.message,5000); render(); }
 }
 
-/* ── Render ── */
-function render() {
-  renderSummary(); renderFilters(); renderProjects();
+// ── Render ──
+function render(){ renderSummary(); renderFilters(); renderProjects(); }
+
+function renderSummary(){
+  const ni=projects.filter(needsInfo).length;
+  const rd=projects.filter(p=>isReady(p)&&!isOrdered(p)).length;
+  const or=projects.filter(isOrdered).length;
+  document.getElementById('summaryBar').innerHTML=
+    `<div class="sc"><div class="sn">${projects.length}</div><div class="sl">Active</div></div>
+     <div class="sc"><div class="sn" style="color:var(--amber)">${ni}</div><div class="sl">Needs info</div></div>
+     <div class="sc"><div class="sn" style="color:var(--green)">${rd}</div><div class="sl">Ready to order</div></div>
+     <div class="sc"><div class="sn" style="color:var(--blue)">${or}</div><div class="sl">Ordered</div></div>`;
 }
 
-function renderSummary() {
-  const p = projects;
-  const ni = p.filter(needsInfo).length;
-  const ready = p.filter(x => isReady(x) && !isOrdered(x)).length;
-  const ordered = p.filter(isOrdered).length;
-  document.getElementById('summaryBar').innerHTML = `
-    <div class="summary-card"><div class="summary-num">${p.length}</div><div class="summary-label">Active</div></div>
-    <div class="summary-card"><div class="summary-num" style="color:var(--amber)">${ni}</div><div class="summary-label">Needs info</div></div>
-    <div class="summary-card"><div class="summary-num" style="color:var(--green)">${ready}</div><div class="summary-label">Ready to order</div></div>
-    <div class="summary-card"><div class="summary-num" style="color:var(--blue)">${ordered}</div><div class="summary-label">Ordered</div></div>`;
-}
-
-function renderFilters() {
-  const stages = ['all', ...new Set(projects.map(p => p.stage))];
-  document.getElementById('filterBar').innerHTML = stages.map(s =>
-    `<button class="filter-chip${s===activeFilter?' active':''}" onclick="setFilter('${s}')">${s==='all'?'All stages':stageObj(s).label}</button>`
+function renderFilters(){
+  const stages=['all',...new Set(projects.map(p=>p.stage))];
+  document.getElementById('filterBar').innerHTML=stages.map(s=>
+    `<button class="fc${s===activeFilter?' active':''}" onclick="setFilter('${s}')">${s==='all'?'All stages':stageObj(s).label}</button>`
   ).join('');
 }
 
-function getFilteredProjects() {
-  let list = [...projects];
-  if (activeTab==='needs-info') list = list.filter(needsInfo);
-  else if (activeTab==='ready')  list = list.filter(p => isReady(p) && !isOrdered(p));
-  else if (activeTab==='ordered') list = list.filter(isOrdered);
-  if (activeFilter!=='all') list = list.filter(p => p.stage===activeFilter);
-  return list;
+function getFiltered(){
+  let l=[...projects];
+  if(activeTab==='needs-info') l=l.filter(needsInfo);
+  else if(activeTab==='ready') l=l.filter(p=>isReady(p)&&!isOrdered(p));
+  else if(activeTab==='ordered') l=l.filter(isOrdered);
+  if(activeFilter!=='all') l=l.filter(p=>p.stage===activeFilter);
+  return l;
 }
 
-function renderProjects() {
-  const list = getFilteredProjects();
-  const el = document.getElementById('projectList');
-  if (!list.length) {
-    el.innerHTML = `<div class="empty-state"><div style="font-size:32px">🪟</div><p>No projects match this filter.</p></div>`;
-    return;
-  }
-  el.innerHTML = list.map(renderCard).join('');
+function renderProjects(){
+  const list=getFiltered();
+  const el=document.getElementById('projectList');
+  if(!list.length){el.innerHTML='<div class="empty-state"><div style="font-size:32px">🪟</div><p>No projects match this filter.</p></div>';return;}
+  el.innerHTML='';
+  list.forEach((p,idx)=>{
+    const div=document.createElement('div');
+    div.innerHTML=buildCard(p,idx);
+    el.appendChild(div.firstElementChild);
+  });
 }
 
-function renderCard(p) {
-  const st = stageObj(p.stage);
-  const ready = isReady(p) && !isOrdered(p);
-  const ordered = isOrdered(p);
-  const ni = needsInfo(p);
-  const exp = String(p.id) === String(expandedId);
-  const m1done = p.rooms.filter(r=>r.m1).length;
-  const m2done = p.rooms.filter(r=>r.m2).length;
-  const total  = p.rooms.length;
+function buildCard(p,idx){
+  const st=stageObj(p.stage);
+  const rdy=isReady(p)&&!isOrdered(p);
+  const ord=isOrdered(p);
+  const ni=needsInfo(p);
+  const exp=String(p.id)===String(expandedId);
+  const m1=p.rooms.filter(r=>r.m1).length;
+  const m2=p.rooms.filter(r=>r.m2).length;
+  const tot=p.rooms.length;
 
-  let badge = ordered ? `<span class="badge badge-ordered">Ordered</span>`
-    : ready  ? `<span class="badge badge-ready">✓ Ready to order</span>`
-    : ni     ? `<span class="badge badge-info">⚠ Needs information</span>`
-    : `<span class="badge badge-stage" style="color:${STAGE_COLORS[p.stage]}">${st.label}</span>`;
+  const badge=ord?'<span class="badge bo">Ordered</span>'
+    :rdy?'<span class="badge br">✓ Ready to order</span>'
+    :ni?'<span class="badge bi">⚠ Needs information</span>'
+    :`<span class="badge bs" style="color:${SC[p.stage]}">${st.label}</span>`;
 
-  const infoTagsHtml = ni
-    ? `<div class="info-tags">${p.blockers.map(b=>`<span class="info-tag">⏳ ${escHtml(b)}</span>`).join('')}${!p.fabric?`<span class="info-tag">⏳ Fabric not confirmed</span>`:''}</div>`
-    : '';
+  const itags=ni?(p.blockers.map(b=>`<span class="it">⏳ ${h(b)}</span>`).join('')+(!p.fabric?'<span class="it">⏳ Fabric not confirmed</span>':'')):'';
 
-  const fabricHtml = p.fabric
-    ? `<div class="fabric-current">${escHtml(p.fabric)}</div><div class="fabric-source">${p.fabricBy?'Entered by '+p.fabricBy+(p.fabricDate?' · '+p.fabricDate:''):''}</div>`
-    : `<div class="fabric-current empty">Not yet confirmed</div><div class="fabric-source"></div>`;
+  const fabHtml=p.fabric
+    ?`<div class="fc2">${h(p.fabric)}</div><div class="fsrc">${p.fabricBy?'Entered by '+h(p.fabricBy)+(p.fabricDate?' · '+h(p.fabricDate):''):''}</div>`
+    :`<div class="fc2 empty">Not yet confirmed</div><div class="fsrc"></div>`;
 
-  const roomsHtml = !total
-    ? `<div style="font-size:12px;color:var(--text-3)">No rooms added yet</div>`
-    : p.rooms.map(r=>`<div class="room-chip"><span class="room-name">${escHtml(r.name)}</span><span class="room-dots"><span class="dot${r.m1?' m1':''}" title="M1 Adrian"></span><span class="dot${r.m2?' m2':''}" title="M2 Chris"></span></span></div>`).join('');
+  const roomsHtml=!tot?'<div style="font-size:12px;color:var(--t3)">No rooms added yet</div>'
+    :p.rooms.map(r=>`<div class="rc"><span class="rn">${h(r.name)}</span><span class="rd"><span class="dot${r.m1?' m1':''}" title="M1 Adrian"></span><span class="dot${r.m2?' m2':''}" title="M2 Chris"></span></span></div>`).join('');
 
-  const logHtml = (p.log||[]).slice(0,6).map(e=>
-    `<div class="tl-entry"><div class="tl-dot ${e.type||'normal'}"></div><div class="tl-body"><div class="tl-text">${escHtml(e.text)}</div><div class="tl-meta">${escHtml(e.time)}${e.by?' · '+escHtml(e.by):''}</div></div></div>`
-  ).join('') || `<div style="font-size:12px;color:var(--text-3)">No activity yet.</div>`;
+  const logHtml=(p.log||[]).slice(0,6).map(e=>
+    `<div class="te"><div class="td ${e.type||'normal'}"></div><div class="tb"><div class="tt">${h(e.text)}</div><div class="tm">${h(e.time)}${e.by?' · '+h(e.by):''}</div></div></div>`
+  ).join('')||'<div style="font-size:12px;color:var(--t3)">No activity yet.</div>';
 
-  const poHtml = `<div class="po-box">
-    <h4>PO Number${p.stage==='ordered'||p.stage==='received'?' (Terry)':''}</h4>
-    ${p.poNumber?`<div class="po-current">${escHtml(p.poNumber)}</div>`:`<div class="po-current empty">Not yet assigned</div>`}
-    <div class="po-inputs">
-      <input class="po-input" id="po-${p.id}" placeholder="Enter PO number" value="${escAttr(p.poNumber||'')}">
-      <button class="btn btn-sm btn-primary" data-id="${escAttr(String(p.id))}" onclick="savePO(this.dataset.id)">Save PO</button>
+  const stageOpts=STAGES.map(s=>`<option value="${s.id}"${p.stage===s.id?' selected':''}>${s.label}</option>`).join('');
+
+  return `<div class="pc" id="pc-${h(p.id)}">
+  <div class="ch" data-pidx="${idx}" onclick="toggleCard(this)">
+    <div class="cl">
+      <div class="cn">${h(p.client)}${p.project&&p.project!=='—'?' — '+h(p.project):''}</div>
+      <div class="cm">Lead: ${h(p.lead)} &nbsp;·&nbsp; ${h(p.type)}${tot?` &nbsp;·&nbsp; ${tot} rooms &nbsp; M1:${m1}/${tot} M2:${m2}/${tot}`:''}</div>
     </div>
-  </div>`;
-
-  return `<div class="project-card" id="card-${p.id}">
-    <div class="card-header" data-id="${escAttr(String(p.id))}" onclick="toggleCard(this.dataset.id)">
-      <div class="card-left">
-        <div class="card-name">${escHtml(p.client)}${p.project&&p.project!=='—'?' — '+escHtml(p.project):''}</div>
-        <div class="card-meta">Lead: ${escHtml(p.lead)} &nbsp;·&nbsp; ${escHtml(p.type)}${total?` &nbsp;·&nbsp; ${total} rooms &nbsp; M1: ${m1done}/${total} M2: ${m2done}/${total}`:''}</div>
-      </div>
-      <div class="card-right">${badge}<span class="chevron${exp?' open':''}">⌄</span></div>
-    </div>
-    <div class="progress-bar"><div class="progress-fill" style="width:${st.pct}%"></div></div>
-    <div class="detail-panel${exp?' open':''}">
-      <div class="detail-panel-inner">
-        ${infoTagsHtml}
-        <div class="fabric-box">
-          <h4>Fabric selection</h4>${fabricHtml}
-          <div class="fabric-inputs">
-            <input class="fabric-input" id="fab-${p.id}" placeholder="Fabric name, colour, openness %" value="${escAttr(p.fabric||'')}">
-            <select class="fabric-who" id="fabwho-${p.id}">
-              <option>Bruno</option><option>Trevor</option><option>Francisco</option><option>Designer</option><option>Client</option>
-            </select>
-            <button class="btn btn-sm btn-primary" data-id="${escAttr(String(p.id))}" onclick="saveFabric(this.dataset.id)">Save fabric</button>
-          </div>
-        </div>
-        ${poHtml}
-        <div class="detail-grid">
-          <div class="detail-section">
-            <h4>Project details</h4>
-            <div class="field-row"><span class="field-label">Mount type</span><span class="field-value ${p.mount?'confirmed':'pending'}">${escHtml(p.mount||'Not confirmed')}</span></div>
-            <div class="field-row"><span class="field-label">Power type</span><span class="field-value ${p.power?'confirmed':'pending'}">${escHtml(p.power||'Not confirmed')}</span></div>
-            <div class="field-row"><span class="field-label">Quote type</span><span class="field-value">${escHtml(p.type)}</span></div>
-            <div class="field-row"><span class="field-label">Lead</span><span class="field-value">${escHtml(p.lead)}</span></div>
-          </div>
-          <div class="detail-section">
-            <h4>Measurements</h4>
-            <div class="field-row"><span class="field-label">M1 — Adrian</span><span class="field-value ${m1done===total&&total?'confirmed':'pending'}">${total?m1done+'/'+total+' rooms':'No rooms yet'}</span></div>
-            <div class="field-row"><span class="field-label">M2 — Chris</span><span class="field-value ${m2done===total&&total?'confirmed':'pending'}">${total?m2done+'/'+total+' rooms':'No rooms yet'}</span></div>
-            <div style="margin-top:10px;font-size:11px;color:var(--text-3)">● Blue = Adrian &nbsp;·&nbsp; ● Green = Chris</div>
-          </div>
-        </div>
-        <div class="rooms-section">
-          <h4>Rooms</h4>
-          <div class="rooms-grid">${roomsHtml}</div>
-          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="openRoomModal(this.dataset.id)">Update room measurements</button>
-        </div>
-        <div class="timeline">
-          <h4>Activity log</h4>
-          <div class="tl-entries">${logHtml}</div>
-        </div>
-        <hr class="divider">
-        <div class="actions-row">
-          <select class="stage-select" data-id="${escAttr(String(p.id))}" onchange="updateStage(this.dataset.id, this.value)">
-            ${STAGES.map(s=>`<option value="${s.id}"${p.stage===s.id?' selected':''}>${s.label}</option>`).join('')}
-          </select>
-          <input class="note-input" id="note-${p.id}" placeholder="Add a note...">
-          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="addNote(this.dataset.id)">Log note</button>
-          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="openEditProject(this.dataset.id)">Edit</button>
-        </div>
-        <div class="actions-row" style="margin-top:8px">
-          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="searchEmails(this.dataset.id)">🔍 Search emails for updates</button>
-          <button class="btn btn-sm" data-id="${escAttr(String(p.id))}" onclick="draftEmail(this.dataset.id)">✉ Draft follow-up email</button>
+    <div class="cr">${badge}<span class="chv${exp?' open':''}">⌄</span></div>
+  </div>
+  <div class="pb"><div class="pf" style="width:${st.pct}%"></div></div>
+  <div class="dp${exp?' open':''}" id="dp-${h(p.id)}">
+    <div class="dpi">
+      ${itags?`<div class="itags">${itags}</div>`:''}
+      <div class="fb">
+        <h4>Fabric selection</h4>${fabHtml}
+        <div class="fins">
+          <input class="fi" id="fab-${h(p.id)}" placeholder="Fabric name, colour, openness %" value="${h(p.fabric||'')}">
+          <select class="fw" id="fabwho-${h(p.id)}"><option>Bruno</option><option>Trevor</option><option>Francisco</option><option>Designer</option><option>Client</option></select>
+          <button class="btn btn-sm btn-primary" data-pidx="${idx}" onclick="saveFabric(this)">Save fabric</button>
         </div>
       </div>
+      <div class="pob">
+        <h4>PO Number${ord?' (Terry)':''}</h4>
+        ${p.poNumber?`<div class="poc">${h(p.poNumber)}</div>`:'<div class="poc empty">Not yet assigned</div>'}
+        <div class="poi">
+          <input class="pi" id="po-${h(p.id)}" placeholder="Enter PO number" value="${h(p.poNumber||'')}">
+          <button class="btn btn-sm btn-primary" data-pidx="${idx}" onclick="savePO(this)">Save PO</button>
+        </div>
+      </div>
+      <div class="dg">
+        <div class="ds">
+          <h4>Project details</h4>
+          <div class="fr"><span class="fl">Mount type</span><span class="fv ${p.mount?'ok':'pend'}">${h(p.mount||'Not confirmed')}</span></div>
+          <div class="fr"><span class="fl">Power type</span><span class="fv ${p.power?'ok':'pend'}">${h(p.power||'Not confirmed')}</span></div>
+          <div class="fr"><span class="fl">Quote type</span><span class="fv">${h(p.type)}</span></div>
+          <div class="fr"><span class="fl">Lead</span><span class="fv">${h(p.lead)}</span></div>
+        </div>
+        <div class="ds">
+          <h4>Measurements</h4>
+          <div class="fr"><span class="fl">M1 — Adrian</span><span class="fv ${m1===tot&&tot?'ok':'pend'}">${tot?m1+'/'+tot+' rooms':'No rooms yet'}</span></div>
+          <div class="fr"><span class="fl">M2 — Chris</span><span class="fv ${m2===tot&&tot?'ok':'pend'}">${tot?m2+'/'+tot+' rooms':'No rooms yet'}</span></div>
+          <div style="margin-top:10px;font-size:11px;color:var(--t3)">● Blue = Adrian &nbsp;·&nbsp; ● Green = Chris</div>
+        </div>
+      </div>
+      <div class="rs">
+        <h4>Rooms</h4>
+        <div class="rg">${roomsHtml}</div>
+        <button class="btn btn-sm" data-pidx="${idx}" onclick="openRoomModal(this)">Update room measurements</button>
+      </div>
+      <div class="tl">
+        <h4>Activity log</h4>
+        <div class="tle">${logHtml}</div>
+      </div>
+      <hr class="div">
+      <div class="ar">
+        <select class="ss" data-pidx="${idx}" onchange="updateStage(this)">
+          ${stageOpts}
+        </select>
+        <input class="ni" id="note-${h(p.id)}" placeholder="Add a note...">
+        <button class="btn btn-sm" data-pidx="${idx}" onclick="addNote(this)">Log note</button>
+        <button class="btn btn-sm" data-pidx="${idx}" onclick="openEditProject(this)">Edit</button>
+      </div>
+      <div class="ar" style="margin-top:8px">
+        <button class="btn btn-sm" data-pidx="${idx}" onclick="doSearchEmails(this)">🔍 Search emails for updates</button>
+        <button class="btn btn-sm" data-pidx="${idx}" onclick="doDraftEmail(this)">✉ Draft follow-up email</button>
+      </div>
     </div>
-  </div>`;
+  </div>
+</div>`;
 }
 
-/* ── Interactions ── */
-function toggleCard(id) { 
-  const sid = String(id);
-  expandedId = expandedId === sid ? null : sid; 
-  render(); 
+// ── Get project from element ──
+function pFromEl(el){
+  const idx=parseInt(el.getAttribute('data-pidx'));
+  return getFiltered()[idx];
 }
-function setTab(tab) {
+
+// ── Interactions ──
+function toggleCard(el){
+  const idx=parseInt(el.getAttribute('data-pidx'));
+  const p=getFiltered()[idx];
+  if(!p) return;
+  expandedId=String(expandedId)===String(p.id)?null:p.id;
+  render();
+}
+
+function setTab(tab){
   activeTab=tab; activeFilter='all';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
   render();
 }
-function setFilter(f) { activeFilter=f; render(); }
+function setFilter(f){ activeFilter=f; render(); }
 
-async function updateStage(id, stage) {
-  const p = projects.find(x=>x.id===id); if(!p) return;
-  const old = stageObj(p.stage).label;
-  p.stage = stage;
-  p.log = p.log||[];
-  p.log.unshift({text:`Stage: ${old} → ${stageObj(stage).label}`,time:nowStr(),type:'normal',by:currentUser?.name||''});
+async function updateStage(el){
+  const p=pFromEl(el); if(!p) return;
+  const old=stageObj(p.stage).label;
+  p.stage=el.value;
+  p.log=p.log||[];
+  p.log.unshift({text:`Stage: ${old} → ${stageObj(p.stage).label}`,time:nowStr(),type:'normal',by:currentUser?.name||''});
   render();
-  try { await saveProjectToSp(p); toast('Stage updated ✓'); } catch(e) { toast('Save failed: '+e.message,4000); }
+  try{await saveToSp(p);toast('Stage updated ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 
-async function addNote(id) {
-  const p=projects.find(x=>x.id===id);
-  const inp=document.getElementById('note-'+id);
-  if(!p||!inp||!inp.value.trim()) return;
+async function addNote(el){
+  const p=pFromEl(el); if(!p) return;
+  const inp=document.getElementById('note-'+p.id);
+  if(!inp||!inp.value.trim()) return;
   p.log=p.log||[];
   p.log.unshift({text:inp.value.trim(),time:nowStr(),type:'normal',by:currentUser?.name||''});
   inp.value=''; render();
-  try { await saveProjectToSp(p); toast('Note saved ✓'); } catch(e) { toast('Save failed: '+e.message,4000); }
+  try{await saveToSp(p);toast('Note saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 
-async function saveFabric(id) {
-  const p=projects.find(x=>x.id===id);
-  const fab=document.getElementById('fab-'+id);
-  const who=document.getElementById('fabwho-'+id);
-  if(!p||!fab||!fab.value.trim()){toast('Please enter a fabric name.');return;}
+async function saveFabric(el){
+  const p=pFromEl(el); if(!p) return;
+  const fab=document.getElementById('fab-'+p.id);
+  const who=document.getElementById('fabwho-'+p.id);
+  if(!fab||!fab.value.trim()){toast('Please enter a fabric name.');return;}
   p.fabric=fab.value.trim(); p.fabricBy=who.value; p.fabricDate=nowStr();
   p.blockers=(p.blockers||[]).filter(b=>b!=='Fabric selection');
   p.log=p.log||[];
   p.log.unshift({text:`Fabric updated: ${p.fabric}`,time:nowStr(),by:who.value,type:'fabric'});
   render();
-  try { await saveProjectToSp(p); toast('Fabric saved ✓'); } catch(e) { toast('Save failed: '+e.message,4000); }
+  try{await saveToSp(p);toast('Fabric saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 
-async function savePO(id) {
-  const p=projects.find(x=>x.id===id);
-  const inp=document.getElementById('po-'+id);
-  if(!p||!inp||!inp.value.trim()){toast('Please enter a PO number.');return;}
+async function savePO(el){
+  const p=pFromEl(el); if(!p) return;
+  const inp=document.getElementById('po-'+p.id);
+  if(!inp||!inp.value.trim()){toast('Please enter a PO number.');return;}
   p.poNumber=inp.value.trim();
   p.log=p.log||[];
-  p.log.unshift({text:`PO number entered: ${p.poNumber}`,time:nowStr(),by:currentUser?.name||'Terry',type:'po'});
-  if(p.stage!=='ordered'&&p.stage!=='received') p.stage='ordered';
+  p.log.unshift({text:`PO entered: ${p.poNumber}`,time:nowStr(),by:currentUser?.name||'',type:'po'});
+  if(!isOrdered(p)) p.stage='ordered';
   render();
-  try { await saveProjectToSp(p); toast('PO saved ✓'); } catch(e) { toast('Save failed: '+e.message,4000); }
+  try{await saveToSp(p);toast('PO saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 
-/* ── Room modal ── */
-function openRoomModal(id) {
-  const p=projects.find(x=>x.id===id); if(!p) return;
-  roomEditId=id;
+// ── Room modal ──
+function openRoomModal(el){
+  const p=pFromEl(el); if(!p) return;
+  roomEditId=p.id;
   roomEditTemp=p.rooms.map(r=>({...r}));
   document.getElementById('roomModalTitle').textContent='Room measurements — '+p.client;
-  document.getElementById('roomModalContent').innerHTML = roomEditTemp.length
-    ? roomEditTemp.map((r,i)=>`<div class="room-update-row">
-        <span class="room-update-name">${escHtml(r.name)}</span>
-        <div class="room-update-checks">
-          <label class="check-label"><input type="checkbox" ${r.m1?'checked':''} onchange="roomEditTemp[${i}].m1=this.checked"> M1 Adrian</label>
-          <label class="check-label"><input type="checkbox" ${r.m2?'checked':''} onchange="roomEditTemp[${i}].m2=this.checked"> M2 Chris</label>
-        </div></div>`).join('')
-    : '<p style="font-size:13px;color:var(--text-2)">No rooms on this project yet. Edit the project to add rooms first.</p>';
+  document.getElementById('roomModalContent').innerHTML=roomEditTemp.length
+    ?roomEditTemp.map((r,i)=>`<div class="rup"><span class="run">${h(r.name)}</span><div class="ruc">
+        <label class="cl2"><input type="checkbox" ${r.m1?'checked':''} onchange="roomEditTemp[${i}].m1=this.checked"> M1 Adrian</label>
+        <label class="cl2"><input type="checkbox" ${r.m2?'checked':''} onchange="roomEditTemp[${i}].m2=this.checked"> M2 Chris</label>
+      </div></div>`).join('')
+    :'<p style="font-size:13px;color:var(--t2)">No rooms on this project yet. Edit the project first.</p>';
   document.getElementById('roomModal').classList.add('open');
 }
 
-async function saveRoomMeasures() {
-  const p=projects.find(x=>x.id===roomEditId); if(!p) return;
+async function saveRoomMeasures(){
+  const p=projects.find(x=>String(x.id)===String(roomEditId)); if(!p) return;
   p.rooms=roomEditTemp;
   const allM1=p.rooms.every(r=>r.m1), allM2=p.rooms.every(r=>r.m2);
   if(allM1&&!(p.log||[]).some(e=>e.text.startsWith('All M1')))
@@ -786,24 +653,24 @@ async function saveRoomMeasures() {
   if(allM2&&!(p.log||[]).some(e=>e.text.startsWith('All M2')))
     p.log.unshift({text:'All M2 measurements confirmed (Chris)',time:nowStr(),type:'normal'});
   closeModal('roomModal'); render();
-  try { await saveProjectToSp(p); toast('Measurements saved ✓'); } catch(e) { toast('Save failed: '+e.message,4000); }
+  try{await saveToSp(p);toast('Measurements saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 
-/* ── New/Edit project ── */
-function openNewProject() {
+// ── New/Edit project ──
+function openNewProject(){
   editingId=null;
-  document.getElementById('projectModalTitle').textContent='New blind project';
+  document.getElementById('pmTitle').textContent='New blind project';
   document.getElementById('saveProjectBtn').textContent='Save project';
-  clearProjectForm(); addRoomEntry();
+  clearForm(); addRoomEntry();
   document.getElementById('projectModal').classList.add('open');
 }
 
-function openEditProject(id) {
-  const p=projects.find(x=>x.id===id); if(!p) return;
-  editingId=id;
-  document.getElementById('projectModalTitle').textContent='Edit — '+p.client;
+function openEditProject(el){
+  const p=pFromEl(el); if(!p) return;
+  editingId=p.id;
+  document.getElementById('pmTitle').textContent='Edit — '+p.client;
   document.getElementById('saveProjectBtn').textContent='Update project';
-  clearProjectForm();
+  clearForm();
   document.getElementById('pm-client').value=p.client||'';
   document.getElementById('pm-project').value=p.project!=='—'?(p.project||''):'';
   document.getElementById('pm-lead').value=p.lead||'Bruno';
@@ -820,129 +687,101 @@ function openEditProject(id) {
   document.getElementById('projectModal').classList.add('open');
 }
 
-function clearProjectForm() {
-  ['pm-client','pm-project','pm-fabric','pm-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  ['pm-mount','pm-power'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+function clearForm(){
+  ['pm-client','pm-project','pm-fabric','pm-note','pm-mount','pm-power'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
   document.querySelectorAll('#needsInfoChips .chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('roomBuilder').innerHTML='';
 }
 
-function addRoomEntry(name='') {
+function addRoomEntry(name=''){
   const rb=document.getElementById('roomBuilder');
-  const div=document.createElement('div'); div.className='room-entry';
-  div.innerHTML=`<input placeholder="Room name e.g. Living room" value="${escAttr(name)}"><button class="rm-del" onclick="this.parentElement.remove()" title="Remove">×</button>`;
-  rb.appendChild(div);
+  const d=document.createElement('div'); d.className='re';
+  d.innerHTML=`<input placeholder="Room name e.g. Living room" value="${h(name)}"><button class="rdel" onclick="this.parentElement.remove()">×</button>`;
+  rb.appendChild(d);
 }
 
-function toggleChip(el) { el.classList.toggle('active'); }
+function toggleChip(el){ el.classList.toggle('active'); }
 
-async function saveProject() {
+async function saveProject(){
   const client=(document.getElementById('pm-client').value||'').trim();
   if(!client){toast('Please enter a client name.');return;}
   const blockers=[...document.querySelectorAll('#needsInfoChips .chip.active')].map(c=>c.textContent.trim());
-  const roomNames=[...document.querySelectorAll('#roomBuilder .room-entry input')].map(i=>i.value.trim()).filter(Boolean);
+  const roomNames=[...document.querySelectorAll('#roomBuilder .re input')].map(i=>i.value.trim()).filter(Boolean);
   const note=(document.getElementById('pm-note').value||'').trim();
   const fabric=(document.getElementById('pm-fabric').value||'').trim();
 
-  if(editingId) {
-    const p=projects.find(x=>x.id===editingId); if(!p) return;
-    p.rooms=roomNames.map(name=>{
-      const ex=p.rooms.find(r=>r.name===name);
-      return ex?ex:{name,m1:false,m2:false};
-    });
+  if(editingId){
+    const p=projects.find(x=>String(x.id)===String(editingId)); if(!p) return;
+    p.rooms=roomNames.map(name=>{const ex=p.rooms.find(r=>r.name===name);return ex?ex:{name,m1:false,m2:false};});
     p.client=client;
     p.project=(document.getElementById('pm-project').value||'').trim()||'—';
     p.lead=document.getElementById('pm-lead').value;
     p.type=document.getElementById('pm-type').value;
     p.mount=document.getElementById('pm-mount').value;
     p.power=document.getElementById('pm-power').value;
-    if(fabric&&fabric!==p.fabric){
-      p.fabric=fabric; p.fabricBy='Trevor'; p.fabricDate=nowStr();
-      p.log.unshift({text:`Fabric updated: ${fabric}`,time:nowStr(),by:'Trevor',type:'fabric'});
-    }
+    if(fabric&&fabric!==p.fabric){p.fabric=fabric;p.fabricBy='Trevor';p.fabricDate=nowStr();p.log.unshift({text:`Fabric updated: ${fabric}`,time:nowStr(),by:'Trevor',type:'fabric'});}
     p.blockers=blockers;
     if(note) p.log.unshift({text:note,time:nowStr(),type:'normal',by:currentUser?.name||''});
     p.log.unshift({text:'Project updated.',time:nowStr(),type:'normal',by:currentUser?.name||''});
     closeModal('projectModal'); render();
-    try { await saveProjectToSp(p); toast('Project updated ✓'); } catch(e) { toast('Save failed: '+e.message,4000); }
-  } else {
+    try{await saveToSp(p);toast('Project updated ✓');}catch(e){toast('Save failed: '+e.message,4000);}
+  }else{
     const log=[];
     if(note) log.push({text:note,time:nowStr(),type:'normal',by:currentUser?.name||''});
     log.push({text:'Project created.',time:nowStr(),type:'normal',by:currentUser?.name||''});
-    const p={
-      id:'temp-'+Date.now(), spId:null,
-      client, project:(document.getElementById('pm-project').value||'').trim()||'—',
-      lead:document.getElementById('pm-lead').value,
-      type:document.getElementById('pm-type').value,
-      stage:blockers.length?'waiting-info':'meeting',
-      mount:document.getElementById('pm-mount').value,
-      power:document.getElementById('pm-power').value,
-      fabric, fabricBy:fabric?'Trevor':'', fabricDate:fabric?nowStr():'',
-      blockers, rooms:roomNames.map(name=>({name,m1:false,m2:false})),
-      log, poNumber:''
-    };
+    const p={id:'new-'+Date.now(),spId:null,client,project:(document.getElementById('pm-project').value||'').trim()||'—',lead:document.getElementById('pm-lead').value,type:document.getElementById('pm-type').value,stage:blockers.length?'waiting-info':'meeting',mount:document.getElementById('pm-mount').value,power:document.getElementById('pm-power').value,fabric,fabricBy:fabric?'Trevor':'',fabricDate:fabric?nowStr():'',blockers,rooms:roomNames.map(name=>({name,m1:false,m2:false})),log,poNumber:''};
     projects.unshift(p);
     closeModal('projectModal'); render();
-    try { await saveProjectToSp(p); toast('Project created ✓'); } catch(e) { toast('Save failed: '+e.message,4000); }
+    try{await saveToSp(p);toast('Project created ✓');}catch(e){toast('Save failed: '+e.message,4000);}
   }
 }
 
-/* ── Email handoff ── */
-function searchEmails(id) {
-  const p=projects.find(x=>x.id===id); if(!p) return;
+// ── Email handoff ──
+function doSearchEmails(el){
+  const p=pFromEl(el); if(!p) return;
   const waiting=p.blockers.length?p.blockers.join(', '):'any updates';
   const prompt=`Search my emails for the ${p.client} ${p.project!=='—'?p.project+' ':''}blinds project. Look for: ${waiting}${!p.fabric?', fabric selection':''}. Report what you find and flag anything I should act on.`;
   navigator.clipboard.writeText(prompt).then(()=>toast('Prompt copied — paste into Claude chat ✓')).catch(()=>window.prompt('Copy this:',prompt));
 }
 
-function draftEmail(id) {
-  const p=projects.find(x=>x.id===id); if(!p) return;
+function doDraftEmail(el){
+  const p=pFromEl(el); if(!p) return;
   const prompt=`Draft a follow-up email for the ${p.client}${p.project!=='—'?' '+p.project:''} blinds project. Stage: ${stageObj(p.stage).label}. Needs info: ${p.blockers.length?p.blockers.join(', '):'none'}. Fabric: ${p.fabric||'not confirmed'}. Mount: ${p.mount||'unknown'}. Power: ${p.power||'unknown'}.`;
   navigator.clipboard.writeText(prompt).then(()=>toast('Prompt copied — paste into Claude chat ✓')).catch(()=>window.prompt('Copy this:',prompt));
 }
 
-/* ── Digest ── */
-function openDigest() {
-  const p=projects;
-  const ni=p.filter(needsInfo), ready=p.filter(x=>isReady(x)&&!isOrdered(x));
-  const inProg=p.filter(x=>!needsInfo(x)&&!isReady(x)&&!isOrdered(x)), ordered=p.filter(isOrdered);
+// ── Digest ──
+function openDigest(){
+  const ni=projects.filter(needsInfo);
+  const rdy=projects.filter(p=>isReady(p)&&!isOrdered(p));
+  const inp=projects.filter(p=>!needsInfo(p)&&!isReady(p)&&!isOrdered(p));
+  const ord=projects.filter(isOrdered);
   const today=new Date().toLocaleDateString('en-CA',{year:'numeric',month:'long',day:'numeric'});
-  let html=`<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">To: Trevor, Bruno, Terry &nbsp;·&nbsp; ${today}</div><div class="digest-body">`;
-  if(ready.length){html+=`<div class="digest-section"><div class="digest-section-title" style="color:var(--green)">✅ Ready to order (${ready.length})</div>`;ready.forEach(x=>{html+=`<div class="digest-item">· ${escHtml(x.client)} — ${escHtml(x.project)}</div>`});html+=`</div>`;}
-  if(ni.length){html+=`<div class="digest-section"><div class="digest-section-title" style="color:var(--amber)">⚠️ Needs information (${ni.length})</div>`;ni.forEach(x=>{html+=`<div class="digest-item"><strong>${escHtml(x.client)} — ${escHtml(x.project)}</strong></div>`;x.blockers.forEach(b=>{html+=`<div class="digest-sub">→ ${escHtml(b)}</div>`});if(!x.fabric)html+=`<div class="digest-sub">→ Fabric not confirmed</div>`});html+=`</div>`;}
-  if(inProg.length){html+=`<div class="digest-section"><div class="digest-section-title">🔄 In progress (${inProg.length})</div>`;inProg.forEach(x=>{html+=`<div class="digest-item">· ${escHtml(x.client)} — ${escHtml(x.project)} <span style="color:var(--text-3)">(${stageObj(x.stage).label})</span></div>`});html+=`</div>`;}
-  if(ordered.length){html+=`<div class="digest-section"><div class="digest-section-title" style="color:var(--blue)">📦 Ordered (${ordered.length})</div>`;ordered.forEach(x=>{html+=`<div class="digest-item">· ${escHtml(x.client)} — ${escHtml(x.project)}${x.poNumber?' (PO: '+escHtml(x.poNumber)+')':''}</div>`});html+=`</div>`;}
-  if(!p.length) html+=`<div style="color:var(--text-3)">No active projects.</div>`;
+  let html=`<div style="font-size:13px;color:var(--t2);margin-bottom:12px">To: Trevor, Bruno, Terry &nbsp;·&nbsp; ${today}</div><div class="db">`;
+  if(rdy.length){html+=`<div class="dbs"><div class="dbst" style="color:var(--green)">✅ Ready to order (${rdy.length})</div>`;rdy.forEach(x=>{html+=`<div class="dbi">· ${h(x.client)} — ${h(x.project)}</div>`});html+=`</div>`;}
+  if(ni.length){html+=`<div class="dbs"><div class="dbst" style="color:var(--amber)">⚠️ Needs information (${ni.length})</div>`;ni.forEach(x=>{html+=`<div class="dbi"><strong>${h(x.client)} — ${h(x.project)}</strong></div>`;x.blockers.forEach(b=>{html+=`<div class="dbsb">→ ${h(b)}</div>`});if(!x.fabric)html+=`<div class="dbsb">→ Fabric not confirmed</div>`});html+=`</div>`;}
+  if(inp.length){html+=`<div class="dbs"><div class="dbst">🔄 In progress (${inp.length})</div>`;inp.forEach(x=>{html+=`<div class="dbi">· ${h(x.client)} — ${h(x.project)} <span style="color:var(--t3)">(${stageObj(x.stage).label})</span></div>`});html+=`</div>`;}
+  if(ord.length){html+=`<div class="dbs"><div class="dbst" style="color:var(--blue)">📦 Ordered (${ord.length})</div>`;ord.forEach(x=>{html+=`<div class="dbi">· ${h(x.client)} — ${h(x.project)}${x.poNumber?' (PO: '+h(x.poNumber)+')':''}</div>`});html+=`</div>`;}
+  if(!projects.length) html+=`<div style="color:var(--t3)">No active projects.</div>`;
   html+=`</div>`;
-  document.getElementById('digestModalTitle').textContent='Weekly digest';
-  document.getElementById('digestModalContent').innerHTML=html;
+  document.getElementById('digestTitle').textContent='Weekly digest';
+  document.getElementById('digestContent').innerHTML=html;
   document.getElementById('digestModal').classList.add('open');
 }
 
-/* ── Modals ── */
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+// ── Modals ──
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'))});
 
-/* ── Boot ── */
-function waitForMsal(cb, tries = 0) {
-  // unpkg exports as msalBrowser, alcdn exports as msal
-  const lib = typeof msalBrowser !== 'undefined' ? msalBrowser
-             : typeof msal !== 'undefined' ? msal
-             : null;
-  if (lib && lib.PublicClientApplication) {
-    window._msallib = lib;
-    initMsal();
-    cb();
-  } else if (tries < 30) {
-    setTimeout(() => waitForMsal(cb, tries + 1), 100);
-  } else {
-    document.getElementById('signinStatus').textContent = 'Failed to load Microsoft auth library. Please refresh.';
-  }
+// ── Boot ──
+function boot(){
+  waitForLib(checkSession);
 }
-window.addEventListener('DOMContentLoaded', () => {
-  waitForMsal(checkExistingSession);
-});
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+else boot();
 </script>
 </body>
 </html>
