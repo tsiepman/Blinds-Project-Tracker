@@ -201,14 +201,15 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-of
       <div class="fg"><label>Project / address</label><input id="pm-project" placeholder="e.g. FR29 LOT26 Cottage"></div>
     </div>
     <div class="form-row">
-      <div class="fg"><label>Lead</label><select id="pm-lead"><option>Bruno</option><option>Trevor</option></select></div>
+      <div class="fg"><label>Lead</label><select id="pm-lead"><option>Bruno</option><option>Trevor</option><option>Lyall</option></select></div>
       <div class="fg"><label>Quote type</label><select id="pm-type"><option>Lutron (Trevor quotes)</option><option>Hunter Douglas (Francisco quotes)</option><option>Mixed</option></select></div>
     </div>
     <div class="form-row">
       <div class="fg"><label>Mount type</label><select id="pm-mount"><option value="">Unknown</option><option>Recessed ceiling</option><option>Inside mount w/ valance</option><option>Mixed</option></select></div>
-      <div class="fg"><label>Power type</label><select id="pm-power"><option value="">Unknown</option><option>Wired</option><option>Battery</option><option>Mixed</option></select></div>
+      <div class="fg"><label>Power type</label><select id="pm-power"><option value="">Unknown</option><option>Wired</option><option>Battery</option><option>Wireless</option><option>Mixed</option></select></div>
     </div>
-    <div class="fg"><label>Fabric selection (if known)</label><input id="pm-fabric" placeholder="e.g. Mosaic Flint &lt;2% / Blackout primary bedroom"></div>
+    <div class="fg"><label>Primary fabric (e.g. main rooms)</label><input id="pm-fabric" placeholder="e.g. Mosaic Flint &lt;2% openness"></div>
+    <div class="fg"><label>Secondary fabric (e.g. bedrooms / blackout)</label><input id="pm-fabric2" placeholder="e.g. Mosaic Flint Blackout 0%"></div>
     <div class="fg">
       <label>Rooms / areas</label>
       <div class="rb" id="roomBuilder"></div>
@@ -276,10 +277,11 @@ const STAGES = [
   {id:'measure-1',      label:'Measurement 1 done',           pct:65 },
   {id:'measure-2',      label:'Measurement 2 done',           pct:75 },
   {id:'ready',          label:'Ready to order',               pct:85 },
+  {id:'partial-order',  label:'Partially ordered',            pct:90 },
   {id:'ordered',        label:'Ordered',                      pct:95 },
   {id:'received',       label:'Received / install scheduled', pct:100},
 ];
-const SC = {meeting:'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf','quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf','measure-1':'#2a7a35','measure-2':'#2a7a35',ready:'#2d7a3a',ordered:'#2d7a3a',received:'#2d7a3a'};
+const SC = {meeting:'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf','quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf','measure-1':'#2a7a35','measure-2':'#2a7a35',ready:'#2d7a3a','partial-order':'#1a6bbf',ordered:'#2d7a3a',received:'#2d7a3a'};
 
 let msalClient = null;
 let projects = [], expandedId = null, activeTab = 'all', activeFilter = 'all';
@@ -393,7 +395,7 @@ function spToP(item){
     client:f.Client||'', project:f.Project||'—',
     lead:f.Lead||'Bruno', type:f.QuoteType||'',
     stage:f.Stage||'meeting', mount:f.Mount||'', power:f.Power||'',
-    fabric:f.Fabric||'', fabricBy:f.FabricBy||'', fabricDate:f.FabricDate||'',
+    fabric:f.Fabric||'', fabric2:f.Fabric2||'', fabricBy:f.FabricBy||'', fabricDate:f.FabricDate||'',
     blockers:safeJSON(f.Blockers,[]), rooms:safeJSON(f.Rooms,[]),
     log:safeJSON(f.Log,[]), poNumber:f.PONumber||'',
     lutronQuotes:safeJSON(f.LutronQuotes,[]),
@@ -404,7 +406,7 @@ function pToSp(p){
   return {
     Client:p.client, Project:p.project, Lead:p.lead, QuoteType:p.type,
     Stage:p.stage, Mount:p.mount, Power:p.power,
-    Fabric:p.fabric, FabricBy:p.fabricBy, FabricDate:p.fabricDate,
+    Fabric:p.fabric, Fabric2:p.fabric2||'', FabricBy:p.fabricBy, FabricDate:p.fabricDate,
     Blockers:JSON.stringify(p.blockers||[]),
     Rooms:JSON.stringify(p.rooms||[]),
     Log:JSON.stringify(p.log||[]),
@@ -502,8 +504,9 @@ function buildCard(p,idx){
 
   const itags=ni?(p.blockers.map(b=>`<span class="it">⏳ ${h(b)}</span>`).join('')+(!p.fabric?'<span class="it">⏳ Fabric not confirmed</span>':'')):'';
 
-  const fabHtml=p.fabric
-    ?`<div class="fc2">${h(p.fabric)}</div><div class="fsrc">${p.fabricBy?'Entered by '+h(p.fabricBy)+(p.fabricDate?' · '+h(p.fabricDate):''):''}</div>`
+  const fabHtml=(p.fabric||p.fabric2)
+    ?`${p.fabric?`<div class="fc2">${h(p.fabric)}</div>`:''}${p.fabric2?`<div class="fc2" style="margin-top:4px">${h(p.fabric2)}</div>`:''}
+      <div class="fsrc">${p.fabricBy?'Entered by '+h(p.fabricBy)+(p.fabricDate?' · '+h(p.fabricDate):''):''}</div>`
     :`<div class="fc2 empty">Not yet confirmed</div><div class="fsrc"></div>`;
 
   const roomsHtml=!tot?'<div style="font-size:12px;color:var(--t3)">No rooms added yet</div>'
@@ -533,7 +536,8 @@ function buildCard(p,idx){
       <div class="fb">
         <h4>Fabric selection</h4>${fabHtml}
         <div class="fins">
-          <input class="fi" id="fab-${h(p.id)}" placeholder="Fabric name, colour, openness %" value="${h(p.fabric||'')}">
+          <input class="fi" id="fab-${h(p.id)}" placeholder="Primary fabric (main rooms)" value="${h(p.fabric||'')}">
+          <input class="fi" id="fab2-${h(p.id)}" placeholder="Secondary fabric (bedrooms/blackout)" value="${h(p.fabric2||'')}" style="margin-top:6px;flex-basis:100%">
           <select class="fw" id="fabwho-${h(p.id)}"><option>Bruno</option><option>Trevor</option><option>Francisco</option><option>Designer</option><option>Client</option></select>
           <button class="btn btn-sm btn-primary" data-pidx="${idx}" onclick="saveFabric(this)">Save fabric</button>
         </div>
@@ -637,7 +641,9 @@ async function saveFabric(el){
   const fab=document.getElementById('fab-'+p.id);
   const who=document.getElementById('fabwho-'+p.id);
   if(!fab||!fab.value.trim()){toast('Please enter a fabric name.');return;}
-  p.fabric=fab.value.trim(); p.fabricBy=who.value; p.fabricDate=nowStr();
+  p.fabric=fab.value.trim();
+  const fab2=document.getElementById('fab2-'+p.id); if(fab2) p.fabric2=fab2.value.trim();
+  p.fabricBy=who.value; p.fabricDate=nowStr();
   p.blockers=(p.blockers||[]).filter(b=>b!=='Fabric selection');
   p.log=p.log||[];
   p.log.unshift({text:`Fabric updated: ${p.fabric}`,time:nowStr(),by:who.value,type:'fabric'});
@@ -905,6 +911,7 @@ function openEditProject(el){
   document.getElementById('pm-mount').value=p.mount||'';
   document.getElementById('pm-power').value=p.power||'';
   document.getElementById('pm-fabric').value=p.fabric||'';
+  const f2el=document.getElementById('pm-fabric2'); if(f2el) f2el.value=p.fabric2||'';
   const rb=document.getElementById('roomBuilder'); rb.innerHTML='';
   (p.rooms||[]).forEach(r=>addRoomEntry(r.name));
   if(!(p.rooms||[]).length) addRoomEntry();
@@ -915,7 +922,7 @@ function openEditProject(el){
 }
 
 function clearForm(){
-  ['pm-client','pm-project','pm-fabric','pm-note','pm-mount','pm-power'].forEach(id=>{
+  ['pm-client','pm-project','pm-fabric','pm-fabric2','pm-note','pm-mount','pm-power'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
   document.querySelectorAll('#needsInfoChips .chip').forEach(c=>c.classList.remove('active'));
@@ -938,6 +945,7 @@ async function saveProject(){
   const roomNames=[...document.querySelectorAll('#roomBuilder .re input')].map(i=>i.value.trim()).filter(Boolean);
   const note=(document.getElementById('pm-note').value||'').trim();
   const fabric=(document.getElementById('pm-fabric').value||'').trim();
+  const fabric2=(document.getElementById('pm-fabric2').value||'').trim();
 
   if(editingId){
     const p=projects.find(x=>String(x.id)===String(editingId)); if(!p) return;
@@ -949,6 +957,7 @@ async function saveProject(){
     p.mount=document.getElementById('pm-mount').value;
     p.power=document.getElementById('pm-power').value;
     if(fabric&&fabric!==p.fabric){p.fabric=fabric;p.fabricBy='Trevor';p.fabricDate=nowStr();p.log.unshift({text:`Fabric updated: ${fabric}`,time:nowStr(),by:'Trevor',type:'fabric'});}
+    if(fabric2!==undefined) p.fabric2=fabric2;
     p.blockers=blockers;
     if(note) p.log.unshift({text:note,time:nowStr(),type:'normal',by:currentUser?.name||''});
     p.log.unshift({text:'Project updated.',time:nowStr(),type:'normal',by:currentUser?.name||''});
@@ -958,7 +967,7 @@ async function saveProject(){
     const log=[];
     if(note) log.push({text:note,time:nowStr(),type:'normal',by:currentUser?.name||''});
     log.push({text:'Project created.',time:nowStr(),type:'normal',by:currentUser?.name||''});
-    const p={id:'new-'+Date.now(),spId:null,client,project:(document.getElementById('pm-project').value||'').trim()||'—',lead:document.getElementById('pm-lead').value,type:document.getElementById('pm-type').value,stage:blockers.length?'waiting-info':'meeting',mount:document.getElementById('pm-mount').value,power:document.getElementById('pm-power').value,fabric,fabricBy:fabric?'Trevor':'',fabricDate:fabric?nowStr():'',blockers,rooms:roomNames.map(name=>({name,m1:false,m2:false})),log,poNumber:''};
+    const p={id:'new-'+Date.now(),spId:null,client,project:(document.getElementById('pm-project').value||'').trim()||'—',lead:document.getElementById('pm-lead').value,type:document.getElementById('pm-type').value,stage:blockers.length?'waiting-info':'meeting',mount:document.getElementById('pm-mount').value,power:document.getElementById('pm-power').value,fabric,fabric2,fabricBy:fabric?'Trevor':'',fabricDate:fabric?nowStr():'',blockers,rooms:roomNames.map(name=>({name,m1:false,m2:false})),log,poNumber:''};
     projects.unshift(p);
     closeModal('projectModal'); render();
     try{await saveToSp(p);toast('Project created ✓');}catch(e){toast('Save failed: '+e.message,4000);}
