@@ -122,6 +122,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .art-upbtn:hover{background:var(--s2)}
 .art-upbtn input[type=file]{display:none}
 .art-uploading{font-size:11px;color:var(--amber);margin-top:2px}
+.art-inlineselect{font-size:12px;padding:3px 6px;border-radius:var(--r);border:.5px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer;max-width:160px}
 .art-checklabel{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t2);cursor:pointer}
 .art-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:16px}
 .art-modal-overlay.open{display:flex}
@@ -490,10 +491,41 @@ function buildCard(p,idx){
       <div class="art-detailgrid">
         <div class="art-detailsection">
           <h4>Project details</h4>
-          <div class="art-fieldrow"><span class="art-fieldlabel">Mount type</span><span class="art-fieldvalue ${p.mount?'ok':'pend'}">${h(p.mount||'Not confirmed')}</span></div>
-          <div class="art-fieldrow"><span class="art-fieldlabel">Power type</span><span class="art-fieldvalue ${p.power?'ok':'pend'}">${h(p.power||'Not confirmed')}</span></div>
-          <div class="art-fieldrow"><span class="art-fieldlabel">Quote type</span><span class="art-fieldvalue">${h(p.type)}</span></div>
-          <div class="art-fieldrow"><span class="art-fieldlabel">Lead</span><span class="art-fieldvalue">${h(p.lead)}</span></div>
+          <div class="art-fieldrow">
+            <span class="art-fieldlabel">Lead</span>
+            <select class="art-inlineselect" data-pidx="${idx}" data-field="lead" onchange="updateField(this)">
+              <option value="Bruno"${p.lead==='Bruno'?' selected':''}>Bruno</option>
+              <option value="Trevor"${p.lead==='Trevor'?' selected':''}>Trevor</option>
+              <option value="Lyall"${p.lead==='Lyall'?' selected':''}>Lyall</option>
+            </select>
+          </div>
+          <div class="art-fieldrow">
+            <span class="art-fieldlabel">Quote type</span>
+            <select class="art-inlineselect" data-pidx="${idx}" data-field="type" onchange="updateField(this)">
+              <option value="Lutron (Trevor quotes)"${p.type==='Lutron (Trevor quotes)'?' selected':''}>Lutron</option>
+              <option value="Hunter Douglas (Francisco quotes)"${p.type==='Hunter Douglas (Francisco quotes)'?' selected':''}>Hunter Douglas</option>
+              <option value="Mixed"${p.type==='Mixed'?' selected':''}>Mixed</option>
+            </select>
+          </div>
+          <div class="art-fieldrow">
+            <span class="art-fieldlabel">Mount type</span>
+            <select class="art-inlineselect" data-pidx="${idx}" data-field="mount" onchange="updateField(this)">
+              <option value=""${!p.mount?' selected':''}>Unknown</option>
+              <option value="Recessed ceiling"${p.mount==='Recessed ceiling'?' selected':''}>Recessed ceiling</option>
+              <option value="Inside mount w/ valance"${p.mount==='Inside mount w/ valance'?' selected':''}>Inside mount w/ valance</option>
+              <option value="Mixed"${p.mount==='Mixed'?' selected':''}>Mixed</option>
+            </select>
+          </div>
+          <div class="art-fieldrow">
+            <span class="art-fieldlabel">Power type</span>
+            <select class="art-inlineselect" data-pidx="${idx}" data-field="power" onchange="updateField(this)">
+              <option value=""${!p.power?' selected':''}>Unknown</option>
+              <option value="Wired"${p.power==='Wired'?' selected':''}>Wired</option>
+              <option value="Battery"${p.power==='Battery'?' selected':''}>Battery</option>
+              <option value="Wireless"${p.power==='Wireless'?' selected':''}>Wireless</option>
+              <option value="Mixed"${p.power==='Mixed'?' selected':''}>Mixed</option>
+            </select>
+          </div>
         </div>
         <div class="art-detailsection">
           <h4>Measurements</h4>
@@ -557,6 +589,14 @@ function toggleCard(el){const p=getFiltered()[parseInt(el.getAttribute('data-pid
 function setTab(tab){activeTab=tab;activeFilter='all';document.querySelectorAll('.art-tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+tab).classList.add('active');render();}
 function setFilter(f){activeFilter=f;render();}
 
+async function updateField(el){
+  const p=pFromEl(el);if(!p)return;
+  const field=el.getAttribute('data-field');
+  p[field]=el.value;
+  p.log=p.log||[];
+  p.log.unshift({text:`${field.charAt(0).toUpperCase()+field.slice(1)} updated: ${el.value||'Unknown'}`,time:nowStr(),type:'normal',by:currentUser?.name||''});
+  render();try{await saveToSp(p);toast(field+' updated ✓');}catch(e){toast('Save failed: '+e.message,4000);}
+}
 async function updateStage(el){
   const p=pFromEl(el);if(!p)return;
   const old=stageObj(p.stage).label;p.stage=el.value;
