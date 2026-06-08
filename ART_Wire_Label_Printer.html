@@ -443,7 +443,7 @@ const msalConfig = {
 };
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
-const scopes = ['https://advanceelectronics.sharepoint.com/Sites.ReadWrite.All'];
+const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
 
 try {
   await msalInstance.initialize();
