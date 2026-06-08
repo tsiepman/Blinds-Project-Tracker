@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ART Wire Label Printer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
-<script>function initMsal(){}</script>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js" defer></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
@@ -418,7 +417,7 @@
 <div id="printArea" style="display:none"></div>
 
 <script>
-window.addEventListener("load", async function() {
+window.addEventListener("DOMContentLoaded", async function() {
 const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
 const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
 const SITE_URL  = 'https://advanceelectronics.sharepoint.com/sites/ART43';
