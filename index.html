@@ -444,7 +444,7 @@ function buildCard(p,idx){
   const m2=p.rooms.filter(r=>r.m2).length;
   const tot=p.rooms.length;
 
-  const badge=ord?'<span class="art-badge art-badge-ordered">Ordered</span>'
+  const badge=p.stage==='partial-order'?'<span class="art-badge art-badge-ordered">Partially ordered</span>':ord?'<span class="art-badge art-badge-ordered">Ordered</span>'
     :rdy?'<span class="art-badge art-badge-ready">✓ Ready to order</span>'
     :ni?'<span class="art-badge art-badge-info">⚠ Needs information</span>'
     :`<span class="art-badge art-badge-stage" style="color:${SC[p.stage]}">${st.label}</span>`;
