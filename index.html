@@ -354,7 +354,7 @@ function spToP(item){
     id:item.id,spId:item.id,
     client:f.Client||'',project:f.Project||'—',
     lead:f.Lead||'Bruno',type:f.QuoteType||'',
-    stage:f.Stage||'meeting',mount:f.Mount||'',power:f.Power||'',
+    stage:(STAGES.find(s=>s.label===f.Stage)||STAGES.find(s=>s.id===f.Stage)||STAGES[0]).id,mount:f.Mount||'',power:f.Power||'',
     fabric:f.Fabric||'',fabric2:f.Fabric2||'',
     fabricBy:f.FabricBy||'',fabricDate:f.FabricDate||'',
     blockers:safeJSON(f.Blockers,[]),rooms:safeJSON(f.Rooms,[]),
@@ -365,7 +365,7 @@ function spToP(item){
 function pToSp(p){
   return {
     Client:p.client,Project:p.project,Lead:p.lead,QuoteType:p.type,
-    Stage:p.stage,Mount:p.mount,Power:p.power,
+    Stage:STAGES.find(s=>s.id===p.stage)?.label||p.stage,Mount:p.mount,Power:p.power,
     Fabric:p.fabric,Fabric2:p.fabric2||'',FabricBy:p.fabricBy,FabricDate:p.fabricDate,
     Blockers:JSON.stringify(p.blockers||[]),
     Rooms:JSON.stringify(p.rooms||[]),
