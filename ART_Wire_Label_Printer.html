@@ -379,7 +379,7 @@
           <input type="number" id="qtyInput" value="10" min="1" max="100" oninput="updateRange()">
         </div>
         <div class="range-display" id="rangeDisplay">—</div>
-        <button class="btn-print" id="printBtn" onclick="doPrint()">🖨 Print labels</button>
+        <button class="btn-print" id="printBtn" onclick="window._doPrint()">🖨 Print labels</button>
       </div>
       <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">
         Labels will start from the next unused box number. Set printer scale to 100% / actual size on Letter paper.
@@ -390,7 +390,7 @@
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div class="section-label" style="margin:0;">Print log</div>
-        <button onclick="loadLog()" style="font-size:12px;padding:4px 10px;cursor:pointer;border-radius:var(--radius);border:0.5px solid var(--border);background:transparent;color:var(--text-muted);">Refresh</button>
+        <button onclick="window._loadLog()" style="font-size:12px;padding:4px 10px;cursor:pointer;border-radius:var(--radius);border:0.5px solid var(--border);background:transparent;color:var(--text-muted);">Refresh</button>
       </div>
       <div class="log-table-wrap">
         <table>
@@ -417,6 +417,8 @@
 <div id="printArea" style="display:none"></div>
 
 <script>
+window.doPrint = function() { window._doPrint && window._doPrint(); }
+window.loadLog = function() { window._loadLog && window._loadLog(); }
 window.addEventListener("DOMContentLoaded", async function() {
 const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
 const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
@@ -497,7 +499,7 @@ async function initApp() {
     await ensureList();
     await loadHighestBoxNums();
     buildWireGrid();
-    await loadLog();
+    await window._loadLog();
     clearStatus();
   } catch(e) {
     showStatus('Error connecting to SharePoint: ' + e.message, 'error');
@@ -608,7 +610,7 @@ function updateRange() {
     selectedWire.prefix + '-BOX' + next + ' → ' + selectedWire.prefix + '-BOX' + last;
 }
 
-async function doPrint() {
+window._doPrint = async function() {
   if (!selectedWire) return;
   const qty = parseInt(document.getElementById('qtyInput').value) || 1;
   const next = (highestBoxNums[selectedWire.prefix] || 0) + 1;
@@ -641,7 +643,7 @@ async function doPrint() {
     highestBoxNums[selectedWire.prefix] = last;
     buildWireGrid();
     selectWireByPrefix(selectedWire.prefix);
-    await loadLog();
+    await window._loadLog();
 
     // Generate and print labels
     generateAndPrint(selectedWire, next, last);
@@ -720,7 +722,7 @@ function generateAndPrint(wire, fromBox, toBox) {
   }, 50);
 }
 
-async function loadLog() {
+window._loadLog = async function() {
   const tbody = document.getElementById('logBody');
   tbody.innerHTML = '<tr><td colspan="5" class="empty-log"><span class="spinner"></span> Loading...</td></tr>';
   try {
