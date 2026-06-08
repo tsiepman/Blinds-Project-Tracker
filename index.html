@@ -188,6 +188,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-of
     <button class="art-tab" id="tab-needs-info" onclick="setTab('needs-info')">Needs information</button>
     <button class="art-tab" id="tab-ready" onclick="setTab('ready')">Ready to order</button>
     <button class="art-tab" id="tab-ordered" onclick="setTab('ordered')">Ordered</button>
+    <button class="art-tab" id="tab-archived" onclick="setTab('archived')">Archived</button>
   </div>
   <div class="art-filters" id="filterBar"></div>
   <div class="art-projectlist" id="projectList"></div>
@@ -283,7 +284,7 @@ const STAGES = [
   {id:'ordered',        label:'Ordered',                      pct:95 },
   {id:'received',       label:'Received / install scheduled', pct:100},
 ];
-const SC = {meeting:'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf','quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf','measure-1':'#2a7a35','measure-2':'#2a7a35',ready:'#2d7a3a','partial-order':'#1a6bbf',ordered:'#2d7a3a',received:'#2d7a3a'};
+const SC = {archived:'#888780',meeting:'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf','quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf','measure-1':'#2a7a35','measure-2':'#2a7a35',ready:'#2d7a3a','partial-order':'#1a6bbf',ordered:'#2d7a3a',received:'#2d7a3a'};
 
 let msalClient=null,projects=[],expandedId=null,activeTab='all',activeFilter='all';
 let editingId=null,roomEditId=null,roomEditTemp=[];
@@ -397,11 +398,12 @@ async function initApp(){
 
 function render(){renderSummary();renderFilters();renderProjects();}
 function renderSummary(){
-  const ni=projects.filter(needsInfo).length;
-  const rd=projects.filter(p=>isReady(p)&&!isOrdered(p)).length;
-  const or=projects.filter(isOrdered).length;
+  const active=projects.filter(p=>p.stage!=='archived');
+  const ni=active.filter(needsInfo).length;
+  const rd=active.filter(p=>isReady(p)&&!isOrdered(p)).length;
+  const or=active.filter(isOrdered).length;
   document.getElementById('summaryBar').innerHTML=
-    `<div class="art-sc"><div class="art-sn">${projects.length}</div><div class="art-sl">Active</div></div>
+    `<div class="art-sc"><div class="art-sn">${active.length}</div><div class="art-sl">Active</div></div>
      <div class="art-sc"><div class="art-sn" style="color:var(--amber)">${ni}</div><div class="art-sl">Needs info</div></div>
      <div class="art-sc"><div class="art-sn" style="color:var(--green)">${rd}</div><div class="art-sl">Ready to order</div></div>
      <div class="art-sc"><div class="art-sn" style="color:var(--blue)">${or}</div><div class="art-sl">Ordered</div></div>`;
@@ -414,9 +416,13 @@ function renderFilters(){
 }
 function getFiltered(){
   let l=[...projects];
-  if(activeTab==='needs-info')l=l.filter(needsInfo);
-  else if(activeTab==='ready')l=l.filter(p=>isReady(p)&&!isOrdered(p));
-  else if(activeTab==='ordered')l=l.filter(isOrdered);
+  if(activeTab==='archived') l=l.filter(p=>p.stage==='archived');
+  else{
+    l=l.filter(p=>p.stage!=='archived');
+    if(activeTab==='needs-info')l=l.filter(needsInfo);
+    else if(activeTab==='ready')l=l.filter(p=>isReady(p)&&!isOrdered(p));
+    else if(activeTab==='ordered')l=l.filter(isOrdered);
+  }
   if(activeFilter!=='all')l=l.filter(p=>p.stage===activeFilter);
   return l;
 }
@@ -574,6 +580,8 @@ function buildCard(p,idx){
         <input class="art-noteinput" id="note-${h(p.id)}" placeholder="Add a note...">
         <button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="addNote(this)">Log note</button>
         <button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="openEditProject(this)">Edit</button>
+        <button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="archiveProject(this)" title="Archive this project"${p.stage==='archived'?' style="display:none"':''}>Archive</button>
+        <button class="art-btn art-btn-sm" style="color:var(--red);border-color:var(--red)" data-pidx="${idx}" onclick="deleteProject(this)" title="Permanently delete">Delete</button>
       </div>
       <div class="art-actionsrow" style="margin-top:8px">
         <button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="doSearchEmails(this)">🔍 Search emails for updates</button>
@@ -798,6 +806,27 @@ async function saveProject(){
   }
 }
 
+async function archiveProject(el){
+  const p=pFromEl(el);if(!p)return;
+  if(!confirm('Archive '+p.client+' — '+p.project+'? It will be hidden from the main view but you can find it under the Archived tab.'))return;
+  p.stage='archived';
+  p.log=p.log||[];
+  p.log.unshift({text:'Project archived.',time:nowStr(),type:'normal',by:currentUser?.name||''});
+  render();try{await saveToSp(p);toast('Project archived ✓');}catch(e){toast('Save failed: '+e.message,4000);}
+}
+async function deleteProject(el){
+  const p=pFromEl(el);if(!p)return;
+  if(!confirm('Permanently delete '+p.client+' — '+p.project+'? This cannot be undone.'))return;
+  if(!confirm('Are you sure? All data for this project will be lost.'))return;
+  try{
+    await getIds();
+    const tok=await getToken();
+    const r=await fetch(GRAPH+`/sites/${spSiteId}/lists/${spListId}/items/${p.spId}`,{method:'DELETE',headers:{Authorization:'Bearer '+tok}});
+    if(!r.ok&&r.status!==204)throw new Error('Delete failed '+r.status);
+    projects=projects.filter(x=>x.id!==p.id);
+    toast('Project deleted ✓');render();
+  }catch(e){toast('Delete failed: '+e.message,4000);}
+}
 function doSearchEmails(el){
   const p=pFromEl(el);if(!p)return;
   const waiting=p.blockers.length?p.blockers.join(', '):'any updates';
