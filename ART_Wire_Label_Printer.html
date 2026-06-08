@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART Wire Label Printer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal/2.38.3/msal-browser.min.js" onload="initMsal()"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --border: #e2e0d8;
+    --border-strong: #c8c5ba;
+    --text: #1a1917;
+    --text-muted: #6b6860;
+    --accent: #1a472a;
+    --accent-light: #e8f0eb;
+    --accent-mid: #2d6a3f;
+    --danger: #c0392b;
+    --danger-light: #fdf0ee;
+    --warn: #b07d00;
+    --warn-light: #fdf8e8;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 15px;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--accent);
+    color: white;
+    padding: 0 2rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header-title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .header-sub { font-size: 12px; opacity: 0.7; margin-top: 1px; }
+  .user-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+  .user-dot {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 12px;
+  }
+
+  /* ── Layout ── */
+  .main { max-width: 960px; margin: 0 auto; padding: 2rem; }
+
+  /* ── Auth Screen ── */
+  #authScreen {
+    display: flex; align-items: center; justify-content: center;
+    min-height: calc(100vh - 56px);
+  }
+  .auth-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 2.5rem;
+    text-align: center;
+    max-width: 380px;
+    width: 100%;
+  }
+  .auth-icon {
+    width: 56px; height: 56px;
+    background: var(--accent-light);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 1.25rem;
+    font-size: 24px;
+  }
+  .auth-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+  .auth-card p { font-size: 13px; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.5; }
+  .btn-signin {
+    width: 100%;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    padding: 11px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: background 0.15s;
+  }
+  .btn-signin:hover { background: var(--accent-mid); }
+
+  /* ── App Screen ── */
+  #appScreen { display: none; }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  /* ── User + Wire selector row ── */
+  .top-row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+    align-items: start;
+  }
+  .card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+  }
+  select, input[type=number] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    background: var(--surface);
+    color: var(--text);
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  select:focus, input[type=number]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(26,71,42,0.1);
+  }
+
+  /* ── Wire grid ── */
+  .wire-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .wire-item {
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.12s;
+    background: var(--surface);
+  }
+  .wire-item:hover { border-color: var(--accent); background: var(--accent-light); }
+  .wire-item.selected {
+    border-color: var(--accent);
+    background: var(--accent-light);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .wire-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .wire-next { font-size: 11px; color: var(--text-muted); font-family: 'DM Mono', monospace; }
+
+  /* ── Print config ── */
+  .print-config {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    display: none;
+  }
+  .print-config.visible { display: block; }
+  .config-row {
+    display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;
+  }
+  .config-field { display: flex; flex-direction: column; gap: 5px; }
+  .config-field label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  .config-field input { width: 100px; }
+  .range-display {
+    background: var(--accent-light);
+    border: 0.5px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 8px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 500;
+    align-self: flex-end;
+    white-space: nowrap;
+  }
+  .btn-print {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    padding: 9px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: background 0.15s;
+    align-self: flex-end;
+  }
+  .btn-print:hover { background: var(--accent-mid); }
+  .btn-print:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Status bar ── */
+  .status-bar {
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 13px;
+    margin-bottom: 1.5rem;
+    display: none;
+  }
+  .status-bar.info { background: var(--accent-light); color: var(--accent); border: 0.5px solid var(--accent); display: block; }
+  .status-bar.error { background: var(--danger-light); color: var(--danger); border: 0.5px solid var(--danger); display: block; }
+  .status-bar.warn { background: var(--warn-light); color: var(--warn); border: 0.5px solid var(--warn); display: block; }
+
+  /* ── Log table ── */
+  .log-table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    border-bottom: 0.5px solid var(--border);
+    background: var(--bg);
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 0.5px solid var(--border);
+    color: var(--text);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg); }
+  .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+  .empty-log {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ── Loading spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(26,71,42,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Print styles ── */
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+  }
+  .label-sheet {
+    width: 8.5in;
+    margin: 0 auto;
+    padding: 0.5in 0.21875in;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 0.125in;
+    background: white;
+  }
+  .label-cell {
+    width: 4in; height: 1.333in;
+    border: 0.5px dashed #ddd;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 4px 10px; overflow: hidden;
+    page-break-inside: avoid;
+  }
+  .label-text {
+    font-family: Arial, sans-serif;
+    font-size: 15px; font-weight: 700;
+    color: #000; margin-bottom: 3px;
+    letter-spacing: 0.5px;
+  }
+  .label-svg { max-width: 100%; height: 52px; }
+  .sheet-break { page-break-after: always; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">ART Wire Label Printer</div>
+    <div class="header-sub">Advance Electronics — Warehouse</div>
+  </div>
+  <div class="user-badge" id="headerUser" style="display:none">
+    <div class="user-dot" id="userDot"></div>
+    <span id="userNameDisplay"></span>
+  </div>
+</div>
+
+<!-- Auth Screen -->
+<div id="authScreen">
+  <div class="auth-card">
+    <div class="auth-icon">🔑</div>
+    <h2>Sign in to continue</h2>
+    <p>Sign in with your Advance Electronics Microsoft 365 account to access the label printer and print log.</p>
+    <button class="btn-signin" onclick="signIn()">Sign in with Microsoft 365</button>
+    <p id="authError" style="color:var(--danger);font-size:12px;margin-top:10px;display:none"></p>
+  </div>
+</div>
+
+<!-- App Screen -->
+<div id="appScreen">
+  <div class="main">
+
+    <div id="statusBar" class="status-bar"></div>
+
+    <!-- Top row: user selector + wire type selector -->
+    <div class="top-row">
+      <div class="card">
+        <div class="section-label">Printing as</div>
+        <select id="userSelect">
+          <option value="Trevor">Trevor</option>
+          <option value="Farkus">Farkus</option>
+          <option value="Brian">Brian</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="section-label">Select wire type</div>
+        <div class="wire-grid" id="wireGrid"></div>
+      </div>
+    </div>
+
+    <!-- Print config -->
+    <div class="print-config" id="printConfig">
+      <div class="section-label" id="configTitle">Print options</div>
+      <div class="config-row" style="margin-top:10px;">
+        <div class="config-field">
+          <label>Quantity to print</label>
+          <input type="number" id="qtyInput" value="10" min="1" max="100" oninput="updateRange()">
+        </div>
+        <div class="range-display" id="rangeDisplay">—</div>
+        <button class="btn-print" id="printBtn" onclick="doPrint()">🖨 Print labels</button>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">
+        Labels will start from the next unused box number. Set printer scale to 100% / actual size on Letter paper.
+      </p>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div class="section-label" style="margin:0;">Print log</div>
+        <button onclick="loadLog()" style="font-size:12px;padding:4px 10px;cursor:pointer;border-radius:var(--radius);border:0.5px solid var(--border);background:transparent;color:var(--text-muted);">Refresh</button>
+      </div>
+      <div class="log-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date / Time</th>
+              <th>Wire type</th>
+              <th>Box range</th>
+              <th>Qty</th>
+              <th>Printed by</th>
+            </tr>
+          </thead>
+          <tbody id="logBody">
+            <tr><td colspan="5" class="empty-log"><span class="spinner"></span> Loading log...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Hidden print area -->
+<div id="printArea" style="display:none"></div>
+
+<script>
+function signIn() { window._signIn && window._signIn(); }
+function initMsal() {
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_URL  = 'https://advanceelectronics.sharepoint.com/sites/ART43';
+const LIST_NAME = 'ART Wire Label Log';
+
+const WIRES = [
+  { label: 'Cat6',          prefix: 'CAT6'   },
+  { label: '16-2 Speaker',  prefix: 'SPK162' },
+  { label: '16-4 Speaker',  prefix: 'SPK164' },
+  { label: '14-2 Speaker',  prefix: 'SPK142' },
+  { label: '14-4 Speaker',  prefix: 'SPK144' },
+  { label: 'Lutron Green',  prefix: 'LUT'    },
+  { label: 'Z Wire',        prefix: 'ZWIRE'  },
+];
+
+const msalConfig = {
+  auth: {
+    clientId: CLIENT_ID,
+    authority: 'https://login.microsoftonline.com/' + TENANT_ID,
+    redirectUri: window.location.href.split('#')[0].split('?')[0]
+  },
+  cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+};
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+const scopes = ['https://advanceelectronics.sharepoint.com/Sites.ReadWrite.All'];
+
+let accessToken = null;
+let siteId = null;
+let listId = null;
+let selectedWire = null;
+let highestBoxNums = {};
+
+window._signIn = async function() {
+  try {
+    await msalInstance.loginRedirect({ scopes });
+  } catch(e) {
+    document.getElementById('authError').style.display = 'block';
+    document.getElementById('authError').textContent = 'Sign-in failed: ' + e.message;
+  }
+}
+
+async function getToken() {
+  const accounts = msalInstance.getAllAccounts();
+  if (!accounts.length) return null;
+  try {
+    const resp = await msalInstance.acquireTokenSilent({ scopes, account: accounts[0] });
+    return resp.accessToken;
+  } catch(e) {
+    await msalInstance.acquireTokenRedirect({ scopes, account: accounts[0] });
+    return null;
+  }
+}
+
+async function initApp() {
+  document.getElementById('authScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  document.getElementById('headerUser').style.display = 'flex';
+
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length) {
+    const name = accounts[0].name || accounts[0].username;
+    document.getElementById('userNameDisplay').textContent = name;
+    const initials = name.split(' ').map(p=>p[0]).join('').substring(0,2).toUpperCase();
+    document.getElementById('userDot').textContent = initials;
+  }
+
+  showStatus('Connecting to SharePoint...', 'info');
+  try {
+    accessToken = await getToken();
+    await ensureList();
+    await loadHighestBoxNums();
+    buildWireGrid();
+    await loadLog();
+    clearStatus();
+  } catch(e) {
+    showStatus('Error connecting to SharePoint: ' + e.message, 'error');
+  }
+}
+
+async function spFetch(url, opts={}) {
+  accessToken = await getToken();
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      ...(opts.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(res.status + ': ' + txt);
+  }
+  return res.json();
+}
+
+async function getSiteId() {
+  if (siteId) return siteId;
+  const host = 'advanceelectronics.sharepoint.com';
+  const path = '/sites/ART43';
+  const data = await spFetch(`https://graph.microsoft.com/v1.0/sites/${host}:${path}`);
+  siteId = data.id;
+  return siteId;
+}
+
+async function ensureList() {
+  const sid = await getSiteId();
+  const data = await spFetch(`https://graph.microsoft.com/v1.0/sites/${sid}/lists?$filter=displayName eq '${LIST_NAME}'`);
+  if (data.value && data.value.length > 0) {
+    listId = data.value[0].id;
+    return;
+  }
+  // Create list
+  const created = await spFetch(`https://graph.microsoft.com/v1.0/sites/${sid}/lists`, {
+    method: 'POST',
+    body: JSON.stringify({
+      displayName: LIST_NAME,
+      columns: [
+        { name: 'WireType',   text: {} },
+        { name: 'Prefix',     text: {} },
+        { name: 'BoxFrom',    number: {} },
+        { name: 'BoxTo',      number: {} },
+        { name: 'Quantity',   number: {} },
+        { name: 'PrintedBy',  text: {} },
+      ],
+      list: { template: 'genericList' }
+    })
+  });
+  listId = created.id;
+}
+
+async function loadHighestBoxNums() {
+  const sid = await getSiteId();
+  if (!listId) return;
+  const data = await spFetch(
+    `https://graph.microsoft.com/v1.0/sites/${sid}/lists/${listId}/items?expand=fields&$top=500`
+  );
+  highestBoxNums = {};
+  if (data.value) {
+    data.value.forEach(item => {
+      const f = item.fields;
+      const prefix = f.Prefix;
+      const boxTo = parseInt(f.BoxTo) || 0;
+      if (!highestBoxNums[prefix] || boxTo > highestBoxNums[prefix]) {
+        highestBoxNums[prefix] = boxTo;
+      }
+    });
+  }
+}
+
+function buildWireGrid() {
+  const grid = document.getElementById('wireGrid');
+  grid.innerHTML = '';
+  WIRES.forEach(w => {
+    const next = (highestBoxNums[w.prefix] || 0) + 1;
+    const div = document.createElement('div');
+    div.className = 'wire-item';
+    div.innerHTML = `<div class="wire-name">${w.label}</div>
+      <div class="wire-next">Next: BOX${next}</div>`;
+    div.onclick = () => selectWire(w, div);
+    grid.appendChild(div);
+  });
+}
+
+function selectWire(wire, el) {
+  document.querySelectorAll('.wire-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedWire = wire;
+  document.getElementById('printConfig').classList.add('visible');
+  document.getElementById('configTitle').textContent = 'Print options — ' + wire.label;
+  updateRange();
+}
+
+function updateRange() {
+  if (!selectedWire) return;
+  const qty = parseInt(document.getElementById('qtyInput').value) || 1;
+  const next = (highestBoxNums[selectedWire.prefix] || 0) + 1;
+  const last = next + qty - 1;
+  document.getElementById('rangeDisplay').textContent =
+    selectedWire.prefix + '-BOX' + next + ' → ' + selectedWire.prefix + '-BOX' + last;
+}
+
+async function doPrint() {
+  if (!selectedWire) return;
+  const qty = parseInt(document.getElementById('qtyInput').value) || 1;
+  const next = (highestBoxNums[selectedWire.prefix] || 0) + 1;
+  const last = next + qty - 1;
+  const user = document.getElementById('userSelect').value;
+
+  const btn = document.getElementById('printBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    // Log to SharePoint first
+    const sid = await getSiteId();
+    await spFetch(`https://graph.microsoft.com/v1.0/sites/${sid}/lists/${listId}/items`, {
+      method: 'POST',
+      body: JSON.stringify({
+        fields: {
+          Title: selectedWire.prefix + '-BOX' + next + ' to BOX' + last,
+          WireType: selectedWire.label,
+          Prefix: selectedWire.prefix,
+          BoxFrom: next,
+          BoxTo: last,
+          Quantity: qty,
+          PrintedBy: user
+        }
+      })
+    });
+
+    // Update local state
+    highestBoxNums[selectedWire.prefix] = last;
+    buildWireGrid();
+    selectWireByPrefix(selectedWire.prefix);
+    await loadLog();
+
+    // Generate and print labels
+    generateAndPrint(selectedWire, next, last);
+
+    btn.disabled = false;
+    btn.textContent = '🖨 Print labels';
+    showStatus('Logged ' + qty + ' labels (' + selectedWire.prefix + '-BOX' + next + ' to BOX' + last + '). Print dialog opened.', 'info');
+    setTimeout(clearStatus, 5000);
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '🖨 Print labels';
+    showStatus('Error saving to SharePoint: ' + e.message, 'error');
+  }
+}
+
+function selectWireByPrefix(prefix) {
+  const items = document.querySelectorAll('.wire-item');
+  const wire = WIRES.find(w => w.prefix === prefix);
+  if (!wire) return;
+  const idx = WIRES.indexOf(wire);
+  if (items[idx]) {
+    items[idx].classList.add('selected');
+    selectedWire = wire;
+    updateRange();
+  }
+}
+
+function generateAndPrint(wire, fromBox, toBox) {
+  const labels = [];
+  for (let n = fromBox; n <= toBox; n++) {
+    labels.push(wire.prefix + '-BOX' + n);
+  }
+
+  const printArea = document.getElementById('printArea');
+  printArea.innerHTML = '';
+  printArea.style.display = 'block';
+
+  const perPage = 14;
+  const pages = Math.ceil(labels.length / perPage);
+
+  for (let p = 0; p < pages; p++) {
+    const sheet = document.createElement('div');
+    sheet.className = 'label-sheet' + (p < pages - 1 ? ' sheet-break' : '');
+    const slice = labels.slice(p * perPage, (p + 1) * perPage);
+
+    slice.forEach(code => {
+      const cell = document.createElement('div');
+      cell.className = 'label-cell';
+      const txt = document.createElement('div');
+      txt.className = 'label-text';
+      txt.textContent = code;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.className = 'label-svg';
+      cell.appendChild(txt);
+      cell.appendChild(svg);
+      sheet.appendChild(cell);
+    });
+    printArea.appendChild(sheet);
+  }
+
+  setTimeout(() => {
+    printArea.querySelectorAll('svg').forEach((svg, i) => {
+      try {
+        JsBarcode(svg, labels[i], {
+          format: 'CODE128', width: 1.6, height: 48,
+          displayValue: false, margin: 0,
+          background: '#ffffff', lineColor: '#000000'
+        });
+      } catch(e) {}
+    });
+    setTimeout(() => {
+      window.print();
+      printArea.style.display = 'none';
+    }, 300);
+  }, 50);
+}
+
+async function loadLog() {
+  const tbody = document.getElementById('logBody');
+  tbody.innerHTML = '<tr><td colspan="5" class="empty-log"><span class="spinner"></span> Loading...</td></tr>';
+  try {
+    const sid = await getSiteId();
+    const data = await spFetch(
+      `https://graph.microsoft.com/v1.0/sites/${sid}/lists/${listId}/items?expand=fields&$orderby=createdDateTime desc&$top=50`
+    );
+    if (!data.value || data.value.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-log">No labels printed yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    data.value.forEach(item => {
+      const f = item.fields;
+      const dt = new Date(item.createdDateTime);
+      const dateStr = dt.toLocaleDateString('en-CA') + ' ' + dt.toLocaleTimeString('en-CA', {hour:'2-digit',minute:'2-digit'});
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${dateStr}</td>
+        <td><span class="badge">${f.WireType || ''}</span></td>
+        <td class="mono">${f.Prefix}-BOX${f.BoxFrom} → BOX${f.BoxTo}</td>
+        <td>${f.Quantity}</td>
+        <td>${f.PrintedBy || ''}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-log" style="color:var(--danger)">Error loading log: ${e.message}</td></tr>`;
+  }
+}
+
+function showStatus(msg, type) {
+  const bar = document.getElementById('statusBar');
+  bar.textContent = msg;
+  bar.className = 'status-bar ' + type;
+}
+function clearStatus() {
+  const bar = document.getElementById('statusBar');
+  bar.className = 'status-bar';
+}
+
+// Check if already signed in
+msalInstance.handleRedirectPromise().then((resp) => {
+  if (resp && resp.accessToken) {
+    accessToken = resp.accessToken;
+  }
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length > 0) {
+    initApp();
+  }
+}).catch((e) => {
+  document.getElementById('authError').style.display = 'block';
+  document.getElementById('authError').textContent = 'Sign-in failed: ' + e.message;
+});
+} // end initMsal
+</script>
+</body>
+</html>
