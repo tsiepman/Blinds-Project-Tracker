@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ART Wire Label Printer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js" onload="initMsal()"></script>
+<script>function initMsal(){}</script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
@@ -343,7 +344,7 @@
     <div class="auth-icon">🔑</div>
     <h2>Sign in to continue</h2>
     <p>Sign in with your Advance Electronics Microsoft 365 account to access the label printer and print log.</p>
-    <button class="btn-signin" onclick="signIn()">Sign in with Microsoft 365</button>
+    <button class="btn-signin" onclick="window._signIn && window._signIn()">Sign in with Microsoft 365</button>
     <p id="authError" style="color:var(--danger);font-size:12px;margin-top:10px;display:none"></p>
   </div>
 </div>
@@ -417,8 +418,7 @@
 <div id="printArea" style="display:none"></div>
 
 <script>
-function signIn() { window._signIn && window._signIn(); }
-function initMsal() {
+window.addEventListener("load", function() {
 const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
 const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
 const SITE_URL  = 'https://advanceelectronics.sharepoint.com/sites/ART43';
@@ -770,7 +770,7 @@ msalInstance.handleRedirectPromise().then((resp) => {
   document.getElementById('authError').style.display = 'block';
   document.getElementById('authError').textContent = 'Sign-in failed: ' + e.message;
 });
-} // end initMsal
+});
 </script>
 </body>
 </html>
