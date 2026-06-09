@@ -609,7 +609,13 @@ async function getToken() {
 }
 
 function loadMSAL() {
-  return Promise.resolve(); // MSAL bundled inline
+  return new Promise((res, rej) => {
+    if (window.msal) { res(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js';
+    s.onload = res; s.onerror = () => rej(new Error('Failed to load MSAL'));
+    document.head.appendChild(s);
+  });
 }
 
 // ═══════════════════════════════════════════════
@@ -693,7 +699,7 @@ async function testConnection() {
   const res = document.getElementById('cfg-result');
   res.style.display = 'block';
   res.style.color = 'var(--text2)';
-  res.textContent = 'Authenticating…';
+  res.textContent = 'Authenticating… (you may be redirected to Microsoft login)';
   try {
     siteId = null; listIds = {};
     await getSiteId();
@@ -1355,7 +1361,14 @@ buildHomeGrid();
 if (cfg.siteUrl && cfg.clientId && cfg.tenantId) {
   showView('home');
   setStatus('loading', 'Connecting…');
-  testConnection().catch(() => {});
+  // Init MSAL first to handle any redirect response, then connect
+  initMSAL().then(() => {
+    testConnection().catch(e => {
+      if (!e.message.includes('Redirecting')) {
+        setStatus('error', 'Error');
+      }
+    });
+  }).catch(() => {});
 }
 </script>
 </body>
