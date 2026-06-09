@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART — Installer Pull Log</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal/2.38.3/msal-browser.min.js" onload="initMsal()"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #222535; --border: #2e3248;
+    --accent: #4f7cff; --accent-dim: #2a3d7a; --green: #2ecc71; --green-dim: #1a5e38;
+    --red: #e74c3c; --red-dim: #5a1a14; --yellow: #f39c12; --yellow-dim: #5a3a06;
+    --text: #e8eaf0; --text2: #8b90a8; --text3: #555b77;
+    --font: 'Inter', system-ui, -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --radius: 8px; --radius-lg: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; height: 52px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+  .header-logo { font-size: 15px; font-weight: 700; letter-spacing: .04em; color: var(--accent); }
+  .header-logo span { color: var(--text2); font-weight: 400; }
+  .header-nav { display: flex; gap: 4px; margin-left: auto; }
+  .header-nav button { background: none; border: none; color: var(--text2); font-size: 13px; padding: 6px 12px; border-radius: var(--radius); cursor: pointer; transition: all .15s; }
+  .header-nav button:hover { background: var(--surface2); color: var(--text); }
+  .header-nav button.active { background: var(--accent-dim); color: var(--accent); }
+  .header-installer { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--green); background: var(--green-dim); padding: 4px 10px; border-radius: 20px; }
+  .sp-status { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; letter-spacing: .05em; display: none; }
+  .sp-status.connected { display: inline; background: var(--green-dim); color: var(--green); }
+  .sp-status.error { display: inline; background: var(--red-dim); color: var(--red); }
+  .sp-status.loading { display: inline; background: var(--accent-dim); color: var(--accent); }
+
+  /* AUTH SCREEN */
+  .auth-screen { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 52px); }
+  .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px; text-align: center; max-width: 400px; width: 100%; }
+  .auth-icon { width: 60px; height: 60px; background: var(--accent-dim); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 26px; }
+  .auth-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .auth-card p { color: var(--text2); font-size: 13px; line-height: 1.6; margin-bottom: 24px; }
+  .btn-signin { width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--font); transition: background .15s; }
+  .btn-signin:hover { background: #3d6ae0; }
+
+  /* HOME SCREEN */
+  .home-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 52px); padding: 40px 20px; }
+  .home-title { font-size: 28px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 6px; }
+  .home-sub { color: var(--text2); font-size: 15px; margin-bottom: 40px; }
+  .installer-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; width: 100%; max-width: 600px; }
+  .installer-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 16px; text-align: center; cursor: pointer; transition: all .15s; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .installer-card:hover { border-color: var(--accent); background: var(--surface2); transform: translateY(-1px); }
+  .installer-avatar { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-dim); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; }
+  .installer-name { font-size: 13px; font-weight: 600; }
+  .installer-badge { font-size: 11px; color: var(--text3); }
+
+  /* VIEWS */
+  .view { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .view.active { display: block; }
+
+  /* SCAN BAR */
+  .scan-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 16px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .scan-bar .field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 140px; }
+  .scan-bar label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text2); }
+  .scan-bar input, .scan-bar select { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; padding: 8px 12px; outline: none; font-family: var(--font); transition: border-color .15s; }
+  .scan-bar input:focus, .scan-bar select:focus { border-color: var(--accent); }
+  .scan-bar .field-barcode { flex: 2; min-width: 200px; }
+  .scan-bar .field-qty { flex: 0 0 80px; min-width: 60px; }
+  #barcode-input { font-family: var(--mono); font-size: 13px; }
+  .lookup-result { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin-top: 8px; display: none; }
+  .lookup-result.found { border-color: var(--green); background: rgba(46,204,113,.07); }
+  .lookup-result.notfound { border-color: var(--yellow); background: rgba(243,156,18,.07); }
+  .lookup-name { font-size: 13px; font-weight: 600; }
+  .lookup-meta { font-size: 11px; color: var(--text2); margin-top: 3px; font-family: var(--mono); }
+
+  /* BUTTONS */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius); border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #3d6ae0; }
+  .btn-success { background: var(--green); color: #fff; }
+  .btn-success:hover { background: #27ae60; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { background: #c0392b; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--border); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* TABLE */
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .table-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .table-title { font-size: 14px; font-weight: 700; }
+  .table-count { font-size: 12px; color: var(--text2); background: var(--surface2); padding: 2px 8px; border-radius: 20px; }
+  .table-total { margin-left: auto; font-size: 14px; font-weight: 700; color: var(--green); }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text2); border-bottom: 1px solid var(--border); background: var(--surface); white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid rgba(46,50,72,.5); font-size: 13px; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+  .td-name { font-weight: 500; }
+  .td-sku { font-family: var(--mono); font-size: 11px; color: var(--text2); }
+  .td-cost { font-family: var(--mono); text-align: right; }
+  .td-total { font-family: var(--mono); font-weight: 600; text-align: right; color: var(--green); }
+  .td-notfound { color: var(--yellow); }
+  .td-actions { text-align: right; white-space: nowrap; }
+  .empty-state { padding: 48px 20px; text-align: center; color: var(--text3); font-size: 13px; }
+  .qty-edit { width: 52px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; padding: 3px 6px; font-family: var(--mono); text-align: center; }
+
+  /* WEEK BAR */
+  .week-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .week-info { flex: 1; }
+  .week-info .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--text2); }
+  .week-info .val { font-size: 14px; font-weight: 600; margin-top: 2px; }
+  .archived-badge { font-size: 12px; color: var(--text2); }
+
+  /* FILTERS */
+  .filter-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 20px; margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .filter-bar select, .filter-bar input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 13px; padding: 7px 12px; outline: none; font-family: var(--font); }
+  .filter-bar select:focus, .filter-bar input:focus { border-color: var(--accent); }
+  .filter-label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text2); }
+
+  /* RETURNS EXTRAS */
+  .returns-extra { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .returns-extra .field { display: flex; flex-direction: column; gap: 5px; }
+  .returns-extra label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text2); }
+  .returns-extra input, .returns-extra select { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; padding: 8px 12px; outline: none; font-family: var(--font); }
+
+  /* PRODUCT LOOKUP BAR */
+  .lookup-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 20px; margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .lookup-bar input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 13px; padding: 8px 12px; outline: none; font-family: var(--font); flex: 1; min-width: 200px; }
+  .lookup-bar input:focus { border-color: var(--accent); }
+
+  /* MODAL */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 500; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .modal input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; padding: 9px 12px; outline: none; font-family: var(--font); margin-top: 8px; }
+  .modal input:focus { border-color: var(--accent); }
+
+  /* PROGRESS */
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 12px; overflow: hidden; display: none; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; }
+
+  /* SPINNER */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* TOAST */
+  #toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 18px; font-size: 13px; font-weight: 500; transform: translateY(80px); opacity: 0; transition: all .25s; max-width: 340px; }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.success { border-color: var(--green); color: var(--green); }
+  #toast.error { border-color: var(--red); color: var(--red); }
+  #toast.warning { border-color: var(--yellow); color: var(--yellow); }
+
+  @media (max-width: 640px) {
+    .installer-grid { grid-template-columns: repeat(2,1fr); }
+    .scan-bar .field-barcode { min-width: 100%; }
+    .returns-extra { grid-template-columns: 1fr; }
+    .header-nav button { padding: 6px 8px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">ART <span>/ Pull Log</span></div>
+  <div id="sp-status" class="sp-status"></div>
+  <div id="header-installer-badge" class="header-installer" style="display:none"></div>
+  <div class="header-nav" id="main-nav" style="display:none">
+    <button onclick="showView('home')" id="nav-home">Home</button>
+    <button onclick="showView('pull')" id="nav-pull" style="display:none">Pull Log</button>
+    <button onclick="showView('returns')" id="nav-returns" style="display:none">Returns</button>
+    <button onclick="showView('archive')" id="nav-archive">Archive</button>
+    <button onclick="showView('products')" id="nav-products">Products</button>
+  </div>
+</div>
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-icon">🔑</div>
+      <h2>Sign in to continue</h2>
+      <p>Sign in with your Advance Electronics Microsoft 365 account to access the Pull Log.</p>
+      <button class="btn-signin" onclick="signIn()">Sign in with Microsoft 365</button>
+      <p id="auth-error" style="color:var(--red);font-size:12px;margin-top:10px;display:none"></p>
+    </div>
+  </div>
+</div>
+
+<!-- APP (hidden until signed in) -->
+<div id="app-screen" style="display:none">
+
+<!-- HOME VIEW -->
+<div id="view-home" class="view active">
+  <div class="home-screen">
+    <div class="home-title">Installer Pull Log</div>
+    <div class="home-sub">Select your name to open your pull log</div>
+    <div class="installer-grid" id="installer-grid"></div>
+  </div>
+</div>
+
+<!-- PULL LOG VIEW -->
+<div id="view-pull" class="view">
+  <div class="week-bar">
+    <div class="week-info">
+      <div class="label">Current Week</div>
+      <div class="val" id="current-week-label"></div>
+    </div>
+    <span class="archived-badge" id="last-archived-label"></span>
+    <button class="btn btn-ghost btn-sm" onclick="openArchiveModal()">📦 Archive This Week</button>
+  </div>
+  <div class="scan-bar">
+    <div class="field field-barcode">
+      <label>Barcode (Scan or Type)</label>
+      <input type="text" id="barcode-input" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="lookup-result" id="lookup-result">
+        <div class="lookup-name" id="lookup-name"></div>
+        <div class="lookup-meta" id="lookup-meta"></div>
+      </div>
+    </div>
+    <div class="field field-qty"><label>Qty</label><input type="number" id="pull-qty" value="1" min="1" style="text-align:center;"></div>
+    <div class="field" style="flex:1.5;min-width:140px;"><label>Job</label><input type="text" id="pull-job" placeholder="Job name / #" autocomplete="off"></div>
+    <div class="field" style="flex:0 0 auto;"><label>&nbsp;</label><button class="btn btn-success" id="btn-add-pull" onclick="addPullEntry()" disabled>Add</button></div>
+  </div>
+  <div class="table-wrap">
+    <div class="table-header">
+      <span class="table-title" id="pull-table-title">Pull Log</span>
+      <span class="table-count" id="pull-count">0 items</span>
+      <span class="table-total" id="pull-total">$0.00</span>
+      <button class="btn btn-ghost btn-sm" onclick="exportPullCSV()">⬇ Export CSV</button>
+    </div>
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Barcode</th><th>Product Name</th><th>SKU</th><th>Mfr SKU</th><th>Vendor</th><th style="text-align:right">Unit Cost</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th><th>Date</th><th>Job</th><th></th></tr></thead>
+      <tbody id="pull-tbody"></tbody>
+    </table></div>
+    <div class="empty-state" id="pull-empty">No items pulled yet — scan a barcode above to start.</div>
+  </div>
+</div>
+
+<!-- RETURNS VIEW -->
+<div id="view-returns" class="view">
+  <div class="scan-bar">
+    <div class="field field-barcode">
+      <label>Barcode (Scan or Type)</label>
+      <input type="text" id="ret-barcode" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="lookup-result" id="ret-lookup-result">
+        <div class="lookup-name" id="ret-lookup-name"></div>
+        <div class="lookup-meta" id="ret-lookup-meta"></div>
+      </div>
+    </div>
+    <div class="field field-qty"><label>Qty</label><input type="number" id="ret-qty" value="1" min="1" style="text-align:center;"></div>
+    <div class="field" style="flex:1.5;min-width:140px;"><label>Job</label><input type="text" id="ret-job" placeholder="Job name / #" autocomplete="off"></div>
+    <div class="field" style="flex:0 0 auto;"><label>&nbsp;</label><button class="btn btn-success" id="btn-add-ret" onclick="addReturnEntry()" disabled>Add</button></div>
+  </div>
+  <div class="returns-extra">
+    <div class="field"><label>Change Order?</label><select id="ret-co"><option value="">No</option><option value="Yes">Yes</option></select></div>
+    <div class="field"><label>Install Later Date</label><input type="date" id="ret-install-later"></div>
+    <div class="field" style="grid-column:1/-1;"><label>Notes</label><input type="text" id="ret-notes" placeholder="Optional notes…"></div>
+  </div>
+  <div class="table-wrap">
+    <div class="table-header">
+      <span class="table-title" id="ret-table-title">Returns Log</span>
+      <span class="table-count" id="ret-count">0 items</span>
+      <button class="btn btn-ghost btn-sm" onclick="exportRetCSV()">⬇ Export CSV</button>
+    </div>
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Barcode</th><th>Product Name</th><th>SKU</th><th>Mfr SKU</th><th>Vendor</th><th style="text-align:right">Unit Cost</th><th style="text-align:center">Qty</th><th>Date</th><th>Job</th><th>CO?</th><th>Install Later</th><th>Notes</th><th></th></tr></thead>
+      <tbody id="ret-tbody"></tbody>
+    </table></div>
+    <div class="empty-state" id="ret-empty">No returns logged yet.</div>
+  </div>
+</div>
+
+<!-- ARCHIVE VIEW -->
+<div id="view-archive" class="view">
+  <div class="filter-bar">
+    <span class="filter-label">Week</span>
+    <select id="arch-week-filter" onchange="renderArchive()"><option value="">All Weeks</option></select>
+    <span class="filter-label">Installer</span>
+    <select id="arch-installer-filter" onchange="renderArchive()"><option value="">All Installers</option></select>
+    <span class="filter-label">Search</span>
+    <input type="text" id="arch-search" placeholder="Product, job, barcode…" oninput="renderArchive()" style="flex:1;min-width:160px;">
+    <button class="btn btn-ghost btn-sm" onclick="exportArchiveCSV()">⬇ Export CSV</button>
+  </div>
+  <div class="table-wrap">
+    <div class="table-header">
+      <span class="table-title">Archive</span>
+      <span class="table-count" id="arch-count">—</span>
+      <span class="table-total" id="arch-total"></span>
+    </div>
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Week Of</th><th>Installer</th><th>Barcode</th><th>Product Name</th><th>SKU</th><th>Vendor</th><th style="text-align:right">Unit Cost</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th><th>Date</th><th>Job</th></tr></thead>
+      <tbody id="arch-tbody"></tbody>
+    </table></div>
+    <div class="empty-state" id="arch-empty" style="display:none">No records match your filters.</div>
+  </div>
+</div>
+
+<!-- PRODUCTS VIEW -->
+<div id="view-products" class="view">
+  <div class="lookup-bar">
+    <input type="text" id="prod-search" placeholder="Search by barcode, name, SKU, vendor…" oninput="renderProducts()">
+    <button class="btn btn-ghost btn-sm" onclick="exportProductsCSV()">⬇ Export CSV</button>
+    <label class="btn btn-ghost btn-sm" style="cursor:pointer;">⬆ Import CSV<input type="file" id="prod-import" accept=".csv" style="display:none" onchange="importProductsCSV(event)"></label>
+    <span class="table-count" id="prod-count"></span>
+  </div>
+  <div style="font-size:12px;color:var(--text3);margin-bottom:12px;padding:0 4px;">
+    Import CSV columns: <code style="color:var(--text2);">Bar Code, Product Name, Product SKU, Mfr SKU, Unit Cost, Vendor</code>
+    &nbsp;·&nbsp; <span id="prod-sync-status" style="color:var(--text2)"></span>
+  </div>
+  <div class="table-wrap">
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Barcode</th><th>Product Name</th><th>Product SKU</th><th>Mfr SKU</th><th style="text-align:right">Unit Cost</th><th>Vendor</th></tr></thead>
+      <tbody id="prod-tbody"></tbody>
+    </table></div>
+    <div class="empty-state" id="prod-empty" style="display:none">No products match your search.</div>
+  </div>
+  <div class="progress-bar" id="import-progress"><div class="progress-fill" id="import-fill"></div></div>
+</div>
+
+</div><!-- end app-screen -->
+
+<!-- ARCHIVE MODAL -->
+<div class="modal-overlay" id="archive-modal">
+  <div class="modal">
+    <h3>📦 Archive This Week & Clear All Logs</h3>
+    <p style="color:var(--text2);font-size:13px;line-height:1.6;">All current pull entries for every installer will be saved to the archive, then cleared. Returns logs are not affected.</p>
+    <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);display:block;margin-top:14px;">Week Label</label>
+    <input type="text" id="modal-week-input">
+    <div class="progress-bar" id="archive-progress"><div class="progress-fill" id="archive-fill"></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeArchiveModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-do-archive" onclick="doArchive()">Archive & Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal">
+    <h3 id="confirm-title">Are you sure?</h3>
+    <p id="confirm-msg" style="color:var(--text2);font-size:13px;line-height:1.6;margin-top:8px;"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris', 'Barry', 'Andrew', 'Darwin', 'Yoan'];
+const LIST = { pull: 'PullLog', returns: 'ReturnsLog', archive: 'Archive', products: 'ProductLookup' };
+
+// Seed archive data from Excel
+const SEED_ARCHIVE = [{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"ARCG2US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":"beth eva"},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"793795534859","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"887276998039","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"AMPG1US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"AMPG1US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"842822060677","name":"ARAKNIS - ARAKNIS NETWORKS 220-SERIES SINGLE-WAN MULTI-GIG VPN ROUTER (AN-220-RT)","sku":"AVARKN001407","mfrSku":"AN220RT","vendor":"Staub Electronics Ltd.","cost":386.03,"qty":1,"total":386.03,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"842822063814","name":"ARAKNIS - 220-SERIES 8-PORT WEBSMART GIGABIT SWITCH W/ PARTIAL POE+ & REAR PORTS (AN-220-SW-R-8-POE)","sku":"AVARKN001654","mfrSku":"AN220SWR8POE","vendor":"Staub Electronics Ltd.","cost":369.6,"qty":1,"total":369.6,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"784276027861","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"85752232145","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"41093936838","name":"SONANCE 93683 6\" ROUND SINGLE STEREO SPEAKER W/ WHITE MICRO TRIM GRILLE (1 EACH) (VX62RSST)","sku":"AVARZN001746","mfrSku":"93683","vendor":"Sonance","cost":292.23,"qty":1,"total":292.23,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"0JSN3CGY900332","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"710931610154","name":"TRENDNET TEG-S80G 8-PORT GIGABIT GREENNET SWITCH (TQTEGS80G)","sku":"AVARTN000346","mfrSku":"TQTEGS80G","vendor":"ADEMCO III LTD.","cost":39.14,"qty":1,"total":39.14,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"74CA609377786","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"74CA6093775CC","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"793795533234","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"793795533234","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"793795529824","name":"Sanus Fixed Mount","sku":"","mfrSku":"CILL1","vendor":"Sanus","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Kevin","barcode":"793795540072","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"198957284175","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-19","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"793795527462","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-19","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"793795529824","name":"Sanus Fixed Mount","sku":"","mfrSku":"CILL1","vendor":"Sanus","cost":0,"qty":1,"total":0,"date":"2026-05-19","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"887276824338","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-19","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"ARCG2US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"41093960147","name":"SONANCE VX66R 6\" ROUND IN-CEILING SPEAKER W/ WHITE GRILL (1 PAIR) 96014","sku":"AVARZN001572","mfrSku":"VX66R","vendor":"Sonance","cost":524.79,"qty":3,"total":1574.37,"date":"2026-05-20","job":"Weinstien"},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"SUBG4US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"AMPG1US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":3,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"793795529824","name":"Sanus Fixed Mount","sku":"","mfrSku":"CILL1","vendor":"Sanus","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"793795534859","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"710931505184","name":"TRENDNET TPE-TG44G 8-PORT GREENNET GIGABIT POE+ SWITCH (4 POE+ 4 NON-POE) (TQTPETG44G)","sku":"AVARTN000348","mfrSku":"TQTPETG44G","vendor":"ADEMCO III LTD.","cost":84.5,"qty":1,"total":84.5,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"710931140835","name":"TRENDnet 16-Port Gigabit GREENnet 32 Gbps (TQ-TEGS17)","sku":"AVARTN001156","mfrSku":"TQTEGS17","vendor":"ADEMCO III LTD.","cost":104.61,"qty":1,"total":104.61,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"59497208321","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"27557692052","name":"LUTRON SINGLE GANG DECORA COVER WHITE (CW1WH)","sku":"AVARLT000272","mfrSku":"CW1WH","vendor":"LUTRON ELECTRONICS CANADA INC","cost":3.78,"qty":1,"total":3.78,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-20","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"710931505184","name":"TRENDNET TPE-TG44G 8-PORT GREENNET GIGABIT POE+ SWITCH (4 POE+ 4 NON-POE) (TQTPETG44G)","sku":"AVARTN000348","mfrSku":"TQTPETG44G","vendor":"ADEMCO III LTD.","cost":84.5,"qty":1,"total":84.5,"date":"2026-05-21","job":"Kilfoye"},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"194160011232","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-22","job":"Kilfoyle"},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"194160014950","name":"First Alert Home Mini Wireless Door and Window Sensor (PROSIXMINI3)","sku":"AVARHW002044","mfrSku":"PROSIXMINI3","vendor":"ADEMCO III LTD.","cost":26.33,"qty":1,"total":26.33,"date":"2026-05-22","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"194160014950","name":"First Alert Home Mini Wireless Door and Window Sensor (PROSIXMINI3)","sku":"AVARHW002044","mfrSku":"PROSIXMINI3","vendor":"ADEMCO III LTD.","cost":26.33,"qty":1,"total":26.33,"date":"2026-05-22","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"194160014950","name":"First Alert Home Mini Wireless Door and Window Sensor (PROSIXMINI3)","sku":"AVARHW002044","mfrSku":"PROSIXMINI3","vendor":"ADEMCO III LTD.","cost":26.33,"qty":1,"total":26.33,"date":"2026-05-22","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"194160014950","name":"First Alert Home Mini Wireless Door and Window Sensor (PROSIXMINI3)","sku":"AVARHW002044","mfrSku":"PROSIXMINI3","vendor":"ADEMCO III LTD.","cost":26.33,"qty":1,"total":26.33,"date":"2026-05-22","job":""},{"weekOf":"Week of 2026-05-18","installer":"Colin","barcode":"194160015773","name":"","sku":"","mfrSku":"PROWLTOUCHWA","vendor":"ADEMCO III LTD.","cost":0,"qty":1,"total":0,"date":"2026-05-22","job":""},{"weekOf":"Week of 2026-05-18","installer":"Chris","barcode":"41093960895","name":"SONANCE 96089 - VX80R 8\" ROUND IN-CEILING SPEAKER W/ WHITE MICRO TRIM GRILLE (1 PAIR)","sku":"AVARZN001943","mfrSku":"VX80R","vendor":"Sonance","cost":330.0,"qty":1,"total":330.0,"date":"2026-05-19","job":""},{"weekOf":"Week of 2026-05-18","installer":"Chris","barcode":"41093960895","name":"SONANCE 96089 - VX80R 8\" ROUND IN-CEILING SPEAKER W/ WHITE MICRO TRIM GRILLE (1 PAIR)","sku":"AVARZN001943","mfrSku":"VX80R","vendor":"Sonance","cost":330.0,"qty":1,"total":330.0,"date":"2026-05-19","job":""},{"weekOf":"Week of 2026-05-18","installer":"Chris","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Chris","barcode":"842822053617","name":"CONTROL 4 CORE 3 CONTROLLER","sku":"AVARCF001154","mfrSku":"C4CORE3","vendor":"CONTROL4 CORPORATION","cost":1216.28,"qty":1,"total":1216.28,"date":"2026-05-21","job":""},{"weekOf":"Week of 2026-05-18","installer":"Yoan","barcode":"27557449762","name":"LUTRON QS WIRE LANDING BOARD (QSWLB)","sku":"AVARLT000331","mfrSku":"QSWLB","vendor":"LUTRON ELECTRONICS CANADA INC","cost":59.99,"qty":1,"total":59.99,"date":"2026-05-13","job":"39"},{"weekOf":"Week of 2026-05-18","installer":"Yoan","barcode":"27557449762","name":"LUTRON QS WIRE LANDING BOARD (QSWLB)","sku":"AVARLT000331","mfrSku":"QSWLB","vendor":"LUTRON ELECTRONICS CANADA INC","cost":59.99,"qty":1,"total":59.99,"date":"2026-05-13","job":"39"},{"weekOf":"Week of 2026-05-18","installer":"Yoan","barcode":"784276151375","name":"LUTRON 24 VDC DIN RIALPOWER SUPPLY (QSPSDH175)","sku":"AVARLT001137","mfrSku":"QSPSDH175","vendor":"LUTRON ELECTRONICS CANADA INC","cost":137.33,"qty":1,"total":137.33,"date":"2026-05-13","job":"39"},{"weekOf":"Week of 2026-06-08","installer":"Kevin","barcode":"842822052863","name":"Triad SA1 Ryff-Enabled 200W x 2 Streaming Amplifier (TS-SA1-200)","sku":"AVARRI001628","mfrSku":"TSSA1200","vendor":"CONTROL4 CORPORATION","cost":930.6,"qty":1,"total":930.6,"date":"2026-05-26","job":""},{"weekOf":"Week of 2026-06-08","installer":"Kevin","barcode":"41093934353","name":"SONANCE 93435  GARDEN SERIES OUTDOOR IN-GROUND SUBWOOFER","sku":"AVARZN001687","mfrSku":"93435","vendor":"Sonance","cost":915.0,"qty":1,"total":915.0,"date":"2026-05-26","job":""},{"weekOf":"Week of 2026-06-08","installer":"Kevin","barcode":"41093934322","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-26","job":""},{"weekOf":"Week of 2026-06-08","installer":"Kevin","barcode":"IT5A056004621","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-26","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"41093960130","name":"SONANCE VX64R 6\" ROUND IN-CEILING SPEAKER W/ WHITE MICRO TRIM GRILLE (1 PAIR) 96013","sku":"AVARZN001609","mfrSku":"96013","vendor":"Sonance","cost":377.03,"qty":2,"total":754.06,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"878269007104","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":2,"total":0,"date":"2026-05-25","job":"Sonos Amp"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"41093936166","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":2,"total":0,"date":"2026-05-25","job":"SST MX62"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"13964792584","name":"CLEERLINE - SINGLE MODE ULTRA POLISHED CONNECTOR (EACH) (SSF-LC-SMUPC-10)","sku":"AVARAZ001008","mfrSku":"SSF-LC-SMUPC-10","vendor":"","cost":22.13,"qty":10,"total":221.29999999999998,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"850007171162","name":"ClareOne 16-Zone Hardwired Input Module (CLRC1WD16)","sku":"AVARHN001202","mfrSku":"CLR-C1-WD16","vendor":"CONTROL4 CORPORATION","cost":105.0,"qty":1,"total":105.0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"793795529824","name":"Sanus Fixed Mount","sku":"","mfrSku":"CILL1","vendor":"Sanus","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":2,"total":611.94,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"793795534859","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":"WSSATM1B"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"840136811336","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":"Sonos Arc"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"820043000665","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":"PC5003"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822019811","name":"WATTBOX WB-400-8 POWER CONDITIONER 8 OUTLETS (WB4008)","sku":"AVARWB000411","mfrSku":"WB4008","vendor":"Staub Electronics Ltd.","cost":141.44,"qty":1,"total":141.44,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822063739","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":"an320swr8"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822063814","name":"ARAKNIS - 220-SERIES 8-PORT WEBSMART GIGABIT SWITCH W/ PARTIAL POE+ & REAR PORTS (AN-220-SW-R-8-POE)","sku":"AVARKN001654","mfrSku":"AN220SWR8POE","vendor":"Staub Electronics Ltd.","cost":369.6,"qty":1,"total":369.6,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822059008","name":"LUMA 8CH 120 SERIES 1-BAY 8 POE NVR WITH 4TB SURVEILLANCE HARD DRIVE (LUM-120-NVR-8CH-4T)","sku":"AVARLU001497","mfrSku":"LUM120NVR8CH4T","vendor":"Staub Electronics Ltd.","cost":941.27,"qty":1,"total":941.27,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":6,"total":271.68,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"710931501612","name":"TRENDnet TEG-MGBS10 Mini-GBIC Single-Mode LC Module","sku":"AVARTN001007","mfrSku":"TEGMGBS10","vendor":"ADEMCO III LTD.","cost":36.78,"qty":2,"total":73.56,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"5060814110000","name":"FARADITE - MOTION SENSOR 360 WHITE- VOLT FREE (DRY CONTACT(M360-W-VOLF)","sku":"AVARFI001859","mfrSku":"M360WVOLF","vendor":"Faradite","cost":140.99,"qty":4,"total":563.96,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822058001","name":"LUMA SURVEILLANCE 220 SERIES 2MP TURRET IP OUTDOOR CAMERA (BLACK) (LUM-220-IP-TFB)","sku":"AVARLU001348","mfrSku":"LUM220IPTFB","vendor":"Staub Electronics Ltd.","cost":202.96,"qty":6,"total":1217.76,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"783863024450","name":"HONEYWELL 5601-A Heat Dtctr 135deg Fixed & Ror (FL5601A)","sku":"AVARHW000762","mfrSku":"FL5601A","vendor":"ADEMCO III LTD.","cost":14.24,"qty":1,"total":14.24,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"690113012702","name":"ULTRATECH  12V 7 AMP SEALED LEAD BATTEERY (IM1270)","sku":"AVARUK000473","mfrSku":"IM1270","vendor":"ADEMCO III LTD.","cost":22.22,"qty":1,"total":22.22,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"850007171704","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"887276998039","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"Desilets 50' Frame"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"59497208321","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":2,"total":0,"date":"2026-06-05","job":"Desilets     HDC 100"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"878269007104","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":3,"total":0,"date":"2026-06-05","job":"Sonos Amp"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822038348","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"Episode Soundbar"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"27108959108","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"Yamaha Amp"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"809918026948","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"Paradigm Sub"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"840136802327","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"Sonos Beam"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":3,"total":917.9100000000001,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"710931140873","name":"TRENDNET 24-PORT GIGABIT GREENNET SWITCH (RACK MOUNT) (TQ-TEGS25)","sku":"AVARTN001157","mfrSku":"TQTEGS25","vendor":"ADEMCO III LTD.","cost":133.85,"qty":1,"total":133.85,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":4,"total":181.12,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"793795527462","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"SA405"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"194253468165","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":2,"total":0,"date":"2026-06-05","job":"ATV"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"710931505184","name":"TRENDNET TPE-TG44G 8-PORT GREENNET GIGABIT POE+ SWITCH (4 POE+ 4 NON-POE) (TQTPETG44G)","sku":"AVARTN000348","mfrSku":"TQTPETG44G","vendor":"ADEMCO III LTD.","cost":84.5,"qty":1,"total":84.5,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"194160000090","name":"First Alert PROSIXMINI Wireless Door/Window Sensor (Mini).","sku":"AVARHW002058","mfrSku":"PROSIXMINI","vendor":"ADEMCO III LTD.","cost":34.99,"qty":6,"total":209.94,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"690113012702","name":"ULTRATECH  12V 7 AMP SEALED LEAD BATTEERY (IM1270)","sku":"AVARUK000473","mfrSku":"IM1270","vendor":"ADEMCO III LTD.","cost":22.22,"qty":1,"total":22.22,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"820043000665","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"PC5003"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"701834290048","name":"CELLAR SAVER C5-CS1829CO C/O SUMP PUMP FAILURE WARNING SENSOR (C5CS1829CO)","sku":"AVARCV000426","mfrSku":"C5CS1829CO","vendor":"ADEMCO III LTD.","cost":36.68,"qty":1,"total":36.68,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822058063","name":"Luma Surveillance\u2122 520 Series 5MP Turret IP Outdoor Camera (Black) (LUM-520-IP-TFB","sku":"","mfrSku":"","vendor":"Staub Electronics Ltd.","cost":207.99,"qty":4,"total":831.96,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"29054000576","name":"FIRST ALERT D3-RM4 SMOKE, HEAT, CARBON MONOXIDE RELAY (D3RM4)","sku":"AVARFA000447","mfrSku":"D3RM4","vendor":"ADEMCO III LTD.","cost":17.52,"qty":1,"total":17.52,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"876389016266","name":"CONTROL4 SYSTEM REMOTE CONTROL SR260 AND RECHARGING STATION (C4SR260RSKB)","sku":"AVARCF000083","mfrSku":"C4SR260RSKB","vendor":"CONTROL4 CORPORATION","cost":281.63,"qty":1,"total":281.63,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"194160000304","name":"First Alert PROSERIES Wireless Flood Sensor (PROSIXFLOOD)","sku":"AVARHW002056","mfrSku":"PROSIXFLOOD","vendor":"ADEMCO III LTD.","cost":51.99,"qty":2,"total":103.98,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"749617032690","name":"USP TEMPERATURE SENSOR (USF20)","sku":"AVARUP000421","mfrSku":"USF20","vendor":"ANIXTER CANADA","cost":49.1,"qty":1,"total":49.1,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"194160015087","name":"First Alert PROA7PLUS-FA ProSeries 7\" All-in-One Panel with Wi-Fi / Z Wave (PROA7PLUS-FA)","sku":"AVARHW002043","mfrSku":"PROA7PLUSFA","vendor":"ADEMCO III LTD.","cost":293.99,"qty":3,"total":881.97,"date":"2026-06-05","job":"LC200 no bar code"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"873564405099","name":"PURPOSE AV HS HDMI CABLE W/ETHERNET .7M (PAVHD07)","sku":"AVARPU000197","mfrSku":"PAVHD07","vendor":"Staub Electronics Ltd.","cost":3.94,"qty":1,"total":3.94,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"194160000106","name":"First Alert Home ProSeries Hardwired-to-Six Wireless Converter (PROSIXC2W)","sku":"AVARHW002047","mfrSku":"PROSIXC2W","vendor":"ADEMCO III LTD.","cost":88.99,"qty":1,"total":88.99,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"850015330209","name":"AVPRO BULLET TRAIN 1M 10K 48GBPS HDMI CABLE (AC-BT-10KUHD-010)","sku":"AVARPU001465","mfrSku":"ACBT10KUHD010","vendor":"Staub Electronics Ltd.","cost":35.36,"qty":1,"total":35.36,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"41093960093","name":"SONANCE 96009 4\" ROUND SPEAKERS W/ WHT MICRO TRIM GRILLE PAIR (VX42R)","sku":"AVARZN001619","mfrSku":"96009","vendor":"Sonance","cost":270.36,"qty":1,"total":270.36,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"41093960123","name":"SONANCE VX62R 6\" ROUND IN-CEILING SPEAKER W/ WHITE MICRO TRIM GRILLE (1 PAIR) 96012","sku":"AVARZN001610","mfrSku":"96012","vendor":"Sonance","cost":326.53,"qty":1,"total":326.53,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"793795533234","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":"Beam Mount"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822072434","name":"Luma 4CH NVR 2TB","sku":"","mfrSku":"LUM-121-NVR-4CH","vendor":"LUMA","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"41093936043","name":"SONANCE 93604  MX52 OUTDOOR SPEAKER BLACK (1 PAIR)","sku":"AVARZN001726","mfrSku":"93604","vendor":"Sonance","cost":318.95,"qty":1,"total":318.95,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"194160010167","name":"First Alert PROSERIES (PROLTE-CN3)","sku":"AVARHW002077","mfrSku":"PROLTECN3","vendor":"ADEMCO III LTD.","cost":113.99,"qty":1,"total":113.99,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":4,"total":181.12,"date":"2026-06-05","job":"Chris Murray"},{"weekOf":"Week of 2026-06-08","installer":"Adrian","barcode":"842822058063","name":"Luma Surveillance\u2122 520 Series 5MP Turret IP Outdoor Camera (Black) (LUM-520-IP-TFB","sku":"","mfrSku":"","vendor":"Staub Electronics Ltd.","cost":207.99,"qty":4,"total":831.96,"date":"2026-06-05","job":"Chris Murray"},{"weekOf":"Week of 2026-06-08","installer":"Chris","barcode":"SUBG4US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Chris","barcode":"SUBG4US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Chris","barcode":"842822058001","name":"LUMA SURVEILLANCE 220 SERIES 2MP TURRET IP OUTDOOR CAMERA (BLACK) (LUM-220-IP-TFB)","sku":"AVARLU001348","mfrSku":"LUM220IPTFB","vendor":"Staub Electronics Ltd.","cost":202.96,"qty":1,"total":202.96,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Chris","barcode":"842822058001","name":"LUMA SURVEILLANCE 220 SERIES 2MP TURRET IP OUTDOOR CAMERA (BLACK) (LUM-220-IP-TFB)","sku":"AVARLU001348","mfrSku":"LUM220IPTFB","vendor":"Staub Electronics Ltd.","cost":202.96,"qty":1,"total":202.96,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Chris","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":1,"total":45.28,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Chris","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":1,"total":45.28,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Chris","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":1,"total":45.28,"date":"2026-06-05","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"AMPG1US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"AMPG1US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"AMPG1US1BLK","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822060486","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"41093960130","name":"SONANCE VX64R 6\" ROUND IN-CEILING SPEAKER W/ WHITE MICRO TRIM GRILLE (1 PAIR) 96013","sku":"AVARZN001609","mfrSku":"96013","vendor":"Sonance","cost":377.03,"qty":1,"total":377.03,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822072434","name":"Luma 4CH NVR 2TB","sku":"","mfrSku":"LUM-121-NVR-4CH","vendor":"LUMA","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"783863023651","name":"HONEYWELL 2 WIRE SMOLE DETECTOR (FLC2WTABA)","sku":"AVARHW000465","mfrSku":"FLC2WTABA","vendor":"ADEMCO III LTD.","cost":42.99,"qty":1,"total":42.99,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"41093935503","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"41093935503","name":"\u26a0 Not Found","sku":"","mfrSku":"","vendor":"","cost":0,"qty":1,"total":0,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822019828","name":"WATTBOX WB-400-CE-10 POWER CONDITIONER 10 OUTLETS (WB400CE10)","sku":"AVARWB000412","mfrSku":"WB400CE10","vendor":"Staub Electronics Ltd.","cost":161.92,"qty":1,"total":161.92,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"783863023651","name":"HONEYWELL 2 WIRE SMOLE DETECTOR (FLC2WTABA)","sku":"AVARHW000465","mfrSku":"FLC2WTABA","vendor":"ADEMCO III LTD.","cost":42.99,"qty":1,"total":42.99,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"5060814110000","name":"FARADITE - MOTION SENSOR 360 WHITE- VOLT FREE (DRY CONTACT(M360-W-VOLF)","sku":"AVARFI001859","mfrSku":"M360WVOLF","vendor":"Faradite","cost":140.99,"qty":1,"total":140.99,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"5060814110000","name":"FARADITE - MOTION SENSOR 360 WHITE- VOLT FREE (DRY CONTACT(M360-W-VOLF)","sku":"AVARFI001859","mfrSku":"M360WVOLF","vendor":"Faradite","cost":140.99,"qty":1,"total":140.99,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"5060814110000","name":"FARADITE - MOTION SENSOR 360 WHITE- VOLT FREE (DRY CONTACT(M360-W-VOLF)","sku":"AVARFI001859","mfrSku":"M360WVOLF","vendor":"Faradite","cost":140.99,"qty":1,"total":140.99,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822058001","name":"LUMA SURVEILLANCE 220 SERIES 2MP TURRET IP OUTDOOR CAMERA (BLACK) (LUM-220-IP-TFB)","sku":"AVARLU001348","mfrSku":"LUM220IPTFB","vendor":"Staub Electronics Ltd.","cost":202.96,"qty":1,"total":202.96,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822058001","name":"LUMA SURVEILLANCE 220 SERIES 2MP TURRET IP OUTDOOR CAMERA (BLACK) (LUM-220-IP-TFB)","sku":"AVARLU001348","mfrSku":"LUM220IPTFB","vendor":"Staub Electronics Ltd.","cost":202.96,"qty":1,"total":202.96,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822058001","name":"LUMA SURVEILLANCE 220 SERIES 2MP TURRET IP OUTDOOR CAMERA (BLACK) (LUM-220-IP-TFB)","sku":"AVARLU001348","mfrSku":"LUM220IPTFB","vendor":"Staub Electronics Ltd.","cost":202.96,"qty":1,"total":202.96,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":1,"total":45.28,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":1,"total":45.28,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822060288","name":"LUMA X20 FIXED TURRET & BULLET EXTENSION JUNCTION BOX-BLACK (LUM-A20-JB-FX-BTB)","sku":"AVARLU001385","mfrSku":"LUMA20JBFXBTB","vendor":"Staub Electronics Ltd.","cost":45.28,"qty":1,"total":45.28,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822063777","name":"ARAKNIS - 220-SERIES 24-PORT WEBSMART GIGABIT SWITCH W/PARTIAL POE+& REAR PORTS (AN-220-SW-R-24-POE)","sku":"AVARKN001686","mfrSku":"AN220SWR24POE","vendor":"Staub Electronics Ltd.","cost":809.05,"qty":1,"total":809.05,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Darwin","barcode":"842822056625","name":"ARAKNIS - WI-FI-6 520 SERIES INDOOR WIRELESS ACCESS POINT (AN-520-AP-I-1)","sku":"AVARKN001296","mfrSku":"AN520API","vendor":"Staub Electronics Ltd.","cost":305.97,"qty":1,"total":305.97,"date":"2026-05-25","job":""},{"weekOf":"Week of 2026-06-08","installer":"Yoan","barcode":"784276286022","name":"LUTRON RA3 4B SUNNATA KEYPAD WH (RRST-W4B-WH)","sku":"AVARLT002031","mfrSku":"RRSTW4BWH","vendor":"LUTRON ELECTRONICS CANADA INC","cost":224.5,"qty":1,"total":224.5,"date":"2026-06-04","job":"Gord Polard"},{"weekOf":"Week of 2026-06-08","installer":"Yoan","barcode":"784276286022","name":"LUTRON RA3 4B SUNNATA KEYPAD WH (RRST-W4B-WH)","sku":"AVARLT002031","mfrSku":"RRSTW4BWH","vendor":"LUTRON ELECTRONICS CANADA INC","cost":224.5,"qty":1,"total":224.5,"date":"2026-06-04","job":"Gord Polard"}];
+
+let msalInstance = null;
+let accessToken = null;
+let siteId = null;
+let listIds = {};
+let activeInstaller = null;
+let pullEntries = [];
+let retEntries = [];
+let archiveRows = [];
+let products = {};
+
+// ── MSAL INIT (called by onload) ──
+function initMsal() {
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: CLIENT_ID,
+      authority: 'https://login.microsoftonline.com/' + TENANT_ID,
+      redirectUri: window.location.href.split('#')[0].split('?')[0]
+    },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+  });
+
+  msalInstance.handleRedirectPromise().then(resp => {
+    if (resp && resp.accessToken) accessToken = resp.accessToken;
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      showApp();
+    }
+  }).catch(e => {
+    showAuthError(e.message);
+  });
+}
+
+function signIn() {
+  msalInstance.loginRedirect({ scopes: SCOPES });
+}
+
+async function getToken() {
+  const accounts = msalInstance.getAllAccounts();
+  if (!accounts.length) throw new Error('Not signed in');
+  try {
+    const resp = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account: accounts[0] });
+    accessToken = resp.accessToken;
+    return accessToken;
+  } catch(e) {
+    await msalInstance.acquireTokenRedirect({ scopes: SCOPES, account: accounts[0] });
+    throw new Error('Redirecting…');
+  }
+}
+
+function showApp() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = '';
+  document.getElementById('main-nav').style.display = '';
+  updateWeekLabel();
+  buildHomeGrid();
+  setStatus('loading', 'Connecting…');
+  connectSharePoint();
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg; el.style.display = '';
+}
+
+// ── SHAREPOINT ──
+async function spFetch(method, path, body) {
+  const tok = await getToken();
+  const opts = { method, headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('https://graph.microsoft.com/v1.0' + path, opts);
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e?.error?.message || 'HTTP ' + r.status); }
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+async function getSiteId() {
+  if (siteId) return siteId;
+  const d = await spFetch('GET', '/sites/' + SITE_HOSTNAME + ':' + SITE_PATH);
+  siteId = d.id; return siteId;
+}
+
+async function getListId(name) {
+  if (listIds[name]) return listIds[name];
+  const sid = await getSiteId();
+  const d = await spFetch('GET', '/sites/' + sid + '/lists/' + encodeURIComponent(name));
+  listIds[name] = d.id; return d.id;
+}
+
+async function getItems(listName, filter) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  let url = '/sites/' + sid + '/lists/' + lid + '/items?expand=fields&$top=999';
+  if (filter) url += '&$filter=' + encodeURIComponent(filter);
+  let items = []; let next = null;
+  do {
+    const d = await spFetch('GET', next ? next.replace('https://graph.microsoft.com/v1.0','') : url);
+    items = items.concat(d.value || []); next = d['@odata.nextLink'] || null;
+  } while(next);
+  return items;
+}
+
+async function createItem(listName, fields) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  return spFetch('POST', '/sites/' + sid + '/lists/' + lid + '/items', { fields });
+}
+
+async function updateItem(listName, itemId, fields) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  return spFetch('PATCH', '/sites/' + sid + '/lists/' + lid + '/items/' + itemId + '/fields', fields);
+}
+
+async function deleteItem(listName, itemId) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  return spFetch('DELETE', '/sites/' + sid + '/lists/' + lid + '/items/' + itemId);
+}
+
+async function connectSharePoint() {
+  try {
+    await getSiteId();
+    for (const name of Object.values(LIST)) { await getListId(name); }
+    setStatus('connected', 'Connected');
+    // Load products into memory
+    await loadProducts(true);
+  } catch(e) {
+    setStatus('error', 'Error');
+    toast('SharePoint connection failed: ' + e.message, 'error');
+  }
+}
+
+// ── NAV ──
+function showView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.header-nav button').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  document.getElementById('nav-' + v)?.classList.add('active');
+  if (v === 'archive') loadArchive();
+  if (v === 'products') { renderProducts(); loadProducts(); }
+  if (v === 'pull') renderPull();
+  if (v === 'returns') renderReturns();
+}
+
+function setStatus(type, label) {
+  const el = document.getElementById('sp-status');
+  el.className = 'sp-status ' + type; el.textContent = label;
+}
+
+// ── INSTALLER SELECT ──
+async function selectInstaller(name) {
+  activeInstaller = name;
+  document.getElementById('header-installer-badge').textContent = name;
+  document.getElementById('header-installer-badge').style.display = '';
+  document.getElementById('nav-pull').style.display = '';
+  document.getElementById('nav-returns').style.display = '';
+  document.getElementById('pull-table-title').textContent = 'Pull Log — ' + name;
+  document.getElementById('ret-table-title').textContent = 'Returns — ' + name;
+  showView('pull');
+  updateWeekLabel();
+  setStatus('loading', 'Loading…');
+  try {
+    const [pulls, rets] = await Promise.all([
+      getItems(LIST.pull, "fields/Installer eq '" + name + "'"),
+      getItems(LIST.returns, "fields/Installer eq '" + name + "'")
+    ]);
+    pullEntries = pulls.map(spToPull);
+    retEntries = rets.map(spToRet);
+    renderPull(); renderReturns();
+    setStatus('connected', 'Connected');
+  } catch(e) {
+    toast('Failed to load: ' + e.message, 'error');
+    setStatus('error', 'Error');
+  }
+  setTimeout(() => document.getElementById('barcode-input').focus(), 50);
+}
+
+function spToPull(i) {
+  const f = i.fields||{};
+  return { spId: i.id, barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, total: parseFloat(f.LineTotal)||0, date: f.DateScanned||'', job: f.Job||'' };
+}
+function spToRet(i) {
+  const f = i.fields||{};
+  return { spId: i.id, barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, date: f.DateReturned||'', job: f.Job||'', co: f.ChangeOrder||'', installLater: f.InstallLater||'', notes: f.Notes||'' };
+}
+
+// ── WEEK HELPERS ──
+function getWeekOf(d) {
+  const dt = d ? new Date(d) : new Date();
+  const day = dt.getDay();
+  const diff = dt.getDate() - day + (day===0?-6:1);
+  const mon = new Date(new Date(dt).setDate(diff));
+  return 'Week of ' + mon.toISOString().slice(0,10);
+}
+function updateWeekLabel() {
+  document.getElementById('current-week-label').textContent = getWeekOf();
+  const arch = localStorage.getItem('art_last_archived');
+  document.getElementById('last-archived-label').textContent = arch ? 'Last archived: ' + arch : '';
+  const inp = document.getElementById('modal-week-input');
+  if (inp) inp.value = getWeekOf();
+}
+
+// ── PRODUCT LOOKUP ──
+function lookupBarcode(bc) { return products[bc.trim().toLowerCase()] || null; }
+
+async function loadProducts(silent) {
+  if (!silent) document.getElementById('prod-count').textContent = 'Loading…';
+  try {
+    const items = await getItems(LIST.products);
+    products = {};
+    items.forEach(i => {
+      const f = i.fields||{};
+      const k = (f.Barcode||'').trim().toLowerCase();
+      if (k) products[k] = { spId: i.id, name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', cost: parseFloat(f.UnitCost)||0, vendor: f.Vendor||'' };
+    });
+    if (!silent) { renderProducts(); document.getElementById('prod-sync-status').textContent = Object.keys(products).length.toLocaleString() + ' products loaded'; }
+  } catch(e) {
+    if (!silent) toast('Failed to load products: ' + e.message, 'error');
+  }
+}
+
+// ── PULL LOG ──
+document.getElementById('barcode-input').addEventListener('input', function() {
+  const bc = this.value.trim();
+  const res = document.getElementById('lookup-result');
+  if (!bc) { res.style.display='none'; document.getElementById('btn-add-pull').disabled=true; return; }
+  const p = lookupBarcode(bc);
+  res.style.display = '';
+  if (p) {
+    res.className='lookup-result found';
+    document.getElementById('lookup-name').textContent = p.name;
+    document.getElementById('lookup-meta').textContent = 'SKU: ' + (p.sku||'—') + '  |  Mfr: ' + (p.mfrSku||'—') + '  |  Cost: $' + p.cost.toFixed(2) + '  |  ' + (p.vendor||'—');
+  } else {
+    res.className='lookup-result notfound';
+    document.getElementById('lookup-name').textContent = '⚠ Not Found in Product Database';
+    document.getElementById('lookup-meta').textContent = 'Will be logged without product details';
+  }
+  document.getElementById('btn-add-pull').disabled = false;
+});
+document.getElementById('barcode-input').addEventListener('keydown', e => { if(e.key==='Enter') addPullEntry(); });
+document.getElementById('pull-job').addEventListener('keydown', e => { if(e.key==='Enter') addPullEntry(); });
+
+async function addPullEntry() {
+  const bc = document.getElementById('barcode-input').value.trim();
+  if (!bc || !activeInstaller) return;
+  const btn = document.getElementById('btn-add-pull');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  const qty = parseInt(document.getElementById('pull-qty').value)||1;
+  const job = document.getElementById('pull-job').value.trim();
+  const today = new Date().toISOString().slice(0,10);
+  const p = lookupBarcode(bc);
+  const fields = { Installer: activeInstaller, Barcode: bc, ProductName: p?p.name:'⚠ Not Found', SKU: p?p.sku:'', MfrSKU: p?p.mfrSku:'', Vendor: p?p.vendor:'', UnitCost: String(p?p.cost:0), Qty: String(qty), LineTotal: String(p?p.cost*qty:0), DateScanned: today, Job: job };
+  try {
+    const item = await createItem(LIST.pull, fields);
+    pullEntries.push({ spId: item.id, barcode: bc, name: fields.ProductName, sku: fields.SKU, mfrSku: fields.MfrSKU, vendor: fields.Vendor, cost: p?p.cost:0, qty, total: p?p.cost*qty:0, date: today, job });
+    renderPull();
+    document.getElementById('barcode-input').value=''; document.getElementById('lookup-result').style.display='none';
+    document.getElementById('pull-qty').value=1; document.getElementById('pull-job').value='';
+    document.getElementById('barcode-input').focus();
+    toast(p?'Added: '+p.name.slice(0,40):'Added (not in database)', p?'success':'warning');
+  } catch(e) { toast('Save failed: '+e.message,'error'); }
+  btn.disabled=false; btn.innerHTML='Add';
+}
+
+async function removePullEntry(spId) {
+  try { await deleteItem(LIST.pull, spId); pullEntries=pullEntries.filter(e=>e.spId!==spId); renderPull(); toast('Removed','success'); }
+  catch(e) { toast('Delete failed: '+e.message,'error'); }
+}
+
+async function updatePullQty(spId, newQty) {
+  const e = pullEntries.find(x=>x.spId===spId); if (!e) return;
+  e.qty=parseInt(newQty)||1; e.total=e.cost*e.qty;
+  try { await updateItem(LIST.pull, spId, { Qty: String(e.qty), LineTotal: String(e.total) }); renderPull(); }
+  catch(err) { toast('Update failed: '+err.message,'error'); }
+}
+
+function renderPull() {
+  const tbody=document.getElementById('pull-tbody'), empty=document.getElementById('pull-empty');
+  if (!pullEntries.length) { tbody.innerHTML=''; empty.style.display=''; return; }
+  empty.style.display='none'; let total=0;
+  tbody.innerHTML=pullEntries.map(e => { total+=e.total||0; return `<tr>
+    <td class="td-sku">${esc(e.barcode)}</td>
+    <td class="td-name ${(e.name||''). startsWith('⚠')?'td-notfound':''}">${esc(e.name)}</td>
+    <td class="td-sku">${esc(e.sku)}</td><td class="td-sku">${esc(e.mfrSku)}</td>
+    <td class="td-sku">${esc(e.vendor)}</td>
+    <td class="td-cost">$${(e.cost||0).toFixed(2)}</td>
+    <td style="text-align:center"><input class="qty-edit" type="number" min="1" value="${e.qty}" onchange="updatePullQty('${e.spId}',this.value)"></td>
+    <td class="td-total">$${(e.total||0).toFixed(2)}</td>
+    <td class="td-sku">${esc(e.date)}</td><td>${esc(e.job)}</td>
+    <td class="td-actions"><button class="btn btn-danger btn-sm" onclick="removePullEntry('${e.spId}')">✕</button></td>
+  </tr>`; }).join('');
+  document.getElementById('pull-count').textContent=pullEntries.length+' item'+(pullEntries.length!==1?'s':'');
+  document.getElementById('pull-total').textContent='$'+total.toFixed(2);
+}
+
+// ── RETURNS ──
+document.getElementById('ret-barcode').addEventListener('input', function() {
+  const bc=this.value.trim(), res=document.getElementById('ret-lookup-result');
+  if (!bc) { res.style.display='none'; document.getElementById('btn-add-ret').disabled=true; return; }
+  const p=lookupBarcode(bc); res.style.display='';
+  if (p) { res.className='lookup-result found'; document.getElementById('ret-lookup-name').textContent=p.name; document.getElementById('ret-lookup-meta').textContent='SKU: '+(p.sku||'—')+'  |  Cost: $'+p.cost.toFixed(2); }
+  else { res.className='lookup-result notfound'; document.getElementById('ret-lookup-name').textContent='⚠ Not Found'; document.getElementById('ret-lookup-meta').textContent='Will be logged without product details'; }
+  document.getElementById('btn-add-ret').disabled=false;
+});
+document.getElementById('ret-barcode').addEventListener('keydown', e => { if(e.key==='Enter') addReturnEntry(); });
+
+async function addReturnEntry() {
+  const bc=document.getElementById('ret-barcode').value.trim(); if (!bc||!activeInstaller) return;
+  const btn=document.getElementById('btn-add-ret'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  const qty=parseInt(document.getElementById('ret-qty').value)||1;
+  const job=document.getElementById('ret-job').value.trim();
+  const co=document.getElementById('ret-co').value;
+  const installLater=document.getElementById('ret-install-later').value;
+  const notes=document.getElementById('ret-notes').value.trim();
+  const today=new Date().toISOString().slice(0,10);
+  const p=lookupBarcode(bc);
+  const fields={ Installer: activeInstaller, Barcode: bc, ProductName: p?p.name:'⚠ Not Found', SKU: p?p.sku:'', MfrSKU: p?p.mfrSku:'', Vendor: p?p.vendor:'', UnitCost: String(p?p.cost:0), Qty: String(qty), DateReturned: today, Job: job, ChangeOrder: co, InstallLater: installLater, Notes: notes };
+  try {
+    const item=await createItem(LIST.returns, fields);
+    retEntries.push({ spId: item.id, barcode: bc, name: fields.ProductName, sku: fields.SKU, mfrSku: fields.MfrSKU, vendor: fields.Vendor, cost: p?p.cost:0, qty, date: today, job, co, installLater, notes });
+    renderReturns();
+    ['ret-barcode','ret-job','ret-notes'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('ret-qty').value=1; document.getElementById('ret-co').value=''; document.getElementById('ret-install-later').value='';
+    document.getElementById('ret-lookup-result').style.display='none';
+    document.getElementById('ret-barcode').focus();
+    toast('Return logged','success');
+  } catch(e) { toast('Save failed: '+e.message,'error'); }
+  btn.disabled=false; btn.innerHTML='Add';
+}
+
+async function removeRetEntry(spId) {
+  try { await deleteItem(LIST.returns, spId); retEntries=retEntries.filter(e=>e.spId!==spId); renderReturns(); toast('Removed','success'); }
+  catch(e) { toast('Delete failed: '+e.message,'error'); }
+}
+
+function renderReturns() {
+  const tbody=document.getElementById('ret-tbody'), empty=document.getElementById('ret-empty');
+  if (!retEntries.length) { tbody.innerHTML=''; empty.style.display=''; return; }
+  empty.style.display='none';
+  tbody.innerHTML=retEntries.map(e=>`<tr>
+    <td class="td-sku">${esc(e.barcode)}</td>
+    <td class="td-name ${(e.name||''). startsWith('⚠')?'td-notfound':''}">${esc(e.name)}</td>
+    <td class="td-sku">${esc(e.sku)}</td><td class="td-sku">${esc(e.mfrSku)}</td>
+    <td class="td-sku">${esc(e.vendor)}</td>
+    <td class="td-cost">$${(e.cost||0).toFixed(2)}</td>
+    <td style="text-align:center">${e.qty}</td>
+    <td class="td-sku">${esc(e.date)}</td><td>${esc(e.job)}</td>
+    <td>${esc(e.co)}</td><td class="td-sku">${esc(e.installLater)}</td><td>${esc(e.notes)}</td>
+    <td class="td-actions"><button class="btn btn-danger btn-sm" onclick="removeRetEntry('${e.spId}')">✕</button></td>
+  </tr>`).join('');
+  document.getElementById('ret-count').textContent=retEntries.length+' item'+(retEntries.length!==1?'s':'');
+}
+
+// ── ARCHIVE ──
+async function loadArchive() {
+  document.getElementById('arch-count').textContent='Loading…';
+  try {
+    const items=await getItems(LIST.archive);
+    archiveRows=items.map(i=>{ const f=i.fields||{}; return { weekOf: f.WeekOf||f.Title||''  , installer: f.Installer||'', barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, total: parseFloat(f.LineTotal)||0, date: f.DateScanned||f.Date||f.DatePulled||'', job: f.Job||''  }; });
+    // Merge seed archive data for weeks not already in SP
+    const spWeeks=new Set(archiveRows.map(r=>r.weekOf));
+    SEED_ARCHIVE.forEach(r=>{ if (!spWeeks.has(r.weekOf)) archiveRows.push(r); });
+    renderArchive();
+  } catch(e) { document.getElementById('arch-count').textContent='Error'; toast('Archive load failed: '+e.message,'error'); }
+}
+
+function renderArchive() {
+  const weeks=[...new Set(archiveRows.map(r=>r.weekOf))].sort().reverse();
+  const insts=[...new Set(archiveRows.map(r=>r.installer))].sort();
+  const wf=document.getElementById('arch-week-filter'), inf=document.getElementById('arch-installer-filter');
+  const selW=wf.value, selI=inf.value;
+  wf.innerHTML='<option value="">All Weeks</option>'+weeks.map(w=>`<option value="${esc(w)}" ${w===selW?'selected':''}>${esc(w)}</option>`).join('');
+  inf.innerHTML='<option value="">All Installers</option>'+insts.map(i=>`<option value="${esc(i)}" ${i===selI?'selected':''}>${esc(i)}</option>`).join('');
+  const search=(document.getElementById('arch-search').value||''). toLowerCase();
+  let rows=archiveRows.filter(r=>{ if(selW&&r.weekOf!==selW)return false; if(selI&&r.installer!==selI)return false; if(search&&![r.barcode,r.name,r.sku,r.job,r.vendor].join(' ').toLowerCase().includes(search))return false; return true; });
+  const tbody=document.getElementById('arch-tbody'), empty=document.getElementById('arch-empty');
+  const tot=rows.reduce((s,r)=>s+(r.total||0),0);
+  document.getElementById('arch-count').textContent=rows.length+' record'+(rows.length!==1?'s':'');
+  document.getElementById('arch-total').textContent=tot>0?'$'+tot.toFixed(2):'';
+  if (!rows.length) { tbody.innerHTML=''; empty.style.display=''; return; }
+  empty.style.display='none';
+  tbody.innerHTML=rows.map(r=>`<tr>
+    <td class="td-sku">${esc(r.weekOf)}</td>
+    <td><strong>${esc(r.installer)}</strong></td>
+    <td class="td-sku">${esc(r.barcode)}</td>
+    <td class="td-name ${r.name.startsWith('⚠')?'td-notfound':''}">${esc(r.name)}</td>
+    <td class="td-sku">${esc(r.sku)}</td><td class="td-sku">${esc(r.vendor)}</td>
+    <td class="td-cost">$${(r.cost||0).toFixed(2)}</td>
+    <td style="text-align:center">${r.qty||1}</td>
+    <td class="td-total">$${(r.total||0).toFixed(2)}</td>
+    <td class="td-sku">${esc(r.date)}</td><td>${esc(r.job)}</td>
+  </tr>`).join('');
+}
+
+// ── ARCHIVE MODAL ──
+function openArchiveModal() { updateWeekLabel(); document.getElementById('archive-modal').classList.add('open'); }
+function closeArchiveModal() { document.getElementById('archive-modal').classList.remove('open'); }
+
+async function doArchive() {
+  const weekLabel=document.getElementById('modal-week-input').value.trim()||getWeekOf();
+  const btn=document.getElementById('btn-do-archive'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Working…';
+  const pb=document.getElementById('archive-progress'), fill=document.getElementById('archive-fill');
+  pb.style.display=''; fill.style.width='0%';
+  try {
+    const allPulls=await getItems(LIST.pull);
+    if (!allPulls.length) { toast('No active entries to archive','warning'); closeArchiveModal(); btn.disabled=false; btn.innerHTML='Archive & Clear'; return; }
+    const total=allPulls.length; let done=0;
+    for (const item of allPulls) {
+      const f=item.fields||{};
+      await createItem(LIST.archive, { WeekOf: weekLabel, Installer: f.Installer||''  , Barcode: f.Barcode||''  , ProductName: f.ProductName||''  , SKU: f.SKU||''  , MfrSKU: f.MfrSKU||''  , Vendor: f.Vendor||''  , UnitCost: f.UnitCost||'0', Qty: f.Qty||'1', LineTotal: f.LineTotal||'0', DateScanned: f.DateScanned||''  , Job: f.Job||''   });
+      done++; fill.style.width=Math.round(done/(total*2)*100)+'%';
+    }
+    for (const item of allPulls) { await deleteItem(LIST.pull, item.id); done++; fill.style.width=Math.round(done/(total*2)*100)+'%'; }
+    localStorage.setItem('art_last_archived', new Date().toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}));
+    pullEntries=[]; renderPull(); updateWeekLabel(); setStatus('connected','Connected');
+    closeArchiveModal(); toast('Archived '+total+' entries for '+weekLabel,'success');
+  } catch(e) { toast('Archive failed: '+e.message,'error'); }
+  pb.style.display='none'; btn.disabled=false; btn.innerHTML='Archive & Clear';
+}
+
+// ── PRODUCTS VIEW ──
+function renderProducts() {
+  const search=(document.getElementById('prod-search').value||''). toLowerCase().trim();
+  const all=Object.entries(products);
+  const filtered=search?all.filter(([k,v])=>k.includes(search)||v.name.toLowerCase().includes(search)||v.sku.toLowerCase().includes(search)||v.mfrSku.toLowerCase().includes(search)||v.vendor.toLowerCase().includes(search)):all;
+  document.getElementById('prod-count').textContent=filtered.length.toLocaleString()+' of '+all.length.toLocaleString()+' products';
+  const show=filtered.slice(0,200);
+  const tbody=document.getElementById('prod-tbody'), empty=document.getElementById('prod-empty');
+  if (!show.length) { tbody.innerHTML=''; empty.style.display=''; return; }
+  empty.style.display='none';
+  tbody.innerHTML=show.map(([k,v])=>`<tr><td class="td-sku">${esc(k)}</td><td class="td-name">${esc(v.name)}</td><td class="td-sku">${esc(v.sku)}</td><td class="td-sku">${esc(v.mfrSku)}</td><td class="td-cost">$${(v.cost||0).toFixed(2)}</td><td class="td-sku">${esc(v.vendor)}</td></tr>`).join('');
+  if (filtered.length>200) tbody.innerHTML+=`<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">Showing first 200 of ${filtered.length.toLocaleString()} — refine your search</td></tr>`;
+}
+
+async function importProductsCSV(event) {
+  const file=event.target.files[0]; if (!file) return;
+  const reader=new FileReader();
+  reader.onload=async function(e) {
+    try {
+      const lines=e.target.result.split(/\r?\n/);
+      const header=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+      const bcIdx=header.findIndex(h=>/bar.*code/i.test(h)), nameIdx=header.findIndex(h=>/product.*name/i.test(h));
+      const skuIdx=header.findIndex(h=>/product.*sku/i.test(h)), mfrIdx=header.findIndex(h=>/mfr.*sku/i.test(h));
+      const costIdx=header.findIndex(h=>/unit.*cost/i.test(h)), vendorIdx=header.findIndex(h=>/vendor/i.test(h));
+      if (bcIdx<0||nameIdx<0) { toast('CSV missing required columns','error'); return; }
+      let parsed=[];
+      for (let i=1;i<lines.length;i++) {
+        const cols=parseCSVLine(lines[i]);
+        const bc=(cols[bcIdx]||''). trim(); const name=(cols[nameIdx]||''). trim();
+        if (!bc||!name) continue;
+        parsed.push({ bc: bc.toLowerCase(), name, sku: skuIdx>=0?(cols[skuIdx]||''). trim():'', mfrSku: mfrIdx>=0?(cols[mfrIdx]||''). trim():'', cost: costIdx>=0?parseFloat(cols[costIdx])||0:0, vendor: vendorIdx>=0?(cols[vendorIdx]||''). trim():'' });
+      }
+      const pb=document.getElementById('import-progress'), fill=document.getElementById('import-fill');
+      pb.style.display=''; fill.style.width='0%';
+      document.getElementById('prod-sync-status').textContent='Uploading '+parsed.length+' products…';
+      const existing=await getItems(LIST.products);
+      for (let i=0;i<existing.length;i++) { await deleteItem(LIST.products, existing[i].id); fill.style.width=Math.round(i/(existing.length+parsed.length)*100)+'%'; }
+      products={};
+      for (let i=0;i<parsed.length;i++) {
+        const p=parsed[i];
+        const item=await createItem(LIST.products, { Barcode: p.bc, ProductName: p.name, SKU: p.sku, MfrSKU: p.mfrSku, UnitCost: String(p.cost), Vendor: p.vendor });
+        products[p.bc]={ spId: item.id, name: p.name, sku: p.sku, mfrSku: p.mfrSku, cost: p.cost, vendor: p.vendor };
+        fill.style.width=Math.round((existing.length+i)/(existing.length+parsed.length)*100)+'%';
+      }
+      pb.style.display='none'; renderProducts();
+      document.getElementById('prod-sync-status').textContent=parsed.length.toLocaleString()+' products synced';
+      toast('Imported '+parsed.length+' products','success');
+    } catch(err) { toast('Import failed: '+err.message,'error'); }
+    event.target.value='';
+  };
+  reader.readAsText(file);
+}
+
+// ── EXPORTS ──
+function exportProductsCSV() { const rows=[['Bar Code','Product Name','Product SKU','Mfr SKU','Unit Cost','Vendor']]; for (const [k,v] of Object.entries(products)) rows.push([k,v.name,v.sku,v.mfrSku,v.cost,v.vendor]); downloadCSV('ART_Product_Lookup.csv',rows); }
+function exportPullCSV() { if (!pullEntries.length){toast('No entries','warning');return;} const rows=[['Bar Code','Product Name','SKU','Mfr SKU','Vendor','Unit Cost','Qty','Total','Date','Job']]; pullEntries.forEach(e=>rows.push([e.barcode,e.name,e.sku,e.mfrSku,e.vendor,e.cost,e.qty,e.total,e.date,e.job])); downloadCSV('ART_PullLog_'+activeInstaller+'_'+new Date().toISOString().slice(0,10)+'.csv',rows); }
+function exportRetCSV() { if (!retEntries.length){toast('No returns','warning');return;} const rows=[['Bar Code','Product Name','SKU','Mfr SKU','Vendor','Unit Cost','Qty','Date','Job','CO','Install Later','Notes']]; retEntries.forEach(e=>rows.push([e.barcode,e.name,e.sku,e.mfrSku,e.vendor,e.cost,e.qty,e.date,e.job,e.co,e.installLater,e.notes])); downloadCSV('ART_Returns_'+activeInstaller+'_'+new Date().toISOString().slice(0,10)+'.csv',rows); }
+function exportArchiveCSV() { if (!archiveRows.length){toast('No archive data','warning');return;} const rows=[['Week Of','Installer','Bar Code','Product Name','SKU','Vendor','Unit Cost','Qty','Total','Date','Job']]; archiveRows.forEach(r=>rows.push([r.weekOf,r.installer,r.barcode,r.name,r.sku,r.vendor,r.cost,r.qty,r.total,r.date,r.job])); downloadCSV('ART_Archive_'+new Date().toISOString().slice(0,10)+'.csv',rows); }
+function downloadCSV(filename,rows) { const csv=rows.map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url); }
+
+// ── HOME GRID ──
+function buildHomeGrid() {
+  document.getElementById('installer-grid').innerHTML=INSTALLERS.map(name=>`
+    <div class="installer-card" onclick="selectInstaller('${name}')">
+      <div class="installer-avatar">${name[0]}</div>
+      <div class="installer-name">${name}</div>
+      <div class="installer-badge">Tap to open</div>
+    </div>`).join('');
+}
+
+// ── CONFIRM MODAL ──
+function showConfirm(title,msg,cb) { document.getElementById('confirm-title').textContent=title; document.getElementById('confirm-msg').textContent=msg; document.getElementById('confirm-ok').onclick=cb; document.getElementById('confirm-modal').classList.add('open'); }
+function closeConfirm() { document.getElementById('confirm-modal').classList.remove('open'); }
+
+// ── HELPERS ──
+function esc(s) { if(!s)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function parseCSVLine(line) { const r=[]; let c='',q=false; for(const ch of line){if(ch==='"')q=!q;else if(ch===','&&!q){r.push(c);c='';}else c+=ch;} r.push(c); return r; }
+let toastTimer;
+function toast(msg,type='success') { const el=document.getElementById('toast'); el.textContent=msg; el.className='show '+type; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.className='',3500); }
+</script>
+</body>
+</html>
