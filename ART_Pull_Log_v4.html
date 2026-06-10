@@ -258,9 +258,9 @@
     <div class="field" style="flex:0 0 auto;"><label>&nbsp;</label><button class="btn btn-success" id="btn-add-ret" onclick="addReturnEntry()" disabled>Add</button></div>
   </div>
   <div class="returns-extra">
-    <div class="field"><label>Change Order?</label><select id="ret-co"><option value="">No</option><option value="Yes">Yes</option></select></div>
-    <div class="field"><label>Install Later Date</label><input type="date" id="ret-install-later"></div>
-    <div class="field" style="grid-column:1/-1;"><label>Notes</label><input type="text" id="ret-notes" placeholder="Optional notes…"></div>
+    <div class="field"><label>Change Order? <span style="color:var(--text3);text-transform:none;letter-spacing:0">(optional)</span></label><select id="ret-co"><option value="">No</option><option value="Yes">Yes</option></select></div>
+    <div class="field"><label>Install Later Date <span style="color:var(--text3);text-transform:none;letter-spacing:0">(optional — leave blank if unknown)</span></label><input type="date" id="ret-install-later"></div>
+    <div class="field" style="grid-column:1/-1;"><label>Notes <span style="color:var(--text3);text-transform:none;letter-spacing:0">(optional)</span></label><input type="text" id="ret-notes" placeholder="Optional notes…"></div>
   </div>
   <div class="table-wrap">
     <div class="table-header">
@@ -706,7 +706,11 @@ async function addReturnEntry() {
   const notes=document.getElementById('ret-notes').value.trim();
   const today=new Date().toISOString().slice(0,10);
   const p=lookupBarcode(bc);
-  const fields={ Installer: activeInstaller, Barcode: bc, ProductName: p?p.name:'⚠ Not Found', SKU: p?p.sku:'', MfrSKU: p?p.mfrSku:'', Vendor: p?p.vendor:'', UnitCost: String(p?p.cost:0), Qty: String(qty), DateReturned: today, Job: job, ChangeOrder: co, InstallLater: installLater, Notes: notes };
+  const fields={ Installer: activeInstaller, Barcode: bc, ProductName: p?p.name:'⚠ Not Found', SKU: p?p.sku:'', MfrSKU: p?p.mfrSku:'', Vendor: p?p.vendor:'', UnitCost: String(p?p.cost:0), Qty: String(qty), DateReturned: today, Job: job };
+  // Only send optional fields if they have a value (avoids type errors on empty dates)
+  if (co) fields.ChangeOrder = co;
+  if (installLater) fields.InstallLater = installLater;
+  if (notes) fields.Notes = notes;
   try {
     const item=await createItem(LIST.returns, fields);
     retEntries.push({ spId: item.id, barcode: bc, name: fields.ProductName, sku: fields.SKU, mfrSku: fields.MfrSKU, vendor: fields.Vendor, cost: p?p.cost:0, qty, date: today, job, co, installLater, notes });
