@@ -792,7 +792,7 @@ async function doArchive() {
   const weekLabel=document.getElementById('modal-week-input').value.trim()||getWeekOf();
   const btn=document.getElementById('btn-do-archive'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Working…';
   const pb=document.getElementById('archive-progress'), fill=document.getElementById('archive-fill');
-  pb.style.display=''; fill.style.width='0%';
+  pb.style.display='block'; fill.style.width='0%';
   try {
     const allPulls=await getItems(LIST.pull);
     if (!allPulls.length) { toast('No active entries to archive','warning'); closeArchiveModal(); btn.disabled=false; btn.innerHTML='Archive & Clear'; return; }
@@ -826,6 +826,7 @@ function renderProducts() {
 
 async function importProductsCSV(event) {
   const file=event.target.files[0]; if (!file) return;
+  toast('Reading CSV…','success');
   const reader=new FileReader();
   reader.onload=async function(e) {
     try {
@@ -843,8 +844,9 @@ async function importProductsCSV(event) {
         parsed.push({ bc: bc.toLowerCase(), name, sku: skuIdx>=0?(cols[skuIdx]||''). trim():'', mfrSku: mfrIdx>=0?(cols[mfrIdx]||''). trim():'', cost: costIdx>=0?parseFloat(cols[costIdx])||0:0, vendor: vendorIdx>=0?(cols[vendorIdx]||''). trim():'' });
       }
       const pb=document.getElementById('import-progress'), fill=document.getElementById('import-fill');
-      pb.style.display=''; fill.style.width='0%';
+      pb.style.display='block'; fill.style.width='0%';
       document.getElementById('prod-sync-status').textContent='Uploading '+parsed.length+' products…';
+      toast('Uploading '+parsed.length+' products to SharePoint — this takes several minutes, leave this tab open','warning');
       const existing=await getItems(LIST.products);
       for (let i=0;i<existing.length;i++) { await deleteItem(LIST.products, existing[i].id); fill.style.width=Math.round(i/(existing.length+parsed.length)*100)+'%'; }
       products={};
@@ -853,6 +855,7 @@ async function importProductsCSV(event) {
         const item=await createItem(LIST.products, { Barcode: p.bc, ProductName: p.name, SKU: p.sku, MfrSKU: p.mfrSku, UnitCost: String(p.cost), Vendor: p.vendor });
         products[p.bc]={ spId: item.id, name: p.name, sku: p.sku, mfrSku: p.mfrSku, cost: p.cost, vendor: p.vendor };
         fill.style.width=Math.round((existing.length+i)/(existing.length+parsed.length)*100)+'%';
+        if (i % 25 === 0) document.getElementById('prod-sync-status').textContent='Uploading… '+i+' of '+parsed.length;
       }
       pb.style.display='none'; rebuildZeroIndex(); renderProducts();
       document.getElementById('prod-sync-status').textContent=parsed.length.toLocaleString()+' products synced';
