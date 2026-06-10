@@ -444,7 +444,7 @@ function showAuthError(msg) {
 // ── SHAREPOINT ──
 async function spFetch(method, path, body) {
   const tok = await getToken();
-  const opts = { method, headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' } };
+  const opts = { method, headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json', 'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch('https://graph.microsoft.com/v1.0' + path, opts);
   if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e?.error?.message || 'HTTP ' + r.status); }
@@ -536,11 +536,11 @@ async function selectInstaller(name) {
   setStatus('loading', 'Loading…');
   try {
     const [pulls, rets] = await Promise.all([
-      getItems(LIST.pull, "fields/Installer eq '" + name + "'"),
-      getItems(LIST.returns, "fields/Installer eq '" + name + "'")
+      getItems(LIST.pull),
+      getItems(LIST.returns)
     ]);
-    pullEntries = pulls.map(spToPull);
-    retEntries = rets.map(spToRet);
+    pullEntries = pulls.map(spToPull).filter(e => (e.installer||'') === name);
+    retEntries = rets.map(spToRet).filter(e => (e.installer||'') === name);
     renderPull(); renderReturns();
     setStatus('connected', 'Connected');
   } catch(e) {
@@ -552,11 +552,11 @@ async function selectInstaller(name) {
 
 function spToPull(i) {
   const f = i.fields||{};
-  return { spId: i.id, barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, total: parseFloat(f.LineTotal)||0, date: f.DateScanned||'', job: f.Job||'' };
+  return { spId: i.id, installer: f.Installer||'', barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, total: parseFloat(f.LineTotal)||0, date: f.DateScanned||'', job: f.Job||'' };
 }
 function spToRet(i) {
   const f = i.fields||{};
-  return { spId: i.id, barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, date: f.DateReturned||'', job: f.Job||'', co: f.ChangeOrder||'', installLater: f.InstallLater||'', notes: f.Notes||'' };
+  return { spId: i.id, installer: f.Installer||'', barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, date: f.DateReturned||'', job: f.Job||'', co: f.ChangeOrder||'', installLater: f.InstallLater||'', notes: f.Notes||'' };
 }
 
 // ── WEEK HELPERS ──
