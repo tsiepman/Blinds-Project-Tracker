@@ -576,7 +576,23 @@ function updateWeekLabel() {
 }
 
 // ── PRODUCT LOOKUP ──
-function lookupBarcode(bc) { return products[bc.trim().toLowerCase()] || null; }
+function lookupBarcode(bc) {
+  const key = bc.trim().toLowerCase();
+  if (products[key]) return products[key];
+  // Leading-zero tolerant match (UPC codes often lose/gain leading zeros)
+  const stripped = key.replace(/^0+/, '');
+  if (stripped && productsNoZero[stripped]) return productsNoZero[stripped];
+  return null;
+}
+// Secondary index: barcodes with leading zeros stripped
+let productsNoZero = {};
+function rebuildZeroIndex() {
+  productsNoZero = {};
+  for (const [k, v] of Object.entries(products)) {
+    const s = k.replace(/^0+/, '');
+    if (s && !productsNoZero[s]) productsNoZero[s] = v;
+  }
+}
 
 async function loadProducts(silent) {
   if (!silent) document.getElementById('prod-count').textContent = 'Loading…';
@@ -588,6 +604,7 @@ async function loadProducts(silent) {
       const k = (f.Barcode||'').trim().toLowerCase();
       if (k) products[k] = { spId: i.id, name: f.ProductName||'', sku: f.SKU||'', mfrSku: f.MfrSKU||'', cost: parseFloat(f.UnitCost)||0, vendor: f.Vendor||'' };
     });
+    rebuildZeroIndex();
     if (!silent) { renderProducts(); document.getElementById('prod-sync-status').textContent = Object.keys(products).length.toLocaleString() + ' products loaded'; }
   } catch(e) {
     if (!silent) toast('Failed to load products: ' + e.message, 'error');
@@ -837,7 +854,7 @@ async function importProductsCSV(event) {
         products[p.bc]={ spId: item.id, name: p.name, sku: p.sku, mfrSku: p.mfrSku, cost: p.cost, vendor: p.vendor };
         fill.style.width=Math.round((existing.length+i)/(existing.length+parsed.length)*100)+'%';
       }
-      pb.style.display='none'; renderProducts();
+      pb.style.display='none'; rebuildZeroIndex(); renderProducts();
       document.getElementById('prod-sync-status').textContent=parsed.length.toLocaleString()+' products synced';
       toast('Imported '+parsed.length+' products','success');
     } catch(err) { toast('Import failed: '+err.message,'error'); }
