@@ -236,8 +236,8 @@
       </div>
 
       <div class="field" id="footageField">
-        <label for="footageInput">Footage (optional)</label>
-        <input id="footageInput" type="number" min="0" placeholder="e.g. 1000">
+        <label for="footageInput">Footage on Box (optional)</label>
+        <input id="footageInput" type="number" min="0" placeholder="e.g. 1000 — updates the box's current footage">
       </div>
 
       <div class="field">
@@ -486,7 +486,7 @@ function pickAction(btn) {
   btn.classList.add("sel");
   selectedAction = btn.dataset.action;
   document.getElementById("installerField").style.display = selectedAction === "Checked Out" ? "block" : "none";
-  document.getElementById("footageField").style.display = selectedAction === "Received" ? "block" : "none";
+  document.getElementById("footageField").style.display = selectedAction !== "Empty" ? "block" : "none";
   document.getElementById("barcodeInput").focus();
 }
 
@@ -537,6 +537,7 @@ async function logScan() {
       LastAction: stamp
     };
     if (footage) f.Footage = Number(footage);
+    if (selectedAction === "Empty") f.Footage = 0;
     if (selectedAction === "Checked Out") {
       f.LastInstaller = installer;
       f.LastJob = job;
