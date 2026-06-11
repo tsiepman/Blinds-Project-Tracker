@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ART Wire Tracker</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/msal-browser/2.38.3/msal-browser.min.js" onload="initMsal()"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js" onload="initMsal()"
+        onerror="this.remove();var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.38.0/js/msal-browser.min.js';s.onload=initMsal;document.head.appendChild(s);"></script>
 <style>
   :root {
     --navy: #1a2940;
