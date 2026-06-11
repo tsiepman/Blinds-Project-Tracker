@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART Wire Tracker</title>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js" onload="initMsal()"
+        onerror="this.remove();var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.38.0/js/msal-browser.min.js';s.onload=initMsal;document.head.appendChild(s);"></script>
+<style>
+  :root {
+    --navy: #1a2940;
+    --navy-light: #243a5e;
+    --accent: #e8a33d;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --green-bg: #e2efda; --green-tx: #2f6b2f;
+    --orange-bg: #fce4d6; --orange-tx: #9a4b12;
+    --blue-bg: #deeaf1; --blue-tx: #1f5a82;
+    --gray-bg: #f2f2f2; --gray-tx: #555;
+    --red: #c0392b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ===== Sign-in screen ===== */
+  #signinScreen {
+    position: fixed; inset: 0; background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .signin-card {
+    background: #fff; border-radius: 14px; padding: 44px 40px; width: 380px; max-width: 92vw;
+    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  }
+  .signin-card h1 { font-size: 22px; color: var(--navy); margin-bottom: 6px; letter-spacing: 0.5px; }
+  .signin-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .signin-card .logo { font-size: 38px; margin-bottom: 12px; }
+  .btn-signin {
+    background: var(--navy); color: #fff; border: none; border-radius: 8px; padding: 13px 28px;
+    font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; transition: background 0.15s;
+  }
+  .btn-signin:hover { background: var(--navy-light); }
+  #signinStatus { margin-top: 16px; font-size: 13px; color: var(--muted); min-height: 18px; }
+
+  /* ===== Header ===== */
+  header {
+    background: var(--navy); color: #fff; padding: 14px 20px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+  header .title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+  header .title span { color: var(--accent); }
+  header .userbox { font-size: 12px; opacity: 0.85; display: flex; align-items: center; gap: 12px; }
+  header .userbox button {
+    background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer;
+  }
+  header .userbox button:hover { background: rgba(255,255,255,0.12); }
+
+  /* ===== Tabs ===== */
+  nav { background: #fff; border-bottom: 1px solid var(--border); display: flex; padding: 0 12px; overflow-x: auto; }
+  nav button {
+    background: none; border: none; padding: 14px 18px; font-size: 14px; font-weight: 600;
+    color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap;
+  }
+  nav button.active { color: var(--navy); border-bottom-color: var(--accent); }
+  nav button:hover { color: var(--navy); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  .tabpane { display: none; }
+  .tabpane.active { display: block; }
+
+  /* ===== Scan card ===== */
+  .scan-card {
+    background: var(--card); border-radius: 14px; padding: 28px; max-width: 560px; margin: 0 auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+  }
+  .scan-card h2 { font-size: 16px; color: var(--navy); margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+  .field input, .field select {
+    width: 100%; padding: 12px 14px; font-size: 16px; border: 2px solid var(--border); border-radius: 8px;
+    background: #fff; color: var(--text);
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+  #barcodeInput { font-size: 20px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+  .decode-hint { font-size: 13px; margin-top: 6px; min-height: 17px; font-weight: 600; }
+  .decode-hint.ok { color: #2f6b2f; }
+  .decode-hint.bad { color: var(--red); }
+
+  .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .action-btn {
+    padding: 14px 8px; border: 2px solid var(--border); border-radius: 10px; background: #fff;
+    font-size: 14px; font-weight: 700; cursor: pointer; color: var(--muted); transition: all 0.12s;
+  }
+  .action-btn[data-action="Received"].sel    { background: var(--green-bg); border-color: #6aa84f; color: var(--green-tx); }
+  .action-btn[data-action="Checked Out"].sel { background: var(--orange-bg); border-color: #e08a3c; color: var(--orange-tx); }
+  .action-btn[data-action="Checked In"].sel  { background: var(--blue-bg); border-color: #5b9bd5; color: var(--blue-tx); }
+  .action-btn[data-action="Empty"].sel       { background: var(--gray-bg); border-color: #999; color: var(--gray-tx); }
+  .action-btn:hover { border-color: var(--accent); }
+
+  #installerField, #footageField { display: none; }
+
+  .btn-log {
+    width: 100%; padding: 16px; font-size: 17px; font-weight: 800; letter-spacing: 1px;
+    background: var(--accent); color: var(--navy); border: none; border-radius: 10px; cursor: pointer;
+    margin-top: 4px; transition: filter 0.12s;
+  }
+  .btn-log:hover { filter: brightness(1.07); }
+  .btn-log:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  #confirmMsg {
+    margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 14px; font-weight: 600;
+    display: none;
+  }
+  #confirmMsg.ok { display: block; background: var(--green-bg); color: var(--green-tx); }
+  #confirmMsg.err { display: block; background: #fde8e6; color: var(--red); }
+
+  /* ===== Tables ===== */
+  .table-card { background: var(--card); border-radius: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.07); overflow: hidden; }
+  .table-toolbar { padding: 14px 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--border); }
+  .table-toolbar input, .table-toolbar select {
+    padding: 8px 12px; font-size: 14px; border: 1.5px solid var(--border); border-radius: 8px;
+  }
+  .table-toolbar input { flex: 1; min-width: 160px; }
+  .table-toolbar .btn-sm {
+    padding: 8px 14px; font-size: 13px; font-weight: 600; border: none; border-radius: 8px;
+    background: var(--navy); color: #fff; cursor: pointer;
+  }
+  .table-toolbar .btn-sm:hover { background: var(--navy-light); }
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--navy); color: #fff; text-align: left; padding: 10px 12px; white-space: nowrap; position: sticky; top: 0; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tr.act-Received td    { background: var(--green-bg); }
+  tr.act-CheckedOut td  { background: var(--orange-bg); }
+  tr.act-CheckedIn td   { background: var(--blue-bg); }
+  tr.act-Empty td       { background: var(--gray-bg); color: #777; }
+  .empty-row td { text-align: center; color: var(--muted); padding: 30px; background: #fff !important; }
+
+  /* ===== Status summary chips ===== */
+  .chips { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip {
+    background: var(--card); border-radius: 10px; padding: 12px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    min-width: 110px;
+  }
+  .chip .num { font-size: 24px; font-weight: 800; color: var(--navy); }
+  .chip .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+  .chip.c-out .num { color: #b15a16; }
+  .chip.c-in .num { color: #2f6b2f; }
+  .chip.c-empty .num { color: #888; }
+
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .badge.Received, .badge.CheckedIn { background: var(--green-bg); color: var(--green-tx); }
+  .badge.CheckedOut { background: var(--orange-bg); color: var(--orange-tx); }
+  .badge.Empty { background: var(--gray-bg); color: var(--gray-tx); }
+
+  #loadingBar {
+    display: none; position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1200;
+    background: linear-gradient(90deg, var(--accent), #f5c97a, var(--accent)); background-size: 200% 100%;
+    animation: slide 1.2s linear infinite;
+  }
+  @keyframes slide { 0% { background-position: 0% 0; } 100% { background-position: 200% 0; } }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--navy);
+    color: #fff; padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25); display: none; z-index: 1300; max-width: 90vw;
+  }
+  #toast.err { background: var(--red); }
+
+  @media (max-width: 600px) {
+    .scan-card { padding: 20px; }
+    .action-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loadingBar"></div>
+<div id="toast"></div>
+
+<!-- ============ SIGN-IN SCREEN ============ -->
+<div id="signinScreen">
+  <div class="signin-card">
+    <div class="logo">🔌</div>
+    <h1>ART Wire Tracker</h1>
+    <div class="sub">Advance Electronics — Advanced Residential Technology</div>
+    <button class="btn-signin" id="btnSignin" onclick="signIn()">Sign in with Microsoft</button>
+    <div id="signinStatus">Loading…</div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<header>
+  <div class="title">ART <span>WIRE TRACKER</span></div>
+  <div class="userbox">
+    <span id="userName"></span>
+    <button onclick="refreshAll()">↻ Refresh</button>
+    <button onclick="signOut()">Sign out</button>
+  </div>
+</header>
+
+<nav>
+  <button class="active" data-tab="scan" onclick="showTab('scan')">📷 Scan</button>
+  <button data-tab="status" onclick="showTab('status')">📦 Box Status</button>
+  <button data-tab="log" onclick="showTab('log')">📋 Scan Log</button>
+</nav>
+
+<main>
+  <!-- ===== SCAN TAB ===== -->
+  <div class="tabpane active" id="tab-scan">
+    <div class="scan-card">
+      <h2>Scan a Box</h2>
+
+      <div class="field">
+        <label for="barcodeInput">Barcode</label>
+        <input id="barcodeInput" placeholder="e.g. CAT6-001" autocomplete="off" autofocus
+               oninput="decodeBarcode()" onkeydown="if(event.key==='Enter'){event.preventDefault();tryQuickLog();}">
+        <div class="decode-hint" id="decodeHint"></div>
+      </div>
+
+      <div class="field">
+        <label>Action</label>
+        <div class="action-grid">
+          <button class="action-btn" data-action="Received" onclick="pickAction(this)">📥 Received</button>
+          <button class="action-btn" data-action="Checked Out" onclick="pickAction(this)">🚚 Checked Out</button>
+          <button class="action-btn" data-action="Checked In" onclick="pickAction(this)">↩️ Checked In</button>
+          <button class="action-btn" data-action="Empty" onclick="pickAction(this)">🗑️ Empty</button>
+        </div>
+      </div>
+
+      <div class="field" id="installerField">
+        <label for="installerSel">Installer</label>
+        <select id="installerSel"><option value="">-- Select Installer --</option></select>
+      </div>
+
+      <div class="field" id="footageField">
+        <label for="footageInput">Footage (optional)</label>
+        <input id="footageInput" type="number" min="0" placeholder="e.g. 1000">
+      </div>
+
+      <div class="field">
+        <label for="jobInput">Job / Site (optional)</label>
+        <input id="jobInput" placeholder="e.g. 311 Hosmer" autocomplete="off">
+      </div>
+
+      <button class="btn-log" id="btnLog" onclick="logScan()">LOG THIS SCAN</button>
+      <div id="confirmMsg"></div>
+    </div>
+  </div>
+
+  <!-- ===== BOX STATUS TAB ===== -->
+  <div class="tabpane" id="tab-status">
+    <div class="chips" id="statusChips"></div>
+    <div class="table-card">
+      <div class="table-toolbar">
+        <input id="statusSearch" placeholder="Search barcode, wire type, installer, job…" oninput="renderStatus()">
+        <select id="statusFilter" onchange="renderStatus()">
+          <option value="">All statuses</option>
+          <option>Received</option>
+          <option>Checked Out</option>
+          <option>Checked In</option>
+          <option>Empty</option>
+        </select>
+        <select id="statusWireFilter" onchange="renderStatus()"><option value="">All wire types</option></select>
+        <button class="btn-sm" onclick="exportCSV('status')">Export CSV</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Barcode</th><th>Wire Type</th><th>Box #</th><th>Footage</th><th>Status</th>
+            <th>Last Action</th><th>Last Installer</th><th>Last Job</th><th>Received</th><th>Times Out</th>
+          </tr></thead>
+          <tbody id="statusBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCAN LOG TAB ===== -->
+  <div class="tabpane" id="tab-log">
+    <div class="table-card">
+      <div class="table-toolbar">
+        <input id="logSearch" placeholder="Search barcode, wire type, installer, job…" oninput="renderLog()">
+        <select id="logFilter" onchange="renderLog()">
+          <option value="">All actions</option>
+          <option>Received</option>
+          <option>Checked Out</option>
+          <option>Checked In</option>
+          <option>Empty</option>
+        </select>
+        <button class="btn-sm" onclick="exportCSV('log')">Export CSV</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Timestamp</th><th>Barcode</th><th>Wire Type</th><th>Box #</th><th>Footage</th>
+            <th>Action</th><th>Installer</th><th>Job / Site</th><th>Logged By</th>
+          </tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ================= CONFIG ================= */
+const CLIENT_ID  = "7b0d92bf-6e34-497e-9938-7860ba268631";
+const TENANT_ID  = "2e6ff905-d709-43db-94a5-c11d318118ee";
+const SP_HOST    = "advanceelectronics.sharepoint.com";
+const SP_SITE    = "/sites/ART43";
+const LIST_LOG    = "WireScanLog";
+const LIST_STATUS = "WireBoxStatus";
+
+const INSTALLERS = ["Barry", "Kevin", "Adrian", "Chris", "Trevor"]; // edit this list as needed
+
+const WIRE_TYPES = {
+  "CAT6":      "Cat6",
+  "CAT6A":     "Cat6A",
+  "SPK162":    "16-2 Speaker Wire",
+  "SPK164":    "16-4 Speaker Wire",
+  "SPK142":    "14-2 Speaker Wire",
+  "SPK144":    "14-4 Speaker Wire",
+  "SPK122":    "12-2 Speaker Wire",
+  "SPK124":    "12-4 Speaker Wire",
+  "LUT":       "Lutron Green",
+  "INTERFLEX": "Interflex",
+  "SERIALDIG": "Serial Dig",
+  "ZWIRE":     "Z Wire"
+};
+
+/* ================= MSAL AUTH ================= */
+let msalApp = null;
+let account = null;
+let siteId = null;
+let logListId = null, statusListId = null;
+let logItems = [], statusItems = [];
+let selectedAction = "";
+
+function initMsal() {
+  msalApp = new msal.PublicClientApplication({
+    auth: {
+      clientId: CLIENT_ID,
+      authority: "https://login.microsoftonline.com/" + TENANT_ID,
+      redirectUri: window.location.origin + window.location.pathname
+    },
+    cache: { cacheLocation: "localStorage" }
+  });
+
+  msalApp.handleRedirectPromise().then(resp => {
+    if (resp && resp.account) {
+      account = resp.account;
+      msalApp.setActiveAccount(account);
+      onSignedIn();
+    } else {
+      const accts = msalApp.getAllAccounts();
+      if (accts.length > 0) {
+        account = accts[0];
+        msalApp.setActiveAccount(account);
+        onSignedIn();
+      } else {
+        document.getElementById("signinStatus").textContent = "";
+      }
+    }
+  }).catch(err => {
+    document.getElementById("signinStatus").textContent = "Sign-in error: " + err.message;
+  });
+}
+
+function signIn() {
+  document.getElementById("signinStatus").textContent = "Redirecting to Microsoft…";
+  msalApp.loginRedirect({ scopes: ["Sites.ReadWrite.All", "User.Read"] });
+}
+
+function signOut() {
+  msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + window.location.pathname });
+}
+
+async function getToken() {
+  const req = { scopes: ["Sites.ReadWrite.All", "User.Read"], account: account };
+  try {
+    const r = await msalApp.acquireTokenSilent(req);
+    return r.accessToken;
+  } catch (e) {
+    msalApp.acquireTokenRedirect(req);
+  }
+}
+
+/* ================= GRAPH HELPERS ================= */
+async function graph(path, opts = {}) {
+  const token = await getToken();
+  const res = await fetch("https://graph.microsoft.com/v1.0" + path, {
+    method: opts.method || "GET",
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Content-Type": "application/json"
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error("Graph " + res.status + ": " + t.slice(0, 300));
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+async function onSignedIn() {
+  document.getElementById("signinScreen").style.display = "none";
+  document.getElementById("userName").textContent = account.name || account.username;
+  const sel = document.getElementById("installerSel");
+  INSTALLERS.forEach(n => { const o = document.createElement("option"); o.textContent = n; sel.appendChild(o); });
+  loading(true);
+  try {
+    const site = await graph("/sites/" + SP_HOST + ":" + SP_SITE);
+    siteId = site.id;
+    const lists = await graph("/sites/" + siteId + "/lists?$top=200");
+    const find = name => (lists.value.find(l => l.displayName === name) || {}).id;
+    logListId = find(LIST_LOG);
+    statusListId = find(LIST_STATUS);
+    if (!logListId || !statusListId) {
+      toast("SharePoint lists not found. Create lists named '" + LIST_LOG + "' and '" + LIST_STATUS + "' on " + SP_SITE, true, 9000);
+      loading(false);
+      return;
+    }
+    await refreshAll();
+  } catch (e) {
+    toast("Failed to connect: " + e.message, true, 9000);
+  }
+  loading(false);
+}
+
+async function fetchAllItems(listId) {
+  let items = [];
+  let url = "/sites/" + siteId + "/lists/" + listId + "/items?expand=fields&$top=500";
+  while (url) {
+    const data = await graph(url);
+    items = items.concat(data.value);
+    url = data["@odata.nextLink"] ? data["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "") : null;
+  }
+  return items;
+}
+
+async function refreshAll() {
+  loading(true);
+  try {
+    [logItems, statusItems] = await Promise.all([fetchAllItems(logListId), fetchAllItems(statusListId)]);
+    logItems.sort((a, b) => new Date(b.fields.ScanTime || b.createdDateTime) - new Date(a.fields.ScanTime || a.createdDateTime));
+    renderLog();
+    renderStatus();
+    buildWireFilter();
+  } catch (e) {
+    toast("Refresh failed: " + e.message, true);
+  }
+  loading(false);
+}
+
+/* ================= SCAN LOGIC ================= */
+function decodeBarcode() {
+  const raw = document.getElementById("barcodeInput").value.trim();
+  const hint = document.getElementById("decodeHint");
+  if (!raw) { hint.textContent = ""; hint.className = "decode-hint"; return null; }
+  const dash = raw.indexOf("-");
+  if (dash <= 0 || dash === raw.length - 1) {
+    hint.textContent = "Format: PREFIX-BoxNumber (e.g. CAT6-001)";
+    hint.className = "decode-hint bad";
+    return null;
+  }
+  const prefix = raw.slice(0, dash).toUpperCase();
+  const boxNum = raw.slice(dash + 1);
+  const wireType = WIRE_TYPES[prefix];
+  if (!wireType) {
+    hint.textContent = "Unknown prefix: " + prefix;
+    hint.className = "decode-hint bad";
+    return null;
+  }
+  hint.textContent = "✓ " + wireType + " — Box " + boxNum;
+  hint.className = "decode-hint ok";
+  return { barcode: raw, wireType, boxNum };
+}
+
+function pickAction(btn) {
+  document.querySelectorAll(".action-btn").forEach(b => b.classList.remove("sel"));
+  btn.classList.add("sel");
+  selectedAction = btn.dataset.action;
+  document.getElementById("installerField").style.display = selectedAction === "Checked Out" ? "block" : "none";
+  document.getElementById("footageField").style.display = selectedAction === "Received" ? "block" : "none";
+  document.getElementById("barcodeInput").focus();
+}
+
+function tryQuickLog() {
+  // Barcode scanners send Enter after the code — if an action is already selected, log immediately
+  if (selectedAction && decodeBarcode()) logScan();
+}
+
+async function logScan() {
+  const decoded = decodeBarcode();
+  const confirm = document.getElementById("confirmMsg");
+  confirm.className = "";
+  if (!decoded) { showConfirm("Please scan a valid barcode first.", false); return; }
+  if (!selectedAction) { showConfirm("Please select an action.", false); return; }
+  const installer = document.getElementById("installerSel").value;
+  if (selectedAction === "Checked Out" && !installer) { showConfirm("Please select an installer for Check Out.", false); return; }
+  const job = document.getElementById("jobInput").value.trim();
+  const footage = document.getElementById("footageInput").value;
+
+  document.getElementById("btnLog").disabled = true;
+  loading(true);
+  try {
+    const now = new Date();
+    // 1) add to Scan Log
+    await graph("/sites/" + siteId + "/lists/" + logListId + "/items", {
+      method: "POST",
+      body: { fields: {
+        Title: decoded.barcode,
+        WireType: decoded.wireType,
+        BoxNumber: decoded.boxNum,
+        Footage: footage ? Number(footage) : null,
+        Action: selectedAction,
+        Installer: selectedAction === "Checked Out" ? installer : "",
+        JobSite: job,
+        ScanTime: now.toISOString(),
+        LoggedBy: account.name || account.username
+      }}
+    });
+
+    // 2) update or create Box Status row
+    const existing = statusItems.find(i => (i.fields.Title || "").trim().toLowerCase() === decoded.barcode.toLowerCase());
+    const stamp = now.toISOString();
+    const f = {
+      Title: decoded.barcode,
+      WireType: decoded.wireType,
+      BoxNumber: decoded.boxNum,
+      CurrentStatus: selectedAction,
+      LastAction: stamp
+    };
+    if (footage) f.Footage = Number(footage);
+    if (selectedAction === "Checked Out") {
+      f.LastInstaller = installer;
+      f.LastJob = job;
+      const prev = existing ? Number(existing.fields.TimesOut || 0) : 0;
+      f.TimesOut = prev + 1;
+    } else if (selectedAction === "Received") {
+      f.DateReceived = stamp;
+      f.TimesOut = 0;
+    }
+    if (existing) {
+      await graph("/sites/" + siteId + "/lists/" + statusListId + "/items/" + existing.id + "/fields", { method: "PATCH", body: f });
+    } else {
+      await graph("/sites/" + siteId + "/lists/" + statusListId + "/items", { method: "POST", body: { fields: f } });
+    }
+
+    showConfirm("✓ Logged: " + decoded.wireType + " Box " + decoded.boxNum + " — " + selectedAction + " at " +
+      now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), true);
+
+    // reset for the next scan (action stays selected for rapid scanning)
+    document.getElementById("barcodeInput").value = "";
+    document.getElementById("decodeHint").textContent = "";
+    document.getElementById("jobInput").value = "";
+    document.getElementById("footageInput").value = "";
+    document.getElementById("barcodeInput").focus();
+    refreshAll();
+  } catch (e) {
+    showConfirm("Failed to log: " + e.message, false);
+  }
+  document.getElementById("btnLog").disabled = false;
+  loading(false);
+}
+
+function showConfirm(msg, ok) {
+  const el = document.getElementById("confirmMsg");
+  el.textContent = msg;
+  el.className = ok ? "ok" : "err";
+}
+
+/* ================= RENDERING ================= */
+function fmtDT(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (isNaN(d)) return v;
+  return d.toLocaleDateString("en-CA") + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function fmtD(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  return isNaN(d) ? v : d.toLocaleDateString("en-CA");
+}
+function actClass(a) { return "act-" + (a || "").replace(/\s/g, ""); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function renderLog() {
+  const q = document.getElementById("logSearch").value.toLowerCase();
+  const fa = document.getElementById("logFilter").value;
+  const rows = logItems.filter(i => {
+    const f = i.fields;
+    if (fa && f.Action !== fa) return false;
+    if (q) {
+      const blob = [f.Title, f.WireType, f.Installer, f.JobSite, f.BoxNumber].join(" ").toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    return true;
+  });
+  const body = document.getElementById("logBody");
+  body.innerHTML = rows.length ? rows.map(i => {
+    const f = i.fields;
+    return `<tr class="${actClass(f.Action)}">
+      <td>${fmtDT(f.ScanTime || i.createdDateTime)}</td><td><b>${esc(f.Title)}</b></td>
+      <td>${esc(f.WireType)}</td><td>${esc(f.BoxNumber)}</td><td>${esc(f.Footage || "")}</td>
+      <td>${esc(f.Action)}</td><td>${esc(f.Installer || "")}</td><td>${esc(f.JobSite || "")}</td>
+      <td>${esc(f.LoggedBy || "")}</td></tr>`;
+  }).join("") : `<tr class="empty-row"><td colspan="9">No scans yet</td></tr>`;
+}
+
+function renderStatus() {
+  const q = document.getElementById("statusSearch").value.toLowerCase();
+  const fs = document.getElementById("statusFilter").value;
+  const fw = document.getElementById("statusWireFilter").value;
+  const rows = statusItems.filter(i => {
+    const f = i.fields;
+    if (fs && f.CurrentStatus !== fs) return false;
+    if (fw && f.WireType !== fw) return false;
+    if (q) {
+      const blob = [f.Title, f.WireType, f.LastInstaller, f.LastJob, f.BoxNumber].join(" ").toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => (a.fields.WireType || "").localeCompare(b.fields.WireType || "") ||
+                    (a.fields.BoxNumber || "").localeCompare(b.fields.BoxNumber || "", undefined, { numeric: true }));
+
+  const body = document.getElementById("statusBody");
+  body.innerHTML = rows.length ? rows.map(i => {
+    const f = i.fields;
+    const st = f.CurrentStatus || "";
+    return `<tr class="${actClass(st)}">
+      <td><b>${esc(f.Title)}</b></td><td>${esc(f.WireType)}</td><td>${esc(f.BoxNumber)}</td>
+      <td>${esc(f.Footage || "")}</td>
+      <td><span class="badge ${st.replace(/\s/g, "")}">${esc(st)}</span></td>
+      <td>${fmtDT(f.LastAction)}</td><td>${esc(f.LastInstaller || "")}</td><td>${esc(f.LastJob || "")}</td>
+      <td>${fmtD(f.DateReceived)}</td><td>${esc(f.TimesOut == null ? "" : f.TimesOut)}</td></tr>`;
+  }).join("") : `<tr class="empty-row"><td colspan="10">No boxes yet</td></tr>`;
+
+  // summary chips (always from full data, not filtered)
+  const counts = { total: statusItems.length, out: 0, instock: 0, empty: 0 };
+  statusItems.forEach(i => {
+    const s = i.fields.CurrentStatus;
+    if (s === "Checked Out") counts.out++;
+    else if (s === "Empty") counts.empty++;
+    else counts.instock++;
+  });
+  document.getElementById("statusChips").innerHTML = `
+    <div class="chip"><div class="num">${counts.total}</div><div class="lbl">Total Boxes</div></div>
+    <div class="chip c-in"><div class="num">${counts.instock}</div><div class="lbl">In Stock</div></div>
+    <div class="chip c-out"><div class="num">${counts.out}</div><div class="lbl">Checked Out</div></div>
+    <div class="chip c-empty"><div class="num">${counts.empty}</div><div class="lbl">Empty</div></div>`;
+}
+
+function buildWireFilter() {
+  const sel = document.getElementById("statusWireFilter");
+  const cur = sel.value;
+  const types = [...new Set(statusItems.map(i => i.fields.WireType).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All wire types</option>' + types.map(t => `<option${t === cur ? " selected" : ""}>${esc(t)}</option>`).join("");
+}
+
+/* ================= MISC ================= */
+function showTab(name) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tabpane").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
+  if (name === "scan") document.getElementById("barcodeInput").focus();
+}
+
+function exportCSV(which) {
+  let headers, rows;
+  if (which === "log") {
+    headers = ["Timestamp", "Barcode", "Wire Type", "Box Number", "Footage", "Action", "Installer", "Job/Site", "Logged By"];
+    rows = logItems.map(i => { const f = i.fields; return [fmtDT(f.ScanTime || i.createdDateTime), f.Title, f.WireType, f.BoxNumber, f.Footage || "", f.Action, f.Installer || "", f.JobSite || "", f.LoggedBy || ""]; });
+  } else {
+    headers = ["Barcode", "Wire Type", "Box Number", "Footage", "Current Status", "Last Action", "Last Installer", "Last Job", "Date Received", "Times Out"];
+    rows = statusItems.map(i => { const f = i.fields; return [f.Title, f.WireType, f.BoxNumber, f.Footage || "", f.CurrentStatus, fmtDT(f.LastAction), f.LastInstaller || "", f.LastJob || "", fmtD(f.DateReceived), f.TimesOut == null ? "" : f.TimesOut]; });
+  }
+  const csv = [headers].concat(rows).map(r => r.map(v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ART_Wire_" + (which === "log" ? "ScanLog" : "BoxStatus") + "_" + new Date().toISOString().slice(0, 10) + ".csv";
+  a.click();
+}
+
+function loading(on) { document.getElementById("loadingBar").style.display = on ? "block" : "none"; }
+
+let toastTimer = null;
+function toast(msg, isErr, ms) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = isErr ? "err" : "";
+  t.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = "none"; }, ms || 4000);
+}
+</script>
+</body>
+</html>
