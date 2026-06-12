@@ -217,7 +217,10 @@
   <div class="scan-bar">
     <div class="field field-barcode">
       <label>Barcode (Scan or Type)</label>
-      <input type="text" id="barcode-input" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="barcode-input" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false" style="flex:1;min-width:0;">
+        <button type="button" onclick="openCamera('pull')" title="Scan with phone camera" style="flex:0 0 auto;padding:0 14px;font-size:18px;border:1.5px solid var(--border,#d1d5db);border-radius:8px;background:#fff;cursor:pointer;">📷</button>
+      </div>
       <div class="lookup-result" id="lookup-result">
         <div class="lookup-name" id="lookup-name"></div>
         <div class="lookup-meta" id="lookup-meta"></div>
@@ -247,7 +250,10 @@
   <div class="scan-bar">
     <div class="field field-barcode">
       <label>Barcode (Scan or Type)</label>
-      <input type="text" id="ret-barcode" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="ret-barcode" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false" style="flex:1;min-width:0;">
+        <button type="button" onclick="openCamera('ret')" title="Scan with phone camera" style="flex:0 0 auto;padding:0 14px;font-size:18px;border:1.5px solid var(--border,#d1d5db);border-radius:8px;background:#fff;cursor:pointer;">📷</button>
+      </div>
       <div class="lookup-result" id="ret-lookup-result">
         <div class="lookup-name" id="ret-lookup-name"></div>
         <div class="lookup-meta" id="ret-lookup-meta"></div>
@@ -353,6 +359,15 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- ── PHONE CAMERA SCANNER MODAL ── -->
+<div id="cam-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:2000;align-items:center;justify-content:center;flex-direction:column;padding:16px;">
+  <div style="width:100%;max-width:440px;background:#000;border-radius:12px;overflow:hidden;">
+    <div id="cam-reader" style="width:100%;"></div>
+  </div>
+  <div id="cam-status" style="color:#fff;font-size:14px;margin:14px 0;text-align:center;max-width:440px;">Starting camera…</div>
+  <button type="button" onclick="closeCamera()" style="background:#fff;color:#111;border:none;border-radius:8px;padding:12px 32px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>
+</div>
 
 <script>
 const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
@@ -896,6 +911,67 @@ function esc(s) { if(!s)return''; return String(s).replace(/&/g,'&amp;').replace
 function parseCSVLine(line) { const r=[]; let c='',q=false; for(const ch of line){if(ch==='"')q=!q;else if(ch===','&&!q){r.push(c);c='';}else c+=ch;} r.push(c); return r; }
 let toastTimer;
 function toast(msg,type='success') { const el=document.getElementById('toast'); el.textContent=msg; el.className='show '+type; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.className='',3500); }
+
+/* ── PHONE CAMERA BARCODE SCANNING ── */
+let camScanner = null, camTarget = null, camLibLoading = null, camHandling = false;
+
+function loadCamLib() {
+  if (window.Html5Qrcode) return Promise.resolve();
+  if (camLibLoading) return camLibLoading;
+  camLibLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js';
+    s.onload = resolve;
+    s.onerror = () => { camLibLoading = null; reject(new Error('Could not load the camera scanner library. Check your connection and try again.')); };
+    document.head.appendChild(s);
+  });
+  return camLibLoading;
+}
+
+async function openCamera(target) {
+  camTarget = target;
+  camHandling = false;
+  const modal = document.getElementById('cam-modal');
+  modal.style.display = 'flex';
+  document.getElementById('cam-status').textContent = 'Starting camera…';
+  try {
+    await loadCamLib();
+    const formats = [
+      Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39
+    ];
+    camScanner = new Html5Qrcode('cam-reader', { formatsToSupport: formats, verbose: false });
+    await camScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 140 } },
+      onCamScan,
+      () => {} /* per-frame misses — ignore */
+    );
+    document.getElementById('cam-status').textContent = 'Point the camera at a barcode';
+  } catch (e) {
+    document.getElementById('cam-status').textContent = 'Camera error: ' + (e && e.message ? e.message : e);
+  }
+}
+
+async function onCamScan(decodedText) {
+  if (camHandling) return;
+  camHandling = true;
+  if (navigator.vibrate) navigator.vibrate(80);
+  await closeCamera();
+  const input = document.getElementById(camTarget === 'ret' ? 'ret-barcode' : 'barcode-input');
+  input.value = String(decodedText || '').trim();
+  input.dispatchEvent(new Event('input'));   // runs the existing lookup (incl. stripped-zero matching)
+  if (camTarget === 'ret') addReturnEntry(); else addPullEntry();   // same as the hardware scanner's Enter
+}
+
+async function closeCamera() {
+  document.getElementById('cam-modal').style.display = 'none';
+  if (camScanner) {
+    try { await camScanner.stop(); camScanner.clear(); } catch (e) {}
+    camScanner = null;
+  }
+}
 
 // ── START ──
 initMsal();
