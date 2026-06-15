@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ART Change Order Tracker</title>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"
+        onerror="this.onerror=null;var s=document.createElement('script');s.src='https://www.msftauth.net/msal/browser/2.38.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
+<style>
+  :root {
+    --bg: #f3f4f6; --card: #ffffff; --border: #d1d5db; --border2: #e5e7eb;
+    --text: #111827; --text2: #4b5563; --text3: #9ca3af;
+    --blue: #2563eb; --blue-d: #1d4ed8;
+    --red: #dc2626; --red-bg: #fef2f2; --red-bd: #fecaca;
+    --green: #16a34a; --green-bg: #f0fdf4; --green-bd: #bbf7d0;
+    --amber: #d97706; --amber-bg: #fffbeb;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+  header { background: #111827; color: #fff; padding: 12px 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+  header .sub { font-size: 11px; color: #9ca3af; }
+  #status-pill { margin-left: auto; font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #374151; color: #d1d5db; }
+  #status-pill.ok { background: #064e3b; color: #6ee7b7; }
+  #status-pill.err { background: #7f1d1d; color: #fca5a5; }
+
+  nav { background: #1f2937; display: flex; gap: 4px; padding: 6px 14px; }
+  nav button { background: transparent; border: none; color: #9ca3af; padding: 8px 16px; border-radius: 8px 8px 0 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+  nav button.active { background: var(--bg); color: var(--text); }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .card { background: var(--card); border: 1px solid var(--border2); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--text2); margin-bottom: 12px; }
+
+  .grid { display: grid; gap: 12px; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 700px) { .grid-3 { grid-template-columns: 1fr; } }
+
+  label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: var(--text2); margin-bottom: 4px; }
+  input, select { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; background: #fff; color: var(--text); }
+  input:focus, select:focus { outline: none; border-color: var(--blue); }
+  input[type=number] { text-align: center; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-blue { background: var(--blue); color: #fff; }
+  .btn-red { background: var(--red); color: #fff; }
+  .btn-green { background: var(--green); color: #fff; }
+  .btn-ghost { background: #fff; color: var(--text2); border: 1.5px solid var(--border); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  .scan-section { border-radius: 12px; padding: 14px; margin-bottom: 14px; border: 1.5px solid; }
+  .scan-section.back { background: var(--red-bg); border-color: var(--red-bd); }
+  .scan-section.in { background: var(--green-bg); border-color: var(--green-bd); }
+  .scan-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .scan-section.back h3 { color: var(--red); }
+  .scan-section.in h3 { color: var(--green); }
+  .scan-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .scan-row .f-bc { flex: 2; min-width: 200px; }
+  .scan-row .f-qty { flex: 0 0 70px; }
+  .bc-flex { display: flex; gap: 6px; }
+  .bc-flex input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; }
+  .cam-btn { flex: 0 0 auto; padding: 0 13px; font-size: 18px; border: 1.5px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; }
+
+  .lookup { display: none; margin-top: 6px; font-size: 12px; padding: 8px 10px; border-radius: 8px; }
+  .lookup.found { display: block; background: #fff; border: 1px solid var(--green-bd); }
+  .lookup.notfound { display: block; background: var(--amber-bg); border: 1px solid #fde68a; }
+  .lookup .nm { font-weight: 600; }
+  .lookup .mt { color: var(--text2); font-size: 11px; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text3); padding: 7px 8px; border-bottom: 1.5px solid var(--border2); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border2); vertical-align: top; }
+  td.mono { font-family: var(--mono); font-size: 11.5px; }
+  .x-btn { background: none; border: none; color: var(--red); font-size: 15px; cursor: pointer; padding: 0 6px; }
+  .empty { color: var(--text3); font-size: 12.5px; padding: 10px 4px; }
+
+  .net-bar { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; background: #111827; color: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px; }
+  .net-bar .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; }
+  .net-bar .val { font-size: 17px; font-weight: 700; font-family: var(--mono); }
+  .net-bar .val.neg { color: #fca5a5; }
+  .net-bar .val.pos { color: #6ee7b7; }
+  .net-bar .save { margin-left: auto; }
+
+  /* History */
+  .hist-tools { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .hist-tools input { flex: 1; min-width: 180px; }
+  .co-card { background: var(--card); border: 1px solid var(--border2); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .co-head { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 12px 16px; background: #f9fafb; border-bottom: 1px solid var(--border2); }
+  .co-head .co-num { font-family: var(--mono); font-weight: 700; font-size: 15px; }
+  .co-head .meta { font-size: 12px; color: var(--text2); }
+  .badge { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 3px 10px; border-radius: 999px; }
+  .badge.open { background: var(--amber-bg); color: var(--amber); border: 1px solid #fde68a; }
+  .badge.processed { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+  .co-body { padding: 12px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 800px) { .co-body { grid-template-columns: 1fr; } }
+  .co-col h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+  .co-col.back h4 { color: var(--red); }
+  .co-col.in h4 { color: var(--green); }
+  .co-line { font-size: 12.5px; padding: 5px 0; border-bottom: 1px dashed var(--border2); display: flex; justify-content: space-between; gap: 10px; }
+  .co-line .qn { color: var(--text2); white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+  .co-foot { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border2); font-size: 12.5px; }
+  .co-foot .net { font-family: var(--mono); font-weight: 700; }
+  .co-foot .net.neg { color: var(--red); }
+  .co-foot .net.pos { color: var(--green); }
+  .co-foot .actions { margin-left: auto; display: flex; gap: 8px; }
+  .co-notes { padding: 0 16px 12px; font-size: 12px; color: var(--text2); }
+
+  /* Auth */
+  #auth-screen { max-width: 420px; margin: 80px auto; text-align: center; padding: 0 20px; }
+  #auth-screen .card { padding: 32px 26px; }
+  #auth-screen h1 { font-size: 19px; margin-bottom: 8px; }
+  #auth-screen p { color: var(--text2); font-size: 13.5px; margin-bottom: 20px; }
+  #auth-error { display: none; margin-top: 14px; padding: 10px; border-radius: 8px; background: var(--red-bg); color: var(--red); font-size: 12.5px; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: #111827; color: #fff; padding: 11px 20px; border-radius: 10px; font-size: 13.5px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 3000; max-width: 90vw; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: var(--red); }
+  #toast.warning { background: var(--amber); }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div class="card">
+    <h1>ART Change Order Tracker</h1>
+    <p>Sign in with your Advance Electronics Microsoft account to continue.</p>
+    <button class="btn btn-blue" onclick="signIn()" style="width:100%;">Sign in with Microsoft</button>
+    <div id="auth-error"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-screen" style="display:none;">
+  <header>
+    <div>
+      <h1>ART Change Order Tracker</h1>
+      <div class="sub">Advanced Residential Technology</div>
+    </div>
+    <span id="status-pill">Connecting…</span>
+  </header>
+  <nav>
+    <button id="tab-new" class="active" onclick="showView('new')">＋ New Change Order</button>
+    <button id="tab-history" onclick="showView('history')">📋 History</button>
+  </nav>
+
+  <div class="wrap">
+
+    <!-- NEW CO VIEW -->
+    <div id="view-new" class="view active">
+      <div class="card">
+        <h2>Change Order Details</h2>
+        <div class="grid grid-3">
+          <div><label>Job *</label><input type="text" id="co-job" placeholder="Job name / #" autocomplete="off"></div>
+          <div><label>Installer *</label><select id="co-installer"><option value="">— Select —</option></select></div>
+          <div><label>Salesman *</label><select id="co-salesman"><option value="">— Select —</option></select></div>
+        </div>
+        <div style="margin-top:12px;"><label>Notes (optional)</label><input type="text" id="co-notes" placeholder="Reason for change, client request, etc." autocomplete="off"></div>
+      </div>
+
+      <!-- COMING BACK -->
+      <div class="scan-section back">
+        <h3>⬅ Product Coming Back</h3>
+        <div class="scan-row">
+          <div class="f-bc">
+            <label>Barcode (Scan or Type)</label>
+            <div class="bc-flex">
+              <input type="text" id="bc-back" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false">
+              <button type="button" class="cam-btn" onclick="openCamera('back')" title="Scan with phone camera">📷</button>
+            </div>
+            <div class="lookup" id="lk-back"><div class="nm" id="lk-back-nm"></div><div class="mt" id="lk-back-mt"></div></div>
+          </div>
+          <div class="f-qty"><label>Qty</label><input type="number" id="qty-back" value="1" min="1"></div>
+          <div><label>&nbsp;</label><button class="btn btn-red" id="btn-add-back" onclick="addLine('back')" disabled>Add</button></div>
+        </div>
+        <div style="overflow-x:auto;margin-top:10px;"><table>
+          <thead><tr><th>Barcode</th><th>Product</th><th>SKU</th><th style="text-align:right">Cost</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th><th></th></tr></thead>
+          <tbody id="tbody-back"></tbody>
+        </table></div>
+        <div class="empty" id="empty-back">No items yet — scan the product coming back.</div>
+      </div>
+
+      <!-- GOING IN -->
+      <div class="scan-section in">
+        <h3>➡ Product Going In Instead</h3>
+        <div class="scan-row">
+          <div class="f-bc">
+            <label>Barcode (Scan or Type)</label>
+            <div class="bc-flex">
+              <input type="text" id="bc-in" placeholder="Scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false">
+              <button type="button" class="cam-btn" onclick="openCamera('in')" title="Scan with phone camera">📷</button>
+            </div>
+            <div class="lookup" id="lk-in"><div class="nm" id="lk-in-nm"></div><div class="mt" id="lk-in-mt"></div></div>
+          </div>
+          <div class="f-qty"><label>Qty</label><input type="number" id="qty-in" value="1" min="1"></div>
+          <div><label>&nbsp;</label><button class="btn btn-green" id="btn-add-in" onclick="addLine('in')" disabled>Add</button></div>
+        </div>
+        <div style="overflow-x:auto;margin-top:10px;"><table>
+          <thead><tr><th>Barcode</th><th>Product</th><th>SKU</th><th style="text-align:right">Cost</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th><th></th></tr></thead>
+          <tbody id="tbody-in"></tbody>
+        </table></div>
+        <div class="empty" id="empty-in">No items yet — scan the replacement product (leave empty if nothing is going in).</div>
+      </div>
+
+      <div class="net-bar">
+        <div><div class="lbl">Coming Back</div><div class="val" id="sum-back">$0.00</div></div>
+        <div><div class="lbl">Going In</div><div class="val" id="sum-in">$0.00</div></div>
+        <div><div class="lbl">Net Difference</div><div class="val" id="sum-net">$0.00</div></div>
+        <div class="save"><button class="btn btn-blue" id="btn-save" onclick="saveCO()">💾 Save Change Order</button></div>
+      </div>
+    </div>
+
+    <!-- HISTORY VIEW -->
+    <div id="view-history" class="view">
+      <div class="hist-tools">
+        <input type="text" id="hist-search" placeholder="Search by CO #, job, installer, salesman, product…" oninput="renderHistory()">
+        <select id="hist-status" onchange="renderHistory()" style="max-width:160px;">
+          <option value="">All Statuses</option><option value="Open">Open</option><option value="Processed">Processed</option>
+        </select>
+        <button class="btn btn-ghost" onclick="loadHistory()">↻ Refresh</button>
+        <button class="btn btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
+      </div>
+      <div id="hist-list"></div>
+      <div class="empty" id="hist-empty" style="display:none;">No change orders found.</div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- CAMERA SCANNER MODAL -->
+<div id="cam-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:2000;align-items:center;justify-content:center;flex-direction:column;padding:16px;">
+  <div style="width:100%;max-width:440px;background:#000;border-radius:12px;overflow:hidden;">
+    <div id="cam-reader" style="width:100%;"></div>
+  </div>
+  <div id="cam-status" style="color:#fff;font-size:14px;margin:14px 0;text-align:center;max-width:440px;">Starting camera…</div>
+  <button type="button" onclick="closeCamera()" style="background:#fff;color:#111;border:none;border-radius:8px;padding:12px 32px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>
+</div>
+
+<script>
+'use strict';
+// ═══════════ CONFIG ═══════════
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris', 'Barry', 'Andrew', 'Darwin', 'Yoan'];
+const SALESMEN = ['Bruno', 'Lyall', 'Trevor'];
+const LIST = { co: 'ChangeOrderLog', products: 'ProductLookup' };
+
+let msalInstance = null, accessToken = null, siteId = null, listIds = {};
+let products = {}, productsNoZero = {};
+let linesBack = [], linesIn = [];        // staged lines for the current (unsaved) CO
+let historyItems = [];                    // raw SharePoint rows
+let toastTimer = null;
+
+// ═══════════ MSAL AUTH ═══════════
+let msalReady = null;
+function initMsal() {
+  if (msalReady) return msalReady;
+  if (typeof msal === 'undefined') {
+    showAuthError('Microsoft sign-in library failed to load. Refresh the page.');
+    return Promise.reject(new Error('msal undefined'));
+  }
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: CLIENT_ID,
+      authority: 'https://login.microsoftonline.com/' + TENANT_ID,
+      redirectUri: window.location.href.split('#')[0].split('?')[0]
+    },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+  });
+  const initStep = (typeof msalInstance.initialize === 'function') ? msalInstance.initialize() : Promise.resolve();
+  msalReady = initStep.then(() => msalInstance.handleRedirectPromise()).then(resp => {
+    if (resp && resp.accessToken) accessToken = resp.accessToken;
+    if (msalInstance.getAllAccounts().length > 0) showApp();
+  }).catch(e => showAuthError(e.message));
+  return msalReady;
+}
+
+function signIn() {
+  initMsal().then(() => msalInstance.loginRedirect({ scopes: SCOPES }))
+    .catch(e => showAuthError('Sign-in failed: ' + e.message));
+}
+
+async function getToken() {
+  const accounts = msalInstance.getAllAccounts();
+  if (!accounts.length) throw new Error('Not signed in');
+  try {
+    const resp = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account: accounts[0] });
+    accessToken = resp.accessToken;
+    return accessToken;
+  } catch (e) {
+    await msalInstance.acquireTokenRedirect({ scopes: SCOPES, account: accounts[0] });
+    throw new Error('Redirecting…');
+  }
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function showApp() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = '';
+  buildDropdowns();
+  connect();
+}
+
+// ═══════════ SHAREPOINT / GRAPH ═══════════
+async function spFetch(method, path, body) {
+  const tok = await getToken();
+  const opts = { method, headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json', 'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('https://graph.microsoft.com/v1.0' + path, opts);
+  if (!r.ok) { const e = await r.json().catch(() => ({})); const err = new Error(e?.error?.message || 'HTTP ' + r.status); err.status = r.status; throw err; }
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+async function getSiteId() {
+  if (siteId) return siteId;
+  const d = await spFetch('GET', '/sites/' + SITE_HOSTNAME + ':' + SITE_PATH);
+  siteId = d.id; return siteId;
+}
+
+async function getListId(name) {
+  if (listIds[name]) return listIds[name];
+  const sid = await getSiteId();
+  const d = await spFetch('GET', '/sites/' + sid + '/lists/' + encodeURIComponent(name));
+  listIds[name] = d.id; return d.id;
+}
+
+async function getItems(listName) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  let url = '/sites/' + sid + '/lists/' + lid + '/items?expand=fields&$top=999';
+  let items = []; let next = null;
+  do {
+    const d = await spFetch('GET', next ? next.replace('https://graph.microsoft.com/v1.0', '') : url);
+    items = items.concat(d.value || []); next = d['@odata.nextLink'] || null;
+  } while (next);
+  return items;
+}
+
+async function createItem(listName, fields) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  return spFetch('POST', '/sites/' + sid + '/lists/' + lid + '/items', { fields });
+}
+
+async function updateItem(listName, itemId, fields) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  return spFetch('PATCH', '/sites/' + sid + '/lists/' + lid + '/items/' + itemId + '/fields', fields);
+}
+
+// Auto-create the ChangeOrderLog list if it doesn't exist yet
+async function ensureCoList() {
+  try { await getListId(LIST.co); return; }
+  catch (e) { if (e.status !== 404) throw e; }
+  setStatus('loading', 'Creating list…');
+  const sid = await getSiteId();
+  const cols = ['CONumber','Job','Installer','Salesman','Direction','Barcode','ProductName','SKU','MfrSKU','Vendor','UnitCost','Qty','LineTotal','DateCreated','Status','Notes'];
+  await spFetch('POST', '/sites/' + sid + '/lists', {
+    displayName: LIST.co,
+    list: { template: 'genericList' },
+    columns: cols.map(n => ({ name: n, text: {} }))
+  });
+  delete listIds[LIST.co];
+  await getListId(LIST.co);
+  toast('Created SharePoint list "' + LIST.co + '"');
+}
+
+async function connect() {
+  setStatus('loading', 'Connecting…');
+  try {
+    await getSiteId();
+    await ensureCoList();
+    setStatus('loading', 'Loading products…');
+    await loadProducts();
+    setStatus('loading', 'Loading history…');
+    await loadHistory(true);
+    setStatus('ok', '✓ Connected · ' + Object.keys(products).length.toLocaleString() + ' products');
+    setTimeout(() => document.getElementById('bc-back').focus(), 50);
+  } catch (e) {
+    setStatus('err', 'Error: ' + e.message);
+  }
+}
+
+function setStatus(type, label) {
+  const el = document.getElementById('status-pill');
+  el.textContent = label;
+  el.className = type === 'ok' ? 'ok' : (type === 'err' ? 'err' : '');
+}
+
+// ═══════════ PRODUCT LOOKUP ═══════════
+async function loadProducts() {
+  const items = await getItems(LIST.products);
+  products = {};
+  items.forEach(i => {
+    const f = i.fields || {};
+    const k = (f.Barcode || '').trim().toLowerCase();
+    if (k) products[k] = { name: f.ProductName || '', sku: f.SKU || '', mfrSku: f.MfrSKU || '', cost: parseFloat(f.UnitCost) || 0, vendor: f.Vendor || '' };
+  });
+  productsNoZero = {};
+  for (const [k, v] of Object.entries(products)) {
+    const s = k.replace(/^0+/, '');
+    if (s && !productsNoZero[s]) productsNoZero[s] = v;
+  }
+}
+
+function lookupBarcode(bc) {
+  const key = bc.trim().toLowerCase();
+  if (products[key]) return products[key];
+  const stripped = key.replace(/^0+/, '');
+  if (stripped && productsNoZero[stripped]) return productsNoZero[stripped];
+  return null;
+}
+
+// ═══════════ UI SETUP ═══════════
+function buildDropdowns() {
+  const inst = document.getElementById('co-installer');
+  INSTALLERS.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; inst.appendChild(o); });
+  const sm = document.getElementById('co-salesman');
+  SALESMEN.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sm.appendChild(o); });
+}
+
+function showView(v) {
+  document.getElementById('view-new').classList.toggle('active', v === 'new');
+  document.getElementById('view-history').classList.toggle('active', v === 'history');
+  document.getElementById('tab-new').classList.toggle('active', v === 'new');
+  document.getElementById('tab-history').classList.toggle('active', v === 'history');
+  if (v === 'history') renderHistory();
+}
+
+// ═══════════ SCAN / STAGE LINES ═══════════
+function wireScanInput(side) {
+  const input = document.getElementById('bc-' + side);
+  input.addEventListener('input', function () {
+    const bc = this.value.trim();
+    const box = document.getElementById('lk-' + side);
+    const addBtn = document.getElementById('btn-add-' + side);
+    if (!bc) { box.className = 'lookup'; addBtn.disabled = true; return; }
+    const p = lookupBarcode(bc);
+    if (p) {
+      box.className = 'lookup found';
+      document.getElementById('lk-' + side + '-nm').textContent = p.name;
+      document.getElementById('lk-' + side + '-mt').textContent = 'SKU: ' + (p.sku || '—') + '  |  Mfr: ' + (p.mfrSku || '—') + '  |  Cost: $' + p.cost.toFixed(2) + '  |  ' + (p.vendor || '—');
+    } else {
+      box.className = 'lookup notfound';
+      document.getElementById('lk-' + side + '-nm').textContent = '⚠ Not Found in Product Database';
+      document.getElementById('lk-' + side + '-mt').textContent = 'Will be logged without product details';
+    }
+    addBtn.disabled = false;
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') addLine(side); });
+}
+wireScanInput('back');
+wireScanInput('in');
+
+function addLine(side) {
+  const input = document.getElementById('bc-' + side);
+  const bc = input.value.trim();
+  if (!bc) return;
+  const qty = parseInt(document.getElementById('qty-' + side).value) || 1;
+  const p = lookupBarcode(bc);
+  const line = {
+    barcode: bc,
+    name: p ? p.name : '⚠ Not Found',
+    sku: p ? p.sku : '', mfrSku: p ? p.mfrSku : '', vendor: p ? p.vendor : '',
+    cost: p ? p.cost : 0, qty, total: (p ? p.cost : 0) * qty
+  };
+  (side === 'back' ? linesBack : linesIn).push(line);
+  input.value = '';
+  document.getElementById('lk-' + side).className = 'lookup';
+  document.getElementById('qty-' + side).value = 1;
+  document.getElementById('btn-add-' + side).disabled = true;
+  input.focus();
+  renderLines();
+  toast(p ? 'Added: ' + p.name.slice(0, 40) : 'Added (not in database)', p ? 'success' : 'warning');
+}
+
+function removeLine(side, idx) {
+  (side === 'back' ? linesBack : linesIn).splice(idx, 1);
+  renderLines();
+}
+
+function renderLines() {
+  ['back', 'in'].forEach(side => {
+    const lines = side === 'back' ? linesBack : linesIn;
+    const tb = document.getElementById('tbody-' + side);
+    tb.innerHTML = lines.map((l, i) =>
+      '<tr><td class="mono">' + esc(l.barcode) + '</td><td>' + esc(l.name) + '</td><td class="mono">' + esc(l.sku) +
+      '</td><td style="text-align:right">$' + l.cost.toFixed(2) + '</td><td style="text-align:center">' + l.qty +
+      '</td><td style="text-align:right">$' + l.total.toFixed(2) +
+      '</td><td><button class="x-btn" onclick="removeLine(\'' + side + '\',' + i + ')" title="Remove">✕</button></td></tr>'
+    ).join('');
+    document.getElementById('empty-' + side).style.display = lines.length ? 'none' : '';
+  });
+  const sumB = linesBack.reduce((s, l) => s + l.total, 0);
+  const sumI = linesIn.reduce((s, l) => s + l.total, 0);
+  const net = sumI - sumB;
+  document.getElementById('sum-back').textContent = '$' + sumB.toFixed(2);
+  document.getElementById('sum-in').textContent = '$' + sumI.toFixed(2);
+  const netEl = document.getElementById('sum-net');
+  netEl.textContent = (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2));
+  netEl.className = 'val ' + (net < 0 ? 'neg' : 'pos');
+}
+
+// ═══════════ SAVE CHANGE ORDER ═══════════
+function nextCoNumber() {
+  let max = 0;
+  historyItems.forEach(i => {
+    const m = String(i.fields?.CONumber || '').match(/CO-(\d+)/i);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return 'CO-' + String(max + 1).padStart(4, '0');
+}
+
+async function saveCO() {
+  const job = document.getElementById('co-job').value.trim();
+  const installer = document.getElementById('co-installer').value;
+  const salesman = document.getElementById('co-salesman').value;
+  const notes = document.getElementById('co-notes').value.trim();
+  if (!job) { toast('Enter the job name', 'warning'); return; }
+  if (!installer) { toast('Select the installer', 'warning'); return; }
+  if (!salesman) { toast('Select the salesman', 'warning'); return; }
+  if (!linesBack.length && !linesIn.length) { toast('Scan at least one product', 'warning'); return; }
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
+  const coNum = nextCoNumber();
+  const today = new Date().toISOString().slice(0, 10);
+  const all = linesBack.map(l => ({ ...l, dir: 'Coming Back' })).concat(linesIn.map(l => ({ ...l, dir: 'Going In' })));
+  try {
+    for (const l of all) {
+      const fields = {
+        Title: coNum, CONumber: coNum, Job: job, Installer: installer, Salesman: salesman,
+        Direction: l.dir, Barcode: l.barcode, ProductName: l.name, SKU: l.sku, MfrSKU: l.mfrSku,
+        Vendor: l.vendor, UnitCost: String(l.cost), Qty: String(l.qty), LineTotal: String(l.total),
+        DateCreated: today, Status: 'Open', Notes: notes
+      };
+      const item = await createItem(LIST.co, fields);
+      historyItems.push(item);
+    }
+    toast('Saved ' + coNum + ' (' + all.length + ' item' + (all.length > 1 ? 's' : '') + ')');
+    linesBack = []; linesIn = [];
+    ['co-job', 'co-notes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('co-installer').value = '';
+    document.getElementById('co-salesman').value = '';
+    renderLines();
+    document.getElementById('bc-back').focus();
+  } catch (e) {
+    toast('Save failed: ' + e.message + ' — items may be partially saved as ' + coNum, 'error');
+  }
+  btn.disabled = false; btn.innerHTML = '💾 Save Change Order';
+}
+
+// ═══════════ HISTORY ═══════════
+async function loadHistory(silent) {
+  try {
+    historyItems = await getItems(LIST.co);
+    if (!silent) { renderHistory(); toast('History refreshed'); }
+  } catch (e) {
+    if (!silent) toast('Failed to load history: ' + e.message, 'error');
+  }
+}
+
+function groupCOs() {
+  const map = {};
+  historyItems.forEach(i => {
+    const f = i.fields || {};
+    const num = f.CONumber || '—';
+    if (!map[num]) map[num] = { num, job: f.Job || '', installer: f.Installer || '', salesman: f.Salesman || '', date: f.DateCreated || '', status: f.Status || 'Open', notes: f.Notes || '', back: [], goin: [], spIds: [] };
+    const g = map[num];
+    g.spIds.push(i.id);
+    if (f.Status === 'Processed') g.status = 'Processed';
+    const line = { name: f.ProductName || '', barcode: f.Barcode || '', qty: parseInt(f.Qty) || 1, total: parseFloat(f.LineTotal) || 0 };
+    if (f.Direction === 'Coming Back') g.back.push(line); else g.goin.push(line);
+  });
+  return Object.values(map).sort((a, b) => b.num.localeCompare(a.num));
+}
+
+function renderHistory() {
+  const q = document.getElementById('hist-search').value.trim().toLowerCase();
+  const st = document.getElementById('hist-status').value;
+  const list = document.getElementById('hist-list');
+  let cos = groupCOs();
+  if (st) cos = cos.filter(c => c.status === st);
+  if (q) cos = cos.filter(c =>
+    c.num.toLowerCase().includes(q) || c.job.toLowerCase().includes(q) ||
+    c.installer.toLowerCase().includes(q) || c.salesman.toLowerCase().includes(q) ||
+    c.back.concat(c.goin).some(l => l.name.toLowerCase().includes(q) || l.barcode.toLowerCase().includes(q))
+  );
+  document.getElementById('hist-empty').style.display = cos.length ? 'none' : '';
+  list.innerHTML = cos.map(c => {
+    const sumB = c.back.reduce((s, l) => s + l.total, 0);
+    const sumI = c.goin.reduce((s, l) => s + l.total, 0);
+    const net = sumI - sumB;
+    const lineHtml = l => '<div class="co-line"><span>' + esc(l.name) + '</span><span class="qn">×' + l.qty + ' · $' + l.total.toFixed(2) + '</span></div>';
+    return '<div class="co-card">' +
+      '<div class="co-head"><span class="co-num">' + esc(c.num) + '</span>' +
+      '<span class="badge ' + (c.status === 'Processed' ? 'processed' : 'open') + '">' + esc(c.status) + '</span>' +
+      '<span class="meta">📅 ' + esc(c.date) + '</span><span class="meta">🏠 ' + esc(c.job) + '</span>' +
+      '<span class="meta">🔧 ' + esc(c.installer) + '</span><span class="meta">💼 ' + esc(c.salesman) + '</span></div>' +
+      '<div class="co-body">' +
+      '<div class="co-col back"><h4>⬅ Coming Back ($' + sumB.toFixed(2) + ')</h4>' + (c.back.map(lineHtml).join('') || '<div class="empty">None</div>') + '</div>' +
+      '<div class="co-col in"><h4>➡ Going In ($' + sumI.toFixed(2) + ')</h4>' + (c.goin.map(lineHtml).join('') || '<div class="empty">None</div>') + '</div>' +
+      '</div>' +
+      (c.notes ? '<div class="co-notes">📝 ' + esc(c.notes) + '</div>' : '') +
+      '<div class="co-foot"><span>Net: <span class="net ' + (net < 0 ? 'neg' : 'pos') + '">' + (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2)) + '</span></span>' +
+      '<div class="actions">' +
+      (c.status === 'Processed'
+        ? '<button class="btn btn-ghost btn-sm" onclick="setCoStatus(\'' + esc(c.num) + '\',\'Open\')">Reopen</button>'
+        : '<button class="btn btn-green btn-sm" onclick="setCoStatus(\'' + esc(c.num) + '\',\'Processed\')">✓ Mark Processed</button>') +
+      '</div></div></div>';
+  }).join('');
+}
+
+async function setCoStatus(coNum, status) {
+  const ids = historyItems.filter(i => (i.fields?.CONumber) === coNum).map(i => i.id);
+  try {
+    for (const id of ids) await updateItem(LIST.co, id, { Status: status });
+    historyItems.forEach(i => { if (i.fields?.CONumber === coNum) i.fields.Status = status; });
+    renderHistory();
+    toast(coNum + ' marked ' + status);
+  } catch (e) { toast('Update failed: ' + e.message, 'error'); }
+}
+
+function exportCSV() {
+  if (!historyItems.length) { toast('No data to export', 'warning'); return; }
+  const rows = [['CO Number', 'Status', 'Date', 'Job', 'Installer', 'Salesman', 'Direction', 'Barcode', 'Product Name', 'SKU', 'Mfr SKU', 'Vendor', 'Unit Cost', 'Qty', 'Line Total', 'Notes']];
+  historyItems.forEach(i => {
+    const f = i.fields || {};
+    rows.push([f.CONumber, f.Status, f.DateCreated, f.Job, f.Installer, f.Salesman, f.Direction, f.Barcode, f.ProductName, f.SKU, f.MfrSKU, f.Vendor, f.UnitCost, f.Qty, f.LineTotal, f.Notes]);
+  });
+  const csv = rows.map(r => r.map(v => '"' + String(v || '').replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ART_ChangeOrders_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ═══════════ PHONE CAMERA BARCODE SCANNING ═══════════
+let camScanner = null, camTarget = null, camLibLoading = null, camHandling = false;
+
+function loadCamLib() {
+  if (window.Html5Qrcode) return Promise.resolve();
+  if (camLibLoading) return camLibLoading;
+  camLibLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js';
+    s.onload = resolve;
+    s.onerror = () => { camLibLoading = null; reject(new Error('Could not load the camera scanner library. Check your connection and try again.')); };
+    document.head.appendChild(s);
+  });
+  return camLibLoading;
+}
+
+async function openCamera(target) {
+  camTarget = target;
+  camHandling = false;
+  document.getElementById('cam-modal').style.display = 'flex';
+  document.getElementById('cam-status').textContent = 'Starting camera…';
+  try {
+    await loadCamLib();
+    const formats = [
+      Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39
+    ];
+    camScanner = new Html5Qrcode('cam-reader', { formatsToSupport: formats, verbose: false });
+    await camScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 140 } },
+      onCamScan,
+      () => {} /* per-frame misses — ignore */
+    );
+    document.getElementById('cam-status').textContent = 'Point the camera at a barcode';
+  } catch (e) {
+    document.getElementById('cam-status').textContent = 'Camera error: ' + (e && e.message ? e.message : e);
+  }
+}
+
+async function onCamScan(decodedText) {
+  if (camHandling) return;
+  camHandling = true;
+  if (navigator.vibrate) navigator.vibrate(80);
+  await closeCamera();
+  const input = document.getElementById('bc-' + camTarget);
+  input.value = String(decodedText || '').trim();
+  input.dispatchEvent(new Event('input'));   // runs the lookup (incl. stripped-zero matching)
+  addLine(camTarget);                        // same as the hardware scanner's Enter
+}
+
+async function closeCamera() {
+  document.getElementById('cam-modal').style.display = 'none';
+  if (camScanner) {
+    try { await camScanner.stop(); camScanner.clear(); } catch (e) {}
+    camScanner = null;
+  }
+}
+
+// ═══════════ HELPERS ═══════════
+function esc(s) { if (!s) return ''; return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show ' + (type !== 'success' ? type : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = '', 3500);
+}
+
+// ═══════════ BOOT ═══════════
+window.addEventListener('load', () => { if (typeof msal !== 'undefined') initMsal(); else setTimeout(initMsal, 800); });
+</script>
+</body>
+</html>
