@@ -281,6 +281,28 @@
   <button type="button" onclick="closeCamera()" style="background:#fff;color:#111;border:none;border-radius:8px;padding:12px 32px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>
 </div>
 
+<!-- EMAIL CONFIRM MODAL -->
+<div id="mail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2100;align-items:center;justify-content:center;padding:14px;">
+  <div style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:#fff;border-radius:14px;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border2);">
+      <div style="font-size:15px;font-weight:700;">✉ Send change order email?</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:3px;">Review and send, or skip — the change order is already saved either way.</div>
+    </div>
+    <div style="padding:16px 18px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.9;">
+        <div><strong style="display:inline-block;width:42px;">To:</strong> <span id="mail-to"></span></div>
+        <div><strong style="display:inline-block;width:42px;">Cc:</strong> <span id="mail-cc"></span></div>
+        <div><strong style="display:inline-block;width:42px;">Subj:</strong> <span id="mail-subj"></span></div>
+      </div>
+      <div id="mail-preview" style="margin-top:12px;border:1px solid var(--border2);border-radius:10px;padding:12px;font-size:12.5px;max-height:40vh;overflow-y:auto;"></div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border2);display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" onclick="closeEmailConfirm()" style="flex:1;">Skip — don't send</button>
+      <button class="btn btn-blue" id="mail-send-btn" onclick="sendCoEmail()" style="flex:2;">✉ Send Email</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 // ═══════════ CONFIG ═══════════
@@ -288,9 +310,11 @@ const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
 const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
 const SITE_PATH = '/sites/ART43';
-const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'https://graph.microsoft.com/Mail.Send'];
 const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris', 'Barry', 'Andrew', 'Darwin', 'Yoan'];
 const SALESMEN = ['Bruno', 'Lyall', 'Trevor'];
+const SALESMEN_EMAIL = { 'Bruno': 'bdeleau@advance.mb.ca', 'Lyall': 'lkrahn@advance.mb.ca', 'Trevor': 'tsiepman@advance.mb.ca' };
+const TERRY_EMAIL = 'tyoung@advance.mb.ca';   // CC'd on every change order
 const LIST = { co: 'ChangeOrderLog', products: 'ProductLookup' };
 
 let msalInstance = null, accessToken = null, siteId = null, listIds = {};
@@ -590,12 +614,21 @@ async function saveCO() {
       historyItems.push(item);
     }
     toast('Saved ' + coNum + ' (' + all.length + ' item' + (all.length > 1 ? 's' : '') + ')');
+    // snapshot for the email before clearing the form
+    const emailData = {
+      coNum, job, installer, salesman, notes, date: today,
+      back: linesBack.slice(), goin: linesIn.slice(),
+      sumB: linesBack.reduce((s, l) => s + l.total, 0),
+      sumI: linesIn.reduce((s, l) => s + l.total, 0)
+    };
     linesBack = []; linesIn = [];
     ['co-job', 'co-notes'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('co-installer').value = '';
     document.getElementById('co-salesman').value = '';
     renderLines();
-    document.getElementById('bc-back').focus();
+    btn.disabled = false; btn.innerHTML = '💾 Save Change Order';
+    openEmailConfirm(emailData);   // confirm-before-send
+    return;
   } catch (e) {
     toast('Save failed: ' + e.message + ' — items may be partially saved as ' + coNum, 'error');
   }
@@ -686,6 +719,89 @@ function exportCSV() {
   const a = document.createElement('a');
   a.href = url; a.download = 'ART_ChangeOrders_' + new Date().toISOString().slice(0, 10) + '.csv';
   a.click(); URL.revokeObjectURL(url);
+}
+
+// ═══════════ EMAIL TO SALESMAN ═══════════
+let pendingEmail = null;
+
+function signedInEmail() {
+  const acc = msalInstance && msalInstance.getAllAccounts()[0];
+  return acc ? (acc.username || '') : '';
+}
+
+function buildEmailHtml(d) {
+  const net = d.sumI - d.sumB;
+  const netStr = (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2));
+  const netColor = net < 0 ? '#16a34a' : '#dc2626';   // less cost = good (green), more = red
+  const rows = (lines, color) => lines.length
+    ? lines.map(l => '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">' + esc(l.name) +
+        '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;color:#666;">' + esc(l.barcode) +
+        '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:center;">' + l.qty +
+        '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">$' + l.total.toFixed(2) + '</td></tr>').join('')
+    : '<tr><td colspan="4" style="padding:6px 8px;color:#999;">None</td></tr>';
+  return '<div style="font-family:Arial,sans-serif;font-size:13px;color:#111;max-width:640px;">' +
+    '<h2 style="font-size:17px;margin:0 0 4px;">Change Order ' + esc(d.coNum) + '</h2>' +
+    '<div style="color:#555;font-size:12px;margin-bottom:14px;">Created ' + esc(d.date) + ' by ' + esc(signedInEmail()) + '</div>' +
+    '<table style="border-collapse:collapse;margin-bottom:16px;font-size:13px;"><tr><td style="padding:2px 14px 2px 0;color:#555;">Job</td><td style="font-weight:600;">' + esc(d.job) + '</td></tr>' +
+    '<tr><td style="padding:2px 14px 2px 0;color:#555;">Installer</td><td style="font-weight:600;">' + esc(d.installer) + '</td></tr>' +
+    '<tr><td style="padding:2px 14px 2px 0;color:#555;">Salesman</td><td style="font-weight:600;">' + esc(d.salesman) + '</td></tr></table>' +
+    '<div style="font-weight:700;color:#dc2626;margin-bottom:4px;">⬅ Coming Back &nbsp;($' + d.sumB.toFixed(2) + ')</div>' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12.5px;"><thead><tr style="text-align:left;color:#888;font-size:11px;"><th style="padding:4px 8px;">Product</th><th style="padding:4px 8px;">Barcode</th><th style="padding:4px 8px;text-align:center;">Qty</th><th style="padding:4px 8px;text-align:right;">Total</th></tr></thead><tbody>' + rows(d.back) + '</tbody></table>' +
+    '<div style="font-weight:700;color:#16a34a;margin-bottom:4px;">➡ Going In &nbsp;($' + d.sumI.toFixed(2) + ')</div>' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12.5px;"><thead><tr style="text-align:left;color:#888;font-size:11px;"><th style="padding:4px 8px;">Product</th><th style="padding:4px 8px;">Barcode</th><th style="padding:4px 8px;text-align:center;">Qty</th><th style="padding:4px 8px;text-align:right;">Total</th></tr></thead><tbody>' + rows(d.goin) + '</tbody></table>' +
+    '<div style="font-size:15px;font-weight:700;padding:8px 0;border-top:2px solid #111;">Net difference: <span style="color:' + netColor + ';">' + netStr + '</span></div>' +
+    (d.notes ? '<div style="margin-top:12px;padding:10px;background:#f6f6f6;border-radius:8px;font-size:12.5px;"><strong>Notes:</strong> ' + esc(d.notes) + '</div>' : '') +
+    '<div style="margin-top:16px;color:#999;font-size:11px;">Sent automatically by the ART Change Order Tracker.</div></div>';
+}
+
+function openEmailConfirm(d) {
+  pendingEmail = d;
+  const to = SALESMEN_EMAIL[d.salesman] || '';
+  const cc = [signedInEmail(), TERRY_EMAIL].filter(Boolean);
+  document.getElementById('mail-to').textContent = to || '(no address for ' + d.salesman + ')';
+  document.getElementById('mail-cc').textContent = cc.join(', ');
+  document.getElementById('mail-subj').textContent = 'Change Order ' + d.coNum + ' — ' + d.job;
+  document.getElementById('mail-preview').innerHTML = buildEmailHtml(d);
+  document.getElementById('mail-modal').style.display = 'flex';
+}
+
+function closeEmailConfirm() {
+  document.getElementById('mail-modal').style.display = 'none';
+  pendingEmail = null;
+  document.getElementById('bc-back').focus();
+}
+
+async function sendCoEmail() {
+  if (!pendingEmail) return;
+  const d = pendingEmail;
+  const to = SALESMEN_EMAIL[d.salesman];
+  if (!to) { toast('No email address on file for ' + d.salesman, 'error'); return; }
+  const ccList = [signedInEmail(), TERRY_EMAIL].filter(Boolean);
+  const btn = document.getElementById('mail-send-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…';
+  const message = {
+    subject: 'Change Order ' + d.coNum + ' — ' + d.job,
+    body: { contentType: 'HTML', content: buildEmailHtml(d) },
+    toRecipients: [{ emailAddress: { address: to } }],
+    ccRecipients: ccList.map(a => ({ emailAddress: { address: a } }))
+  };
+  try {
+    const tok = await getToken();
+    const r = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, saveToSentItems: true })
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e?.error?.message || 'HTTP ' + r.status); }
+    document.getElementById('mail-modal').style.display = 'none';
+    pendingEmail = null;
+    toast('Email sent to ' + d.salesman);
+    document.getElementById('bc-back').focus();
+  } catch (e) {
+    // CO is already saved — just warn, leave modal open so they can retry or skip
+    toast('Email failed (CO is still saved): ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.innerHTML = '✉ Send Email';
 }
 
 // ═══════════ PHONE CAMERA BARCODE SCANNING ═══════════
