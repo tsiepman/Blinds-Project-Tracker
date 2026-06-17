@@ -77,6 +77,17 @@
   .line-item .li-total { font-size: 14px; font-weight: 700; }
   .line-item .li-qty { font-size: 11px; color: var(--text2); }
   .line-item .x-btn { flex: 0 0 auto; }
+  .line-item.labour { border-left: 3px solid #6366f1; }
+  .line-item.labour .li-total { color: #4338ca; }
+
+  /* Manual part + labour entry rows */
+  .add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 10px; }
+  .add-row .ar-desc { flex: 2; min-width: 150px; }
+  .add-row .ar-qty { flex: 0 0 66px; }
+  .add-row .ar-cost { flex: 0 0 88px; }
+  .add-row .ar-btn { flex: 0 0 auto; }
+  .add-row label { font-size: 10px; }
+  .net-bar .hrs { font-size: 12.5px; color: #cbd5e1; font-weight: 600; }
 
   .lookup { display: none; margin-top: 6px; font-size: 12px; padding: 8px 10px; border-radius: 8px; }
   .lookup.found { display: block; background: #fff; border: 1px solid var(--green-bd); }
@@ -125,6 +136,11 @@
     .scan-row .f-qty { flex: 1 1 80px; }
     .scan-row > div:last-child { flex: 1 1 auto; }
     .scan-row .btn { width: 100%; padding: 13px; font-size: 16px; }
+    .add-row .ar-desc { flex: 1 1 100%; }
+    .add-row .ar-qty { flex: 1 1 66px; }
+    .add-row .ar-cost { flex: 1 1 88px; }
+    .add-row .ar-btn { flex: 1 1 100%; }
+    .add-row .ar-btn .btn { width: 100%; padding: 12px; font-size: 15px; }
     .cam-btn { padding: 0 18px; font-size: 22px; }
 
     /* net bar becomes a tidy 3-up grid with a full-width save button */
@@ -222,6 +238,17 @@
           <div class="f-qty"><label>Qty</label><input type="number" id="qty-back" value="1" min="1"></div>
           <div><label>&nbsp;</label><button class="btn btn-red" id="btn-add-back" onclick="addLine('back')" disabled>Add</button></div>
         </div>
+        <div class="add-row">
+          <div class="ar-desc"><label>Manual Part (no barcode)</label><input type="text" id="mp-back" placeholder="e.g. 2m HDMI cable" autocomplete="off"></div>
+          <div class="ar-qty"><label>Qty</label><input type="number" id="mpqty-back" value="1" min="1"></div>
+          <div class="ar-cost"><label>$ ea (opt)</label><input type="number" id="mpcost-back" placeholder="0.00" min="0" step="0.01"></div>
+          <div class="ar-btn"><label>&nbsp;</label><button class="btn btn-red" onclick="addManual('back')">Add Part</button></div>
+        </div>
+        <div class="add-row">
+          <div class="ar-desc"><label>Labour (estimated or actual)</label><input type="text" id="lbnote-back" placeholder="e.g. estimated rough-in" autocomplete="off"></div>
+          <div class="ar-qty"><label>Hours</label><input type="number" id="lbhrs-back" placeholder="0" min="0" step="0.25"></div>
+          <div class="ar-btn"><label>&nbsp;</label><button class="btn btn-red" onclick="addLabour('back')">Add Labour</button></div>
+        </div>
         <div id="tbody-back" class="line-list"></div>
         <div class="empty" id="empty-back">No items yet — scan the product coming back.</div>
       </div>
@@ -240,6 +267,17 @@
           </div>
           <div class="f-qty"><label>Qty</label><input type="number" id="qty-in" value="1" min="1"></div>
           <div><label>&nbsp;</label><button class="btn btn-green" id="btn-add-in" onclick="addLine('in')" disabled>Add</button></div>
+        </div>
+        <div class="add-row">
+          <div class="ar-desc"><label>Manual Part (no barcode)</label><input type="text" id="mp-in" placeholder="e.g. 1m HDMI cable" autocomplete="off"></div>
+          <div class="ar-qty"><label>Qty</label><input type="number" id="mpqty-in" value="1" min="1"></div>
+          <div class="ar-cost"><label>$ ea (opt)</label><input type="number" id="mpcost-in" placeholder="0.00" min="0" step="0.01"></div>
+          <div class="ar-btn"><label>&nbsp;</label><button class="btn btn-green" onclick="addManual('in')">Add Part</button></div>
+        </div>
+        <div class="add-row">
+          <div class="ar-desc"><label>Labour (estimated or actual)</label><input type="text" id="lbnote-in" placeholder="e.g. actual trim-out" autocomplete="off"></div>
+          <div class="ar-qty"><label>Hours</label><input type="number" id="lbhrs-in" placeholder="0" min="0" step="0.25"></div>
+          <div class="ar-btn"><label>&nbsp;</label><button class="btn btn-green" onclick="addLabour('in')">Add Labour</button></div>
         </div>
         <div id="tbody-in" class="line-list"></div>
         <div class="empty" id="empty-in">No items yet — scan the replacement product (leave empty if nothing is going in).</div>
@@ -299,6 +337,24 @@
     <div style="padding:14px 18px;border-top:1px solid var(--border2);display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn btn-ghost" onclick="closeEmailConfirm()" style="flex:1;">Skip — don't send</button>
       <button class="btn btn-blue" id="mail-send-btn" onclick="sendCoEmail()" style="flex:2;">✉ Send Email</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div id="del-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2100;align-items:center;justify-content:center;padding:14px;">
+  <div style="width:100%;max-width:460px;background:#fff;border-radius:14px;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border2);">
+      <div style="font-size:15px;font-weight:700;color:var(--red);">🗑 Delete <span id="del-num"></span>?</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:3px;">This permanently removes the change order from SharePoint and cannot be undone.</div>
+    </div>
+    <div style="padding:16px 18px;font-size:12.5px;color:var(--text2);line-height:1.7;">
+      A cancellation email will be sent to everyone who got the original:
+      <div id="del-recipients" style="margin-top:6px;color:var(--text);font-weight:600;"></div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border2);display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" onclick="closeDeleteModal()" style="flex:1;">Cancel</button>
+      <button class="btn btn-red" id="del-confirm-btn" onclick="confirmDeleteCO()" style="flex:2;">🗑 Delete &amp; Notify</button>
     </div>
   </div>
 </div>
@@ -422,6 +478,11 @@ async function updateItem(listName, itemId, fields) {
   return spFetch('PATCH', '/sites/' + sid + '/lists/' + lid + '/items/' + itemId + '/fields', fields);
 }
 
+async function deleteItem(listName, itemId) {
+  const sid = await getSiteId(); const lid = await getListId(listName);
+  return spFetch('DELETE', '/sites/' + sid + '/lists/' + lid + '/items/' + itemId);
+}
+
 // Auto-create the ChangeOrderLog list if it doesn't exist yet
 async function ensureCoList() {
   try { await getListId(LIST.co); return; }
@@ -533,10 +594,10 @@ function addLine(side) {
   const qty = parseInt(document.getElementById('qty-' + side).value) || 1;
   const p = lookupBarcode(bc);
   const line = {
-    barcode: bc,
+    type: 'product', barcode: bc,
     name: p ? p.name : '⚠ Not Found',
     sku: p ? p.sku : '', mfrSku: p ? p.mfrSku : '', vendor: p ? p.vendor : '',
-    cost: p ? p.cost : 0, qty, total: (p ? p.cost : 0) * qty
+    cost: p ? p.cost : 0, qty, total: (p ? p.cost : 0) * qty, hours: 0
   };
   (side === 'back' ? linesBack : linesIn).push(line);
   input.value = '';
@@ -553,27 +614,71 @@ function removeLine(side, idx) {
   renderLines();
 }
 
+function addManual(side) {
+  const descEl = document.getElementById('mp-' + side);
+  const desc = descEl.value.trim();
+  if (!desc) { toast('Enter a part description', 'warning'); return; }
+  const qty = parseInt(document.getElementById('mpqty-' + side).value) || 1;
+  const cost = parseFloat(document.getElementById('mpcost-' + side).value) || 0;
+  const line = { type: 'manual', barcode: '', name: desc, sku: '', mfrSku: '', vendor: '', cost, qty, total: cost * qty, hours: 0 };
+  (side === 'back' ? linesBack : linesIn).push(line);
+  descEl.value = '';
+  document.getElementById('mpqty-' + side).value = 1;
+  document.getElementById('mpcost-' + side).value = '';
+  descEl.focus();
+  renderLines();
+  toast('Added part: ' + desc.slice(0, 40));
+}
+
+function addLabour(side) {
+  const noteEl = document.getElementById('lbnote-' + side);
+  const note = noteEl.value.trim();
+  const hrs = parseFloat(document.getElementById('lbhrs-' + side).value) || 0;
+  if (!hrs) { toast('Enter labour hours', 'warning'); return; }
+  const line = { type: 'labour', barcode: '', name: 'Labour' + (note ? ' — ' + note : ''), sku: '', mfrSku: '', vendor: '', cost: 0, qty: 1, total: 0, hours: hrs };
+  (side === 'back' ? linesBack : linesIn).push(line);
+  noteEl.value = '';
+  document.getElementById('lbhrs-' + side).value = '';
+  noteEl.focus();
+  renderLines();
+  toast('Added labour: ' + hrs + 'h');
+}
+
+function hoursTag(h, signed) {
+  if (!h) return '';
+  const s = signed ? (h < 0 ? '-' : '+') : '';
+  return '<span class="hrs"> · ' + s + Math.abs(h) + 'h</span>';
+}
+
 function renderLines() {
   ['back', 'in'].forEach(side => {
     const lines = side === 'back' ? linesBack : linesIn;
     const tb = document.getElementById('tbody-' + side);
-    tb.innerHTML = lines.map((l, i) =>
-      '<div class="line-item"><div class="li-main">' +
-        '<div class="li-name">' + esc(l.name) + '</div>' +
-        '<div class="li-meta">' + esc(l.barcode) + (l.sku ? ' · ' + esc(l.sku) : '') + ' · $' + l.cost.toFixed(2) + ' ea</div>' +
-      '</div>' +
-      '<div class="li-right"><div class="li-total">$' + l.total.toFixed(2) + '</div><div class="li-qty">qty ' + l.qty + '</div></div>' +
-      '<button class="x-btn" onclick="removeLine(\'' + side + '\',' + i + ')" title="Remove">✕</button></div>'
-    ).join('');
+    tb.innerHTML = lines.map((l, i) => {
+      const xbtn = '<button class="x-btn" onclick="removeLine(\'' + side + '\',' + i + ')" title="Remove">✕</button>';
+      if (l.type === 'labour') {
+        return '<div class="line-item labour"><div class="li-main">' +
+          '<div class="li-name">⏱ ' + esc(l.name) + '</div><div class="li-meta">labour</div></div>' +
+          '<div class="li-right"><div class="li-total">' + l.hours + 'h</div></div>' + xbtn + '</div>';
+      }
+      const meta = [l.barcode ? esc(l.barcode) : 'manual part'];
+      if (l.sku) meta.push(esc(l.sku));
+      meta.push('$' + l.cost.toFixed(2) + ' ea');
+      return '<div class="line-item"><div class="li-main">' +
+        '<div class="li-name">' + esc(l.name) + '</div><div class="li-meta">' + meta.join(' · ') + '</div></div>' +
+        '<div class="li-right"><div class="li-total">$' + l.total.toFixed(2) + '</div><div class="li-qty">qty ' + l.qty + '</div></div>' + xbtn + '</div>';
+    }).join('');
     document.getElementById('empty-' + side).style.display = lines.length ? 'none' : '';
   });
-  const sumB = linesBack.reduce((s, l) => s + l.total, 0);
-  const sumI = linesIn.reduce((s, l) => s + l.total, 0);
-  const net = sumI - sumB;
-  document.getElementById('sum-back').textContent = '$' + sumB.toFixed(2);
-  document.getElementById('sum-in').textContent = '$' + sumI.toFixed(2);
+  const dollars = arr => arr.filter(l => l.type !== 'labour').reduce((s, l) => s + l.total, 0);
+  const hours = arr => arr.filter(l => l.type === 'labour').reduce((s, l) => s + l.hours, 0);
+  const sumB = dollars(linesBack), sumI = dollars(linesIn);
+  const hrB = hours(linesBack), hrI = hours(linesIn);
+  const net = sumI - sumB, netH = hrI - hrB;
+  document.getElementById('sum-back').innerHTML = '$' + sumB.toFixed(2) + hoursTag(hrB);
+  document.getElementById('sum-in').innerHTML = '$' + sumI.toFixed(2) + hoursTag(hrI);
   const netEl = document.getElementById('sum-net');
-  netEl.textContent = (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2));
+  netEl.innerHTML = (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2)) + hoursTag(netH, true);
   netEl.className = 'val ' + (net < 0 ? 'neg' : 'pos');
 }
 
@@ -608,6 +713,7 @@ async function saveCO() {
         Title: coNum, CONumber: coNum, Job: job, Installer: installer, Salesman: salesman,
         Direction: l.dir, Barcode: l.barcode, ProductName: l.name, SKU: l.sku, MfrSKU: l.mfrSku,
         Vendor: l.vendor, UnitCost: String(l.cost), Qty: String(l.qty), LineTotal: String(l.total),
+        LineType: l.type || 'product', Hours: String(l.hours || 0), CreatedByEmail: signedInEmail(),
         DateCreated: today, Status: 'Open', Notes: notes
       };
       const item = await createItem(LIST.co, fields);
@@ -618,8 +724,10 @@ async function saveCO() {
     const emailData = {
       coNum, job, installer, salesman, notes, date: today,
       back: linesBack.slice(), goin: linesIn.slice(),
-      sumB: linesBack.reduce((s, l) => s + l.total, 0),
-      sumI: linesIn.reduce((s, l) => s + l.total, 0)
+      sumB: linesBack.filter(l => l.type !== 'labour').reduce((s, l) => s + l.total, 0),
+      sumI: linesIn.filter(l => l.type !== 'labour').reduce((s, l) => s + l.total, 0),
+      hrB: linesBack.filter(l => l.type === 'labour').reduce((s, l) => s + l.hours, 0),
+      hrI: linesIn.filter(l => l.type === 'labour').reduce((s, l) => s + l.hours, 0)
     };
     linesBack = []; linesIn = [];
     ['co-job', 'co-notes'].forEach(id => document.getElementById(id).value = '');
@@ -650,11 +758,12 @@ function groupCOs() {
   historyItems.forEach(i => {
     const f = i.fields || {};
     const num = f.CONumber || '—';
-    if (!map[num]) map[num] = { num, job: f.Job || '', installer: f.Installer || '', salesman: f.Salesman || '', date: f.DateCreated || '', status: f.Status || 'Open', notes: f.Notes || '', back: [], goin: [], spIds: [] };
+    if (!map[num]) map[num] = { num, job: f.Job || '', installer: f.Installer || '', salesman: f.Salesman || '', date: f.DateCreated || '', status: f.Status || 'Open', notes: f.Notes || '', createdBy: f.CreatedByEmail || '', back: [], goin: [], spIds: [] };
     const g = map[num];
     g.spIds.push(i.id);
+    if (f.CreatedByEmail && !g.createdBy) g.createdBy = f.CreatedByEmail;
     if (f.Status === 'Processed') g.status = 'Processed';
-    const line = { name: f.ProductName || '', barcode: f.Barcode || '', qty: parseInt(f.Qty) || 1, total: parseFloat(f.LineTotal) || 0 };
+    const line = { name: f.ProductName || '', barcode: f.Barcode || '', qty: parseInt(f.Qty) || 1, total: parseFloat(f.LineTotal) || 0, type: f.LineType || 'product', hours: parseFloat(f.Hours) || 0 };
     if (f.Direction === 'Coming Back') g.back.push(line); else g.goin.push(line);
   });
   return Object.values(map).sort((a, b) => b.num.localeCompare(a.num));
@@ -673,25 +782,32 @@ function renderHistory() {
   );
   document.getElementById('hist-empty').style.display = cos.length ? 'none' : '';
   list.innerHTML = cos.map(c => {
-    const sumB = c.back.reduce((s, l) => s + l.total, 0);
-    const sumI = c.goin.reduce((s, l) => s + l.total, 0);
+    const sumB = c.back.filter(l => l.type !== 'labour').reduce((s, l) => s + l.total, 0);
+    const sumI = c.goin.filter(l => l.type !== 'labour').reduce((s, l) => s + l.total, 0);
+    const hrB = c.back.filter(l => l.type === 'labour').reduce((s, l) => s + l.hours, 0);
+    const hrI = c.goin.filter(l => l.type === 'labour').reduce((s, l) => s + l.hours, 0);
     const net = sumI - sumB;
-    const lineHtml = l => '<div class="co-line"><span>' + esc(l.name) + '</span><span class="qn">×' + l.qty + ' · $' + l.total.toFixed(2) + '</span></div>';
+    const netH = hrI - hrB;
+    const lineHtml = l => l.type === 'labour'
+      ? '<div class="co-line"><span>⏱ ' + esc(l.name) + '</span><span class="qn">' + l.hours + 'h</span></div>'
+      : '<div class="co-line"><span>' + esc(l.name) + '</span><span class="qn">×' + l.qty + ' · $' + l.total.toFixed(2) + '</span></div>';
     return '<div class="co-card">' +
       '<div class="co-head"><span class="co-num">' + esc(c.num) + '</span>' +
       '<span class="badge ' + (c.status === 'Processed' ? 'processed' : 'open') + '">' + esc(c.status) + '</span>' +
       '<span class="meta">📅 ' + esc(c.date) + '</span><span class="meta">🏠 ' + esc(c.job) + '</span>' +
       '<span class="meta">🔧 ' + esc(c.installer) + '</span><span class="meta">💼 ' + esc(c.salesman) + '</span></div>' +
       '<div class="co-body">' +
-      '<div class="co-col back"><h4>⬅ Coming Back ($' + sumB.toFixed(2) + ')</h4>' + (c.back.map(lineHtml).join('') || '<div class="empty">None</div>') + '</div>' +
-      '<div class="co-col in"><h4>➡ Going In ($' + sumI.toFixed(2) + ')</h4>' + (c.goin.map(lineHtml).join('') || '<div class="empty">None</div>') + '</div>' +
+      '<div class="co-col back"><h4>⬅ Coming Back ($' + sumB.toFixed(2) + (hrB ? ' · ' + hrB + 'h' : '') + ')</h4>' + (c.back.map(lineHtml).join('') || '<div class="empty">None</div>') + '</div>' +
+      '<div class="co-col in"><h4>➡ Going In ($' + sumI.toFixed(2) + (hrI ? ' · ' + hrI + 'h' : '') + ')</h4>' + (c.goin.map(lineHtml).join('') || '<div class="empty">None</div>') + '</div>' +
       '</div>' +
       (c.notes ? '<div class="co-notes">📝 ' + esc(c.notes) + '</div>' : '') +
-      '<div class="co-foot"><span>Net: <span class="net ' + (net < 0 ? 'neg' : 'pos') + '">' + (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2)) + '</span></span>' +
+      '<div class="co-foot"><span>Net: <span class="net ' + (net < 0 ? 'neg' : 'pos') + '">' + (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2)) + '</span>' +
+      (netH ? ' &nbsp;·&nbsp; Labour: <span class="net" style="color:#4338ca;">' + (netH < 0 ? '-' : '+') + Math.abs(netH) + 'h</span>' : '') + '</span>' +
       '<div class="actions">' +
       (c.status === 'Processed'
         ? '<button class="btn btn-ghost btn-sm" onclick="setCoStatus(\'' + esc(c.num) + '\',\'Open\')">Reopen</button>'
         : '<button class="btn btn-green btn-sm" onclick="setCoStatus(\'' + esc(c.num) + '\',\'Processed\')">✓ Mark Processed</button>') +
+      '<button class="btn btn-red btn-sm" onclick="askDeleteCO(\'' + esc(c.num) + '\')">🗑 Delete</button>' +
       '</div></div></div>';
   }).join('');
 }
@@ -704,6 +820,85 @@ async function setCoStatus(coNum, status) {
     renderHistory();
     toast(coNum + ' marked ' + status);
   } catch (e) { toast('Update failed: ' + e.message, 'error'); }
+}
+
+// ── DELETE A CHANGE ORDER ──
+let pendingDelete = null;
+
+function delRecipients(group) {
+  const to = SALESMEN_EMAIL[group.salesman] || '';
+  const cc = [group.createdBy, TERRY_EMAIL].filter(Boolean);
+  return { to, cc };
+}
+
+function askDeleteCO(coNum) {
+  const group = groupCOs().find(c => c.num === coNum);
+  if (!group) { toast('Could not find ' + coNum, 'error'); return; }
+  pendingDelete = group;
+  const r = delRecipients(group);
+  document.getElementById('del-num').textContent = coNum;
+  document.getElementById('del-recipients').textContent = [r.to].concat(r.cc).filter(Boolean).join(', ') || '(no addresses on file)';
+  document.getElementById('del-modal').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+  document.getElementById('del-modal').style.display = 'none';
+  pendingDelete = null;
+}
+
+function buildCancelHtml(g) {
+  return '<div style="font-family:Arial,sans-serif;font-size:13px;color:#111;max-width:640px;">' +
+    '<h2 style="font-size:17px;margin:0 0 4px;color:#dc2626;">Change Order ' + esc(g.num) + ' — CANCELLED</h2>' +
+    '<div style="color:#555;font-size:12px;margin-bottom:14px;">Deleted ' + new Date().toISOString().slice(0, 10) + ' by ' + esc(signedInEmail()) + '</div>' +
+    '<p style="font-size:13px;line-height:1.6;">This change order has been deleted and is no longer in effect. Details for your records:</p>' +
+    '<table style="border-collapse:collapse;margin:8px 0 14px;font-size:13px;"><tr><td style="padding:2px 14px 2px 0;color:#555;">Job</td><td style="font-weight:600;">' + esc(g.job) + '</td></tr>' +
+    '<tr><td style="padding:2px 14px 2px 0;color:#555;">Installer</td><td style="font-weight:600;">' + esc(g.installer) + '</td></tr>' +
+    '<tr><td style="padding:2px 14px 2px 0;color:#555;">Salesman</td><td style="font-weight:600;">' + esc(g.salesman) + '</td></tr>' +
+    '<tr><td style="padding:2px 14px 2px 0;color:#555;">Originally created</td><td>' + esc(g.date) + '</td></tr></table>' +
+    '<div style="margin-top:16px;color:#999;font-size:11px;">Sent automatically by the ART Change Order Tracker.</div></div>';
+}
+
+async function confirmDeleteCO() {
+  if (!pendingDelete) return;
+  const g = pendingDelete;
+  const btn = document.getElementById('del-confirm-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Deleting…';
+  try {
+    for (const id of g.spIds) await deleteItem(LIST.co, id);
+    historyItems = historyItems.filter(i => (i.fields?.CONumber) !== g.num);
+    document.getElementById('del-modal').style.display = 'none';
+    renderHistory();
+    toast(g.num + ' deleted');
+    // notify original recipients — CO is already gone, so email failure is non-fatal
+    const r = delRecipients(g);
+    if (r.to) {
+      try {
+        const tok = await getToken();
+        const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: {
+              subject: 'CANCELLED — Change Order ' + g.num + ' — ' + g.job,
+              body: { contentType: 'HTML', content: buildCancelHtml(g) },
+              toRecipients: [{ emailAddress: { address: r.to } }],
+              ccRecipients: r.cc.map(a => ({ emailAddress: { address: a } }))
+            }, saveToSentItems: true
+          })
+        });
+        if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e?.error?.message || 'HTTP ' + resp.status); }
+        toast('Cancellation email sent');
+      } catch (e) {
+        toast('Deleted, but cancellation email failed: ' + e.message, 'error');
+      }
+    } else {
+      toast('Deleted (no salesman address on file to notify)', 'warning');
+    }
+    pendingDelete = null;
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.innerHTML = '🗑 Delete &amp; Notify';
 }
 
 function exportCSV() {
@@ -733,11 +928,14 @@ function buildEmailHtml(d) {
   const net = d.sumI - d.sumB;
   const netStr = (net < 0 ? '-$' + Math.abs(net).toFixed(2) : '+$' + net.toFixed(2));
   const netColor = net < 0 ? '#16a34a' : '#dc2626';   // less cost = good (green), more = red
-  const rows = (lines, color) => lines.length
-    ? lines.map(l => '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">' + esc(l.name) +
-        '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;color:#666;">' + esc(l.barcode) +
-        '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:center;">' + l.qty +
-        '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">$' + l.total.toFixed(2) + '</td></tr>').join('')
+  const netH = (d.hrI || 0) - (d.hrB || 0);
+  const rows = (lines) => lines.length
+    ? lines.map(l => l.type === 'labour'
+        ? '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">⏱ ' + esc(l.name) + '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;color:#666;">labour</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:center;">—</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">' + l.hours + 'h</td></tr>'
+        : '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">' + esc(l.name) +
+          '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;color:#666;">' + (l.barcode ? esc(l.barcode) : 'manual') +
+          '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:center;">' + l.qty +
+          '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">$' + l.total.toFixed(2) + '</td></tr>').join('')
     : '<tr><td colspan="4" style="padding:6px 8px;color:#999;">None</td></tr>';
   return '<div style="font-family:Arial,sans-serif;font-size:13px;color:#111;max-width:640px;">' +
     '<h2 style="font-size:17px;margin:0 0 4px;">Change Order ' + esc(d.coNum) + '</h2>' +
@@ -750,6 +948,7 @@ function buildEmailHtml(d) {
     '<div style="font-weight:700;color:#16a34a;margin-bottom:4px;">➡ Going In &nbsp;($' + d.sumI.toFixed(2) + ')</div>' +
     '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12.5px;"><thead><tr style="text-align:left;color:#888;font-size:11px;"><th style="padding:4px 8px;">Product</th><th style="padding:4px 8px;">Barcode</th><th style="padding:4px 8px;text-align:center;">Qty</th><th style="padding:4px 8px;text-align:right;">Total</th></tr></thead><tbody>' + rows(d.goin) + '</tbody></table>' +
     '<div style="font-size:15px;font-weight:700;padding:8px 0;border-top:2px solid #111;">Net difference: <span style="color:' + netColor + ';">' + netStr + '</span></div>' +
+    (netH ? '<div style="font-size:13px;color:#4338ca;font-weight:600;padding-bottom:6px;">Net labour: ' + (netH < 0 ? '-' : '+') + Math.abs(netH) + 'h</div>' : '') +
     (d.notes ? '<div style="margin-top:12px;padding:10px;background:#f6f6f6;border-radius:8px;font-size:12.5px;"><strong>Notes:</strong> ' + esc(d.notes) + '</div>' : '') +
     '<div style="margin-top:16px;color:#999;font-size:11px;">Sent automatically by the ART Change Order Tracker.</div></div>';
 }
