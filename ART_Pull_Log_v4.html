@@ -422,10 +422,36 @@ function initMsal() {
   return msalReady;
 }
 
+// Clears MSAL's stuck "interaction in progress" flag left behind by an
+// interrupted redirect. This is what otherwise forces a full browser restart.
+function clearStuckInteraction() {
+  try {
+    [sessionStorage, localStorage].forEach(store => {
+      for (let i = store.length - 1; i >= 0; i--) {
+        const k = store.key(i);
+        if (k && (k.indexOf('interaction.status') > -1 ||
+                  (k.indexOf('msal.') === 0 && k.indexOf('request') > -1))) {
+          store.removeItem(k);
+        }
+      }
+    });
+  } catch (e) {}
+}
+
 function signIn() {
   initMsal().then(() => {
     return msalInstance.loginRedirect({ scopes: SCOPES });
-  }).catch(e => showAuthError('Sign-in failed: ' + e.message));
+  }).catch(e => {
+    const code = String((e && (e.errorCode || e.message)) || '');
+    if (code.indexOf('interaction_in_progress') > -1) {
+      // Stuck flag from a previous interrupted sign-in — clear it and retry once.
+      clearStuckInteraction();
+      msalInstance.loginRedirect({ scopes: SCOPES })
+        .catch(e2 => showAuthError('Sign-in failed: ' + (e2.message || e2)));
+    } else {
+      showAuthError('Sign-in failed: ' + (e.message || e));
+    }
+  });
 }
 
 async function getToken() {
