@@ -519,33 +519,44 @@ const BILLING_DISPLAY = { 'Brian Benson': 'Brian', 'Terry Young': 'Terry' };
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 let accessToken = null;
 let currentUser = null;
+let msalInstance = null;
+
+function getMsalInstance() {
+  if (msalInstance) return msalInstance;
+  const msalConfig = {
+    auth: {
+      clientId: CLIENT_ID,
+      authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+      redirectUri: window.location.href.split('?')[0]
+    },
+    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: true }
+  };
+  msalInstance = new msal.PublicClientApplication(msalConfig);
+  return msalInstance;
+}
 
 async function getToken() {
   const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
-  return new Promise((resolve, reject) => {
-    const msalConfig = {
-      auth: {
-        clientId: CLIENT_ID,
-        authority: `https://login.microsoftonline.com/${TENANT_ID}`,
-        redirectUri: window.location.href.split('?')[0]
-      },
-      cache: { cacheLocation: 'sessionStorage' }
-    };
-    const msalInstance = new msal.PublicClientApplication(msalConfig);
-    const accounts = msalInstance.getAllAccounts();
-    const req = { scopes };
-    if (accounts.length > 0) {
-      msalInstance.acquireTokenSilent({ ...req, account: accounts[0] })
-        .then(r => resolve({ token: r.accessToken, name: accounts[0].name }))
-        .catch(() => msalInstance.acquireTokenPopup(req)
-          .then(r => resolve({ token: r.accessToken, name: r.account.name }))
-          .catch(reject));
-    } else {
-      msalInstance.acquireTokenPopup(req)
-        .then(r => resolve({ token: r.accessToken, name: r.account.name }))
-        .catch(reject);
+  const instance = getMsalInstance();
+
+  // Handle redirect response first
+  await instance.handleRedirectPromise();
+
+  const accounts = instance.getAllAccounts();
+
+  if (accounts.length > 0) {
+    try {
+      const r = await instance.acquireTokenSilent({ scopes, account: accounts[0] });
+      return { token: r.accessToken, name: accounts[0].name };
+    } catch(e) {
+      // Silent failed, fall through to redirect
     }
-  });
+  }
+
+  // No account or silent failed — redirect to login
+  await instance.acquireTokenRedirect({ scopes });
+  // Page will redirect, so nothing returns here
+  return new Promise(() => {}); // keeps promise pending during redirect
 }
 
 // ── GRAPH HELPERS ─────────────────────────────────────────────────────────────
