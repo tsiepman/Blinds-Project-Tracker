@@ -857,7 +857,8 @@ async function init() {
     setSyncStatus(true, `Signed in as ${currentUser}`);
   } catch(e) {
     setSyncStatus(false, 'Sign-in failed');
-    document.getElementById('loading').innerHTML = '<div style="color:var(--red);text-align:center;padding:40px">Sign-in failed. Please reload and try again.</div>';
+    const msg = e.errorCode || e.message || JSON.stringify(e);
+    document.getElementById('loading').innerHTML = `<div style="color:var(--red);text-align:center;padding:40px">Sign-in failed.<br><br><code style="font-size:11px;color:#f87171;background:#1a1d27;padding:8px 12px;border-radius:6px;display:inline-block;max-width:500px;word-break:break-all">${msg}</code><br><br>Please reload and try again.</div>`;
     return;
   }
 
