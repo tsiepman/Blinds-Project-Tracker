@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART Billing Queue</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --accent: #f0a500;
+    --accent-dim: rgba(240,165,0,0.12);
+    --green: #22c55e;
+    --green-dim: rgba(34,197,94,0.12);
+    --red: #ef4444;
+    --text: #e8eaf0;
+    --text-mid: #9099b8;
+    --text-dim: #5a6180;
+    --co: #818cf8;
+    --co-dim: rgba(129,140,248,0.12);
+    --proj: #f0a500;
+    --proj-dim: rgba(240,165,0,0.12);
+    --radius: 8px;
+    --font: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .logo span { color: var(--text-mid); font-weight: 400; margin-left: 8px; letter-spacing: 0; text-transform: none; }
+  #sync-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .dot.ok { background: var(--green); }
+  .dot.err { background: var(--red); }
+
+  /* ── Layout ── */
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+  }
+
+  /* ── Stats bar ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+  }
+  .stat-val {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .stat-label { font-size: 12px; color: var(--text-mid); }
+  .stat.warn .stat-val { color: var(--red); }
+  .stat.money .stat-val { color: var(--accent); }
+
+  /* ── Add form ── */
+  .add-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    margin-bottom: 28px;
+  }
+  .add-card h2 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-mid);
+    margin-bottom: 16px;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 1fr 130px 140px 100px 120px auto;
+    gap: 10px;
+    align-items: end;
+  }
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .field input, .field select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus {
+    border-color: var(--accent);
+  }
+  .field input::placeholder { color: var(--text-dim); }
+  .field select option { background: var(--surface2); }
+
+  .btn-add {
+    background: var(--accent);
+    color: #000;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 700;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 18px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+    height: 36px;
+  }
+  .btn-add:hover { opacity: 0.85; }
+  .btn-add:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Queue section ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-mid);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .count-badge {
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+  .count-badge.purple {
+    background: var(--co-dim);
+    color: var(--co);
+  }
+
+  /* ── Table ── */
+  .queue-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 32px;
+  }
+  .queue-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .queue-table td {
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .queue-table tr:last-child td { border-bottom: none; }
+  .queue-table tbody tr {
+    transition: background 0.1s;
+  }
+  .queue-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+  /* type pill */
+  .type-pill {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .type-pill.co { background: var(--co-dim); color: var(--co); }
+  .type-pill.proj { background: var(--proj-dim); color: var(--proj); }
+
+  /* age indicator */
+  .age {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .age.fresh { color: var(--text-mid); }
+  .age.warn { color: var(--accent); }
+  .age.late { color: var(--red); }
+
+  /* amount */
+  .amount { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* invoice button */
+  .btn-invoice {
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 6px;
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-invoice:hover { background: rgba(34,197,94,0.22); }
+
+  /* invoiced row */
+  .invoiced td { opacity: 0.45; }
+  .invoiced .amount { text-decoration: line-through; }
+  .invoiced-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--green);
+    background: var(--green-dim);
+    padding: 3px 9px;
+    border-radius: 20px;
+  }
+
+  /* empty state */
+  .empty {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .empty strong { display: block; font-size: 15px; color: var(--text-mid); margin-bottom: 6px; }
+
+  /* loading */
+  #loading {
+    text-align: center;
+    padding: 60px 0;
+    color: var(--text-dim);
+  }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* toast */
+  #toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 18px;
+    font-size: 13px;
+    color: var(--text);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 999;
+    max-width: 300px;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.success { border-color: var(--green); color: var(--green); }
+  #toast.error { border-color: var(--red); color: var(--red); }
+
+  /* completed section toggle */
+  .toggle-completed {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-mid);
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .toggle-completed:hover { border-color: var(--text-mid); color: var(--text); }
+
+  @media (max-width: 900px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .form-row { grid-template-columns: 1fr 1fr; }
+    .form-row .btn-add { grid-column: span 2; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ART <span>Billing Queue</span></div>
+  <div id="sync-status"><div class="dot" id="sync-dot"></div><span id="sync-text">Connecting…</span></div>
+</header>
+
+<main>
+  <div id="loading">
+    <div class="spinner"></div>
+    Loading queue…
+  </div>
+
+  <div id="app" style="display:none">
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-val" id="stat-pending">—</div>
+        <div class="stat-label">Pending invoice</div>
+      </div>
+      <div class="stat warn">
+        <div class="stat-val" id="stat-overdue">—</div>
+        <div class="stat-label">Over 5 days old</div>
+      </div>
+      <div class="stat money">
+        <div class="stat-val" id="stat-value">—</div>
+        <div class="stat-label">Total pending $</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="stat-done">—</div>
+        <div class="stat-label">Invoiced this month</div>
+      </div>
+    </div>
+
+    <!-- Add form -->
+    <div class="add-card">
+      <h2>Add to queue</h2>
+      <div class="form-row">
+        <div class="field">
+          <label>Type</label>
+          <select id="f-type">
+            <option value="CO">Change Order</option>
+            <option value="Project">Project</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Client name</label>
+          <input id="f-client" type="text" placeholder="e.g. Harvey Goldman">
+        </div>
+        <div class="field">
+          <label>Project name</label>
+          <input id="f-project" type="text" placeholder="e.g. 732 South Drive">
+        </div>
+        <div class="field">
+          <label>D-Tools # </label>
+          <input id="f-dtnum" type="text" placeholder="e.g. ADVAN-3716">
+        </div>
+        <div class="field" id="co-num-field">
+          <label>CO #</label>
+          <input id="f-conum" type="text" placeholder="e.g. CO-004">
+        </div>
+        <div class="field">
+          <label>Amount ($)</label>
+          <input id="f-amount" type="number" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="field">
+          <label>Sales rep</label>
+          <select id="f-salesrep">
+            <option value="">— Select —</option>
+            <option value="Bruno">Bruno</option>
+            <option value="Lyall">Lyall</option>
+            <option value="Trevor">Trevor</option>
+          </select>
+        </div>
+        <div class="field">
+          <button class="btn-add" id="btn-add" onclick="addItem()">Add →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active queue -->
+    <div class="section-header">
+      <div class="section-title">
+        Pending Invoice
+        <span class="count-badge" id="badge-pending">0</span>
+      </div>
+    </div>
+    <table class="queue-table" id="table-pending">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Client</th>
+          <th>Project</th>
+          <th>D-Tools #</th>
+          <th>CO #</th>
+          <th>Rep</th>
+          <th>Amount</th>
+          <th>Added</th>
+          <th>Age</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="body-pending"></tbody>
+    </table>
+
+    <!-- Completed -->
+    <div class="section-header">
+      <div class="section-title">
+        Invoiced
+        <span class="count-badge purple" id="badge-done">0</span>
+      </div>
+      <button class="toggle-completed" onclick="toggleCompleted()">
+        <span id="toggle-label">Show</span>
+      </button>
+    </div>
+    <div id="completed-section" style="display:none">
+      <table class="queue-table" id="table-done">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>D-Tools #</th>
+            <th>CO #</th>
+            <th>Rep</th>
+            <th>Amount</th>
+            <th>Added</th>
+            <th>Invoiced</th>
+            <th>By</th>
+          </tr>
+        </thead>
+        <tbody id="body-done"></tbody>
+      </table>
+    </div>
+
+  </div><!-- /app -->
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const CLIENT_ID   = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const TENANT_ID   = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const SITE_HOST   = 'advanceelectronics.sharepoint.com';
+const SITE_PATH   = '/sites/ART43';
+const LIST_NAME   = 'ARTBillingQueue';
+const DROP_WEEKS  = 4; // weeks after invoicing before item drops off
+const WARN_DAYS   = 5; // days before "overdue" highlight kicks in
+
+// Users who can mark as invoiced (matched against AD display name)
+const BILLING_USERS = ['Brian Benson', 'Terry Young'];
+
+const BILLING_DISPLAY = { 'Brian Benson': 'Brian', 'Terry Young': 'Terry' };
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+let accessToken = null;
+let currentUser = null;
+
+async function getToken() {
+  const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+  return new Promise((resolve, reject) => {
+    const msalConfig = {
+      auth: {
+        clientId: CLIENT_ID,
+        authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+        redirectUri: window.location.href.split('?')[0]
+      },
+      cache: { cacheLocation: 'sessionStorage' }
+    };
+    const msalInstance = new msal.PublicClientApplication(msalConfig);
+    const accounts = msalInstance.getAllAccounts();
+    const req = { scopes };
+    if (accounts.length > 0) {
+      msalInstance.acquireTokenSilent({ ...req, account: accounts[0] })
+        .then(r => resolve({ token: r.accessToken, name: accounts[0].name }))
+        .catch(() => msalInstance.acquireTokenPopup(req)
+          .then(r => resolve({ token: r.accessToken, name: r.account.name }))
+          .catch(reject));
+    } else {
+      msalInstance.acquireTokenPopup(req)
+        .then(r => resolve({ token: r.accessToken, name: r.account.name }))
+        .catch(reject);
+    }
+  });
+}
+
+// ── GRAPH HELPERS ─────────────────────────────────────────────────────────────
+let siteId = null;
+let listId = null;
+
+async function graph(path, opts = {}) {
+  const r = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    ...opts,
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(opts.headers || {})
+    }
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`Graph ${r.status}: ${err}`);
+  }
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+async function getSiteAndList() {
+  const site = await graph(`/sites/${SITE_HOST}:${SITE_PATH}`);
+  siteId = site.id;
+
+  // Try to get existing list
+  try {
+    const lists = await graph(`/sites/${siteId}/lists?$filter=displayName eq '${LIST_NAME}'`);
+    if (lists.value.length > 0) {
+      listId = lists.value[0].id;
+      return;
+    }
+  } catch(e) {}
+
+  // Create list if it doesn't exist
+  const newList = await graph(`/sites/${siteId}/lists`, {
+    method: 'POST',
+    body: JSON.stringify({
+      displayName: LIST_NAME,
+      columns: [
+        { name: 'ItemType',     text: {} },
+        { name: 'ClientName',   text: {} },
+        { name: 'ProjectName',  text: {} },
+        { name: 'DToolsNum',    text: {} },
+        { name: 'CONum',        text: {} },
+        { name: 'Amount',       number: {} },
+        { name: 'SalesRep',     text: {} },
+        { name: 'AddedBy',      text: {} },
+        { name: 'Invoiced',     boolean: {} },
+        { name: 'InvoicedDate', dateTime: { displayAs: 'default' } },
+        { name: 'InvoicedBy',   text: {} },
+      ],
+      list: { template: 'genericList' }
+    })
+  });
+  listId = newList.id;
+}
+
+async function getItems() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - DROP_WEEKS * 7);
+  const iso = cutoff.toISOString();
+
+  // Get all pending + recently invoiced
+  const res = await graph(
+    `/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500`
+  );
+  return res.value.map(i => ({ id: i.id, ...i.fields }));
+}
+
+async function createItem(fields) {
+  return graph(`/sites/${siteId}/lists/${listId}/items`, {
+    method: 'POST',
+    body: JSON.stringify({ fields })
+  });
+}
+
+async function updateItem(id, fields) {
+  return graph(`/sites/${siteId}/lists/${listId}/items/${id}/fields`, {
+    method: 'PATCH',
+    body: JSON.stringify(fields)
+  });
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+let allItems = [];
+let showCompleted = false;
+
+function daysSince(dateStr) {
+  return Math.floor((Date.now() - new Date(dateStr)) / 86400000);
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+}
+
+function fmtAmount(n) {
+  if (!n && n !== 0) return '—';
+  return '$' + Number(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function ageLabel(days) {
+  if (days < 1) return { text: 'Today', cls: 'fresh' };
+  if (days === 1) return { text: '1 day', cls: 'fresh' };
+  if (days < WARN_DAYS) return { text: `${days} days`, cls: 'fresh' };
+  if (days < 10) return { text: `${days} days`, cls: 'warn' };
+  return { text: `${days} days`, cls: 'late' };
+}
+
+function canInvoice() {
+  if (!currentUser) return false;
+  return BILLING_USERS.some(u => currentUser.toLowerCase().includes(u.toLowerCase()));
+}
+
+function render() {
+  const now = Date.now();
+  const dropMs = DROP_WEEKS * 7 * 86400000;
+
+  const pending = allItems.filter(i => !i.Invoiced);
+  const done = allItems.filter(i => i.Invoiced && (now - new Date(i.InvoicedDate)) < dropMs);
+
+  // Stats
+  const overdue = pending.filter(i => daysSince(i.Created) >= WARN_DAYS);
+  const totalVal = pending.reduce((s, i) => s + (Number(i.Amount) || 0), 0);
+  const thisMonth = done.filter(i => {
+    const d = new Date(i.InvoicedDate);
+    const n = new Date();
+    return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
+  });
+
+  document.getElementById('stat-pending').textContent = pending.length;
+  document.getElementById('stat-overdue').textContent = overdue.length;
+  document.getElementById('stat-value').textContent = '$' + Math.round(totalVal).toLocaleString('en-CA');
+  document.getElementById('stat-done').textContent = thisMonth.length;
+  document.getElementById('badge-pending').textContent = pending.length;
+  document.getElementById('badge-done').textContent = done.length;
+
+  // Pending table
+  const pb = document.getElementById('body-pending');
+  if (pending.length === 0) {
+    pb.innerHTML = `<tr><td colspan="10"><div class="empty"><strong>Queue is clear</strong>Nothing pending invoice right now.</div></td></tr>`;
+  } else {
+    pending.sort((a, b) => new Date(a.Created) - new Date(b.Created));
+    pb.innerHTML = pending.map(item => {
+      const days = daysSince(item.Created);
+      const age = ageLabel(days);
+      const isPro = item.ItemType === 'Project';
+      return `<tr>
+        <td><span class="type-pill ${isPro ? 'proj' : 'co'}">${item.ItemType}</span></td>
+        <td>${item.ClientName || '—'}</td>
+        <td>${item.ProjectName || '—'}</td>
+        <td style="color:var(--text-mid);font-size:12px">${item.DToolsNum || '—'}</td>
+        <td style="color:var(--text-mid);font-size:12px">${item.CONum || '—'}</td>
+        <td style="color:var(--text-mid);font-size:12px">${item.SalesRep || '—'}</td>
+        <td class="amount">${fmtAmount(item.Amount)}</td>
+        <td style="color:var(--text-mid);font-size:12px">${fmtDate(item.Created)}</td>
+        <td><span class="age ${age.cls}">${age.text}</span></td>
+        <td>${canInvoice() ? `<button class="btn-invoice" onclick="markInvoiced('${item.id}')">Mark invoiced</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Done table
+  const db = document.getElementById('body-done');
+  if (done.length === 0) {
+    db.innerHTML = `<tr><td colspan="10"><div class="empty"><strong>Nothing here</strong>Invoiced items appear here for ${DROP_WEEKS} weeks.</div></td></tr>`;
+  } else {
+    done.sort((a, b) => new Date(b.InvoicedDate) - new Date(a.InvoicedDate));
+    db.innerHTML = done.map(item => {
+      const isPro = item.ItemType === 'Project';
+      return `<tr class="invoiced">
+        <td><span class="type-pill ${isPro ? 'proj' : 'co'}">${item.ItemType}</span></td>
+        <td>${item.ClientName || '—'}</td>
+        <td>${item.ProjectName || '—'}</td>
+        <td style="font-size:12px">${item.DToolsNum || '—'}</td>
+        <td style="font-size:12px">${item.CONum || '—'}</td>
+        <td style="font-size:12px;color:var(--text-mid)">${item.SalesRep || '—'}</td>
+        <td class="amount">${fmtAmount(item.Amount)}</td>
+        <td style="font-size:12px;color:var(--text-dim)">${fmtDate(item.Created)}</td>
+        <td><span class="invoiced-badge">✓ ${fmtDate(item.InvoicedDate)}</span></td>
+        <td style="font-size:12px;color:var(--text-mid)">${item.InvoicedBy || '—'}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── ACTIONS ───────────────────────────────────────────────────────────────────
+async function addItem() {
+  const type    = document.getElementById('f-type').value;
+  const client  = document.getElementById('f-client').value.trim();
+  const project = document.getElementById('f-project').value.trim();
+  const dtnum   = document.getElementById('f-dtnum').value.trim();
+  const conum   = document.getElementById('f-conum').value.trim();
+  const amount  = parseFloat(document.getElementById('f-amount').value) || 0;
+
+  if (!client && !project) { toast('Enter at least a client or project name.', 'error'); return; }
+
+  const btn = document.getElementById('btn-add');
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+
+  try {
+    const fields = {
+      ItemType: type,
+      ClientName: client,
+      ProjectName: project,
+      DToolsNum: dtnum,
+      CONum: type === 'CO' ? conum : '',
+      Amount: amount,
+      SalesRep: document.getElementById('f-salesrep').value,
+      AddedBy: currentUser || 'Unknown',
+      Invoiced: false
+    };
+    const created = await createItem(fields);
+    allItems.push({ id: created.id, ...created.fields, Created: new Date().toISOString() });
+
+    // Clear form
+    ['f-client','f-project','f-dtnum','f-conum','f-amount'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('f-salesrep').value = '';
+    render();
+    toast(`Added to queue.`, 'success');
+  } catch(e) {
+    toast('Failed to add item. Check connection.', 'error');
+    console.error(e);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Add →';
+}
+
+async function markInvoiced(id) {
+  if (!canInvoice()) { toast('You don\'t have permission to mark items as invoiced.', 'error'); return; }
+
+  try {
+    const now = new Date().toISOString();
+    const displayName = BILLING_DISPLAY[currentUser] || currentUser;
+    await updateItem(id, {
+      Invoiced: true,
+      InvoicedDate: now,
+      InvoicedBy: displayName
+    });
+    const item = allItems.find(i => i.id === id);
+    if (item) {
+      item.Invoiced = true;
+      item.InvoicedDate = now;
+      item.InvoicedBy = currentUser;
+    }
+    render();
+    toast('Marked as invoiced ✓', 'success');
+  } catch(e) {
+    toast('Failed to update. Try again.', 'error');
+    console.error(e);
+  }
+}
+
+function toggleCompleted() {
+  showCompleted = !showCompleted;
+  document.getElementById('completed-section').style.display = showCompleted ? 'block' : 'none';
+  document.getElementById('toggle-label').textContent = showCompleted ? 'Hide' : 'Show';
+}
+
+// Toggle CO # field visibility
+document.getElementById('f-type').addEventListener('change', function() {
+  document.getElementById('co-num-field').style.opacity = this.value === 'CO' ? '1' : '0.3';
+});
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+// ── SYNC STATUS ───────────────────────────────────────────────────────────────
+function setSyncStatus(ok, text) {
+  document.getElementById('sync-dot').className = 'dot ' + (ok ? 'ok' : 'err');
+  document.getElementById('sync-text').textContent = text;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const auth = await getToken();
+    accessToken = auth.token;
+    currentUser = auth.name;
+    setSyncStatus(true, `Signed in as ${currentUser}`);
+  } catch(e) {
+    setSyncStatus(false, 'Sign-in failed');
+    document.getElementById('loading').innerHTML = '<div style="color:var(--red);text-align:center;padding:40px">Sign-in failed. Please reload and try again.</div>';
+    return;
+  }
+
+  try {
+    await getSiteAndList();
+    allItems = await getItems();
+    setSyncStatus(true, `Signed in as ${currentUser}`);
+  } catch(e) {
+    setSyncStatus(false, 'SharePoint error');
+    console.error(e);
+  }
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  render();
+}
+
+// Auto-refresh every 2 minutes
+setInterval(async () => {
+  if (!siteId || !listId) return;
+  try {
+    allItems = await getItems();
+    render();
+    setSyncStatus(true, `Signed in as ${currentUser} · Updated ${new Date().toLocaleTimeString('en-CA', {hour:'2-digit',minute:'2-digit'})}`);
+  } catch(e) {}
+}, 120000);
+</script>
+
+<!-- MSAL -->
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script>init();</script>
+
+</body>
+</html>
