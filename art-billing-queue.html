@@ -265,7 +265,23 @@
   }
   .btn-invoice:hover { background: rgba(34,197,94,0.22); }
 
-  /* invoiced row */
+  .btn-delete {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 9px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .btn-delete:hover {
+    background: rgba(239,68,68,0.1);
+    color: var(--red);
+    border-color: rgba(239,68,68,0.3);
+  }
   .invoiced td { opacity: 0.45; }
   .invoiced .amount { text-decoration: line-through; }
   .invoiced-badge {
@@ -690,7 +706,10 @@ function render() {
         <td class="amount">${fmtAmount(item.Amount)}</td>
         <td style="color:var(--text-mid);font-size:12px">${fmtDate(item.Created)}</td>
         <td><span class="age ${age.cls}">${age.text}</span></td>
-        <td>${canInvoice() ? `<button class="btn-invoice" onclick="markInvoiced('${item.id}')">Mark invoiced</button>` : ''}</td>
+        <td style="display:flex;gap:6px;align-items:center">
+          ${canInvoice() ? `<button class="btn-invoice" onclick="markInvoiced('${item.id}')">Mark invoiced</button>` : ''}
+          <button class="btn-delete" onclick="deleteItem('${item.id}', '${(item.ClientName || item.ProjectName || 'this item').replace(/'/g, "\\'")}')">✕</button>
+        </td>
       </tr>`;
     }).join('');
   }
@@ -763,6 +782,19 @@ async function addItem() {
 
   btn.disabled = false;
   btn.textContent = 'Add →';
+}
+
+async function deleteItem(id, label) {
+  if (!confirm(`Remove "${label}" from the queue?`)) return;
+  try {
+    await graph(`/sites/${siteId}/lists/${listId}/items/${id}`, { method: 'DELETE' });
+    allItems = allItems.filter(i => i.id !== id);
+    render();
+    toast('Item removed.', 'success');
+  } catch(e) {
+    toast('Failed to delete. Try again.', 'error');
+    console.error(e);
+  }
 }
 
 async function markInvoiced(id) {
