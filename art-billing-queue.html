@@ -516,6 +516,12 @@ const BILLING_USERS = ['Brian Benson', 'Terry Young'];
 
 const BILLING_DISPLAY = { 'Brian Benson': 'Brian', 'Terry Young': 'Terry' };
 
+// Who gets emailed when a rep adds a new item to the queue.
+const NOTIFY_EMAILS = [
+  'bbenson@advance.mb.ca',  // Brian
+  'tyoung@advance.mb.ca'    // Terry
+];
+
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 let accessToken = null;
 let currentUser = null;
@@ -536,7 +542,7 @@ function getMsalInstance() {
 }
 
 async function getToken() {
-  const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+  const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'https://graph.microsoft.com/Mail.Send'];
   const instance = getMsalInstance();
 
   // Handle redirect response first
@@ -576,7 +582,7 @@ async function graph(path, opts = {}) {
     const err = await r.text();
     throw new Error(`Graph ${r.status}: ${err}`);
   }
-  if (r.status === 204) return null;
+  if (r.status === 204 || r.status === 202) return null; // 202 = sendMail accepted (empty body)
   return r.json();
 }
 
@@ -669,9 +675,67 @@ function ageLabel(days) {
   return { text: `${days} days`, cls: 'late' };
 }
 
+function isBillingUser(name) {
+  if (!name) return false;
+  return BILLING_USERS.some(u => name.toLowerCase().includes(u.toLowerCase()));
+}
+
 function canInvoice() {
-  if (!currentUser) return false;
-  return BILLING_USERS.some(u => currentUser.toLowerCase().includes(u.toLowerCase()));
+  return isBillingUser(currentUser);
+}
+
+// ── EMAIL NOTIFY ───────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+}
+
+// Recipients that have actually been filled in (placeholders are ignored).
+function validNotifyEmails() {
+  return NOTIFY_EMAILS.filter(a => a && a.includes('@') && !/REPLACE/i.test(a));
+}
+
+// Sends a "waiting to be invoiced" email from the signed-in user to the billing team.
+async function notifyBilling(fields, recipients) {
+  const typeLabel = fields.ItemType === 'CO' ? 'Change order' : 'Project';
+  const who     = fields.AddedBy || currentUser || 'A team member';
+  const client  = fields.ClientName || '—';
+  const project = fields.ProjectName || '—';
+  const amount  = fields.Amount ? fmtAmount(fields.Amount) : '—';
+  const link    = window.location.href.split('?')[0];
+
+  const titlePieces = [client, project].filter(v => v && v !== '—');
+  const subject = `Billing queue: ${typeLabel.toLowerCase()} waiting${titlePieces.length ? ' — ' + titlePieces.join(' / ') : ''}`;
+
+  const row = (lbl, val) => val && val !== '—'
+    ? `<tr><td style="padding:3px 14px 3px 0;color:#666">${lbl}</td><td style="padding:3px 0"><strong>${esc(val)}</strong></td></tr>`
+    : '';
+
+  const bodyHtml =
+    `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222;line-height:1.5">
+      <p><strong>${esc(who)}</strong> added a <strong>${typeLabel.toLowerCase()}</strong> to the ART billing queue. It's waiting to be invoiced.</p>
+      <table style="border-collapse:collapse;margin:12px 0">
+        ${row('Client', client)}
+        ${row('Project', project)}
+        ${row('D-Tools #', fields.DToolsNum)}
+        ${fields.ItemType === 'CO' ? row('CO #', fields.CONum) : ''}
+        ${row('Amount', amount)}
+        ${row('Sales rep', fields.SalesRep)}
+      </table>
+      <p><a href="${esc(link)}" style="color:#0a66c2;text-decoration:none">Open the billing queue →</a></p>
+    </div>`;
+
+  await graph('/me/sendMail', {
+    method: 'POST',
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'HTML', content: bodyHtml },
+        toRecipients: recipients.map(a => ({ emailAddress: { address: a } }))
+      },
+      saveToSentItems: true
+    })
+  });
 }
 
 function render() {
@@ -785,7 +849,27 @@ async function addItem() {
     });
     document.getElementById('f-salesrep').value = '';
     render();
-    toast(`Added to queue.`, 'success');
+
+    // Notify the billing team — best-effort, never blocks the add.
+    let notifyMsg = 'Added to queue.', notifyType = 'success';
+    if (isBillingUser(currentUser)) {
+      // The person adding IS billing — no point emailing themselves.
+    } else {
+      const recipients = validNotifyEmails();
+      if (recipients.length === 0) {
+        notifyMsg = 'Added to queue (billing emails not set — no notice sent).';
+      } else {
+        try {
+          await notifyBilling(fields, recipients);
+          notifyMsg = 'Added — billing team notified ✉';
+        } catch(err) {
+          console.error('Email notify failed:', err);
+          notifyMsg = 'Added to queue (couldn\'t send email notice).';
+          notifyType = 'error';
+        }
+      }
+    }
+    toast(notifyMsg, notifyType);
   } catch(e) {
     toast('Failed to add item. Check connection.', 'error');
     console.error(e);
