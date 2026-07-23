@@ -1,0 +1,1259 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ART HR Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#16181D; --ink2:#2C2F36; --muted:#6E7178; --faint:#9B9EA5;
+  --red:#B1171C; --red2:#8C1216; --redwash:#FBEDED;
+  --paper:#F5F5F2; --panel:#FFFFFF; --line:#E3E3DE; --line2:#EFEFEB;
+  --ok:#1B7A4B; --okwash:#E9F4EE;
+  --warn:#9A6B00; --warnwash:#FCF4E2;
+  --lock:#8A8D94; --lockwash:#F0F0EE;
+  --shadow:0 1px 2px rgba(22,24,29,.06),0 4px 14px rgba(22,24,29,.05);
+  --r:8px;
+  --disp:'Barlow Condensed',Oswald,'Arial Narrow',sans-serif;
+  --body:'Inter',ui-sans-serif,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:var(--body); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-columns:206px 1fr;min-height:100vh}
+.side{background:var(--ink);color:#fff;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{padding:16px 16px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
+.brand .mark{display:flex;align-items:baseline;gap:7px}
+.brand .art{
+  font-family:var(--disp);font-weight:700;font-size:27px;letter-spacing:.02em;
+  background:#fff;color:var(--ink);padding:0 7px;line-height:1.18;display:inline-block;
+}
+.brand .sub{font-family:var(--disp);font-weight:600;font-size:12.5px;letter-spacing:.06em;color:#fff;text-transform:uppercase;line-height:1.1}
+.brand .bar{height:3px;background:var(--red);margin-top:6px;width:74px}
+.brand .hub{
+  font-family:var(--disp);text-transform:uppercase;letter-spacing:.22em;
+  font-size:10.5px;color:rgba(255,255,255,.62);margin-top:9px;font-weight:600;
+}
+nav{padding:9px 8px;flex:1;overflow-y:auto}
+.navb{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  background:none;border:0;color:rgba(255,255,255,.72);cursor:pointer;
+  padding:8px 10px;border-radius:6px;font-size:13.5px;font-weight:500;
+  transition:background .12s,color .12s;
+}
+.navb:hover{background:rgba(255,255,255,.08);color:#fff}
+.navb.on{background:var(--red);color:#fff;font-weight:600}
+.navb .ic{width:17px;text-align:center;flex:none;opacity:.95}
+.navb .pip{
+  margin-left:auto;background:var(--red);color:#fff;font-size:10.5px;font-weight:700;
+  min-width:17px;height:17px;border-radius:9px;display:grid;place-items:center;padding:0 5px;
+}
+.navb.on .pip{background:#fff;color:var(--red)}
+.sidefoot{padding:10px 12px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;color:rgba(255,255,255,.42);line-height:1.45}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.top{
+  background:var(--panel);border-bottom:1px solid var(--line);padding:13px 22px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:30;
+}
+.top h1{font-family:var(--disp);font-size:25px;font-weight:600;letter-spacing:.01em;margin:0;text-transform:uppercase}
+.top .sub{color:var(--muted);font-size:12.5px;margin-left:-6px}
+.top .sp{flex:1}
+.wrap{padding:20px 22px 60px;max-width:1220px}
+
+/* ---------- type ---------- */
+.eyebrow{
+  font-family:var(--disp);text-transform:uppercase;letter-spacing:.15em;
+  font-size:11px;font-weight:600;color:var(--muted);
+}
+h2.sec{font-family:var(--disp);text-transform:uppercase;letter-spacing:.05em;font-size:19px;font-weight:600;margin:0 0 3px}
+.lede{color:var(--muted);font-size:13px;margin:0 0 14px;max-width:70ch}
+
+/* ---------- surfaces ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.card .hd{padding:12px 15px;border-bottom:1px solid var(--line2);display:flex;align-items:center;gap:10px}
+.card .hd h3{font-family:var(--disp);text-transform:uppercase;letter-spacing:.07em;font-size:15px;font-weight:600;margin:0}
+.card .bd{padding:15px}
+.card .bd.tight{padding:0}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1000px){.g3,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+/* ---------- stat ---------- */
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px;box-shadow:var(--shadow)}
+.stat .n{font-family:var(--disp);font-size:33px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.stat .l{font-family:var(--disp);text-transform:uppercase;letter-spacing:.12em;font-size:10.5px;color:var(--muted);margin-top:5px;font-weight:600}
+.stat.alert{border-color:var(--red);background:var(--redwash)}
+.stat.alert .n{color:var(--red)}
+.stat.good .n{color:var(--ok)}
+
+/* ---------- buttons ---------- */
+.btn{
+  border:1px solid var(--line);background:var(--panel);border-radius:6px;
+  padding:7px 13px;cursor:pointer;font-size:13px;font-weight:500;
+  transition:background .12s,border-color .12s;
+}
+.btn:hover{background:#FAFAF8;border-color:#CFCFC9}
+.btn.pri{background:var(--red);border-color:var(--red);color:#fff;font-weight:600}
+.btn.pri:hover{background:var(--red2);border-color:var(--red2)}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+.btn.dark:hover{background:var(--ink2)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* ---------- forms ---------- */
+label.f{display:block;margin-bottom:11px}
+label.f .lb{font-family:var(--disp);text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;font-weight:600;color:var(--muted);margin-bottom:4px;display:block}
+input[type=text],input[type=date],input[type=number],input[type=email],select,textarea{
+  width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--ink);outline:none}
+textarea{min-height:62px;resize:vertical}
+.chk{display:flex;align-items:center;gap:7px;margin-bottom:9px;cursor:pointer}
+.chk input{width:15px;height:15px;accent-color:var(--red);flex:none}
+
+/* ---------- table ---------- */
+table{width:100%;border-collapse:collapse}
+th{
+  font-family:var(--disp);text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;
+  font-weight:600;color:var(--muted);text-align:left;padding:9px 12px;
+  border-bottom:1px solid var(--line);white-space:nowrap;background:#FBFBF9;
+}
+td{padding:10px 12px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#FBFBF9}
+.num{font-variant-numeric:tabular-nums}
+.nm{font-weight:600}
+.sm2{font-size:12px;color:var(--muted)}
+
+/* ---------- tags ---------- */
+.tag{
+  display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;
+  font-size:11px;font-weight:600;font-family:var(--disp);text-transform:uppercase;letter-spacing:.07em;
+  border:1px solid transparent;white-space:nowrap;
+}
+.t-ok{background:var(--okwash);color:var(--ok);border-color:#BFDECD}
+.t-warn{background:var(--warnwash);color:var(--warn);border-color:#E8D4A6}
+.t-red{background:var(--redwash);color:var(--red);border-color:#EBC4C5}
+.t-grey{background:var(--lockwash);color:var(--lock);border-color:#DCDCD8}
+.t-ink{background:var(--ink);color:#fff}
+.key{background:var(--ink);color:#fff;font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:.1em;padding:1px 5px;border-radius:3px;text-transform:uppercase}
+
+/* ---------- season board (signature) ---------- */
+.board{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+.board table{border-collapse:separate;border-spacing:0;min-width:max-content}
+.board th,.board td{border:0;padding:0}
+.bw{width:34px;min-width:34px}
+.bname{
+  width:158px;min-width:158px;position:sticky;left:0;z-index:2;background:var(--panel);
+  border-right:1px solid var(--line);padding:0 11px!important;
+}
+thead .bname{background:#FBFBF9;z-index:3}
+.board thead th{
+  height:44px;border-bottom:1px solid var(--line);background:#FBFBF9;
+  font-family:var(--disp);font-size:10px;letter-spacing:.03em;color:var(--muted);
+  text-align:center;vertical-align:middle;font-weight:600;
+}
+.board thead th .mo{display:block;font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.1em}
+.board tbody td{height:31px;border-bottom:1px solid var(--line2);border-right:1px solid var(--line2)}
+.board tbody tr:last-child td{border-bottom:0}
+.cellwrap{position:relative;height:100%}
+.blk{position:absolute;inset:3px 1px;border-radius:3px}
+.blk.appr{background:var(--ok)}
+.blk.bid{background:repeating-linear-gradient(45deg,#E3B23C,#E3B23C 4px,#EFC868 4px,#EFC868 8px)}
+.blk.pend{background:#E3B23C}
+.blk.dec{background:#DCDCD8}
+.cap{height:26px}
+.capcell{position:relative;height:100%;background:#FBFBF9}
+.capfill{position:absolute;left:2px;right:2px;bottom:3px;border-radius:2px;background:var(--ok);opacity:.5}
+.capfill.mid{background:#E3B23C;opacity:.65}
+.capfill.full{background:var(--red);opacity:.75}
+.capnum{position:absolute;inset:0;display:grid;place-items:center;font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink2)}
+.stat-col{background:#FDF6F6}
+.legend{display:flex;gap:15px;flex-wrap:wrap;align-items:center;margin-top:11px;font-size:12px;color:var(--muted)}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block;vertical-align:-2px;margin-right:5px}
+
+/* ---------- misc ---------- */
+.banner{border-radius:var(--r);padding:12px 15px;margin-bottom:16px;border:1px solid;display:flex;gap:11px;align-items:flex-start}
+.banner .bi{font-size:16px;line-height:1.2;flex:none}
+.b-ink{background:var(--ink);color:#fff;border-color:var(--ink)}
+.b-red{background:var(--redwash);border-color:#EBC4C5;color:var(--red2)}
+.b-ok{background:var(--okwash);border-color:#BFDECD;color:#14603A}
+.b-warn{background:var(--warnwash);border-color:#E8D4A6;color:#7A5500}
+.banner b{display:block;font-weight:700;margin-bottom:2px}
+.empty{text-align:center;padding:34px 20px;color:var(--muted)}
+.empty .big{font-family:var(--disp);text-transform:uppercase;letter-spacing:.1em;font-size:14px;color:var(--ink2);margin-bottom:5px;font-weight:600}
+.modal{position:fixed;inset:0;background:rgba(22,24,29,.42);display:grid;place-items:center;z-index:100;padding:18px}
+.modal .box{background:var(--panel);border-radius:10px;max-width:540px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.28)}
+.modal .mh{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.modal .mh h3{font-family:var(--disp);text-transform:uppercase;letter-spacing:.06em;font-size:17px;margin:0;font-weight:600}
+.modal .mb{padding:18px}
+.modal .mf{padding:13px 18px;border-top:1px solid var(--line);display:flex;gap:9px;justify-content:flex-end;background:#FBFBF9;border-radius:0 0 10px 10px}
+.x{margin-left:auto;background:none;border:0;font-size:21px;cursor:pointer;color:var(--muted);line-height:1;padding:0 3px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:7px;z-index:200;box-shadow:0 8px 26px rgba(0,0,0,.3);font-size:13.5px;max-width:90vw}
+.pbar{height:5px;background:var(--line2);border-radius:3px;overflow:hidden;min-width:60px}
+.pbar i{display:block;height:100%;background:var(--ok)}
+.mini{font-size:11.5px;color:var(--muted);margin-top:3px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:13px}
+.filters select,.filters input{width:auto;min-width:132px}
+.avail{border-radius:var(--r);padding:12px 14px;margin-top:12px;border:1px solid;font-size:13px}
+.a-ok{background:var(--okwash);border-color:#BFDECD;color:#14603A}
+.a-no{background:var(--redwash);border-color:#EBC4C5;color:var(--red2)}
+.a-warn{background:var(--warnwash);border-color:#E8D4A6;color:#7A5500}
+.avail b{display:block;font-family:var(--disp);text-transform:uppercase;letter-spacing:.08em;font-size:12.5px;margin-bottom:3px}
+.avail ul{margin:6px 0 0;padding-left:17px}
+@media(max-width:820px){
+  .app{grid-template-columns:1fr}
+  .side{position:static;height:auto;flex-direction:column}
+  nav{display:flex;flex-wrap:wrap;gap:4px;padding:8px}
+  .navb{width:auto}
+  .sidefoot{display:none}
+  .wrap{padding:15px 13px 50px}
+}
+</style>
+<div id="root"></div>
+<script>
+"use strict";
+
+/* =========================================================================
+   STORAGE ADAPTER
+   -------------------------------------------------------------------------
+   All persistence goes through Store. To move this onto SharePoint, replace
+   the three methods below with Graph calls against your ART43 lists and keep
+   the rest of the app untouched. Sketch:
+
+     async load(){
+       const r = await fetch(GRAPH+"/sites/{siteId}/lists/{listId}/items?expand=fields",
+                             {headers:{Authorization:"Bearer "+token}});
+       ...map r.value into the DB shape...
+     }
+     async save(){ PATCH/POST changed items back to the same lists }
+
+   Suggested lists: HR_Employees, HR_TimeOff, HR_Training, HR_Tools,
+   HR_ToolLog, HR_Vehicles, HR_Service, HR_Incidents, HR_Acks, HR_Settings.
+   ========================================================================= */
+const KEY="art-hr-hub-v1";
+const Store={
+  mem:null,
+  async load(){
+    try{ const r=await window.storage.get(KEY); if(r&&r.value) return JSON.parse(r.value); }
+    catch(e){ /* first run or storage unavailable */ }
+    return null;
+  },
+  async save(db){
+    this.mem=db;
+    try{ await window.storage.set(KEY,JSON.stringify(db)); return true; }
+    catch(e){ return false; }
+  }
+};
+
+/* ---------------- date helpers ---------------- */
+const DAY=86400000;
+const iso=d=>{const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");};
+const parse=s=>{const[a,b,c]=String(s).split("-").map(Number);return new Date(a,b-1,c);};
+const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
+const addD=(d,n)=>new Date(parse(iso(d)).getTime()+n*DAY);
+const days=(a,b)=>Math.round((parse(iso(b))-parse(iso(a)))/DAY);
+const fmt=s=>{if(!s)return"—";const d=parse(s);return d.toLocaleDateString("en-CA",{month:"short",day:"numeric",year:"numeric"});};
+const fmtShort=s=>{if(!s)return"—";const d=parse(s);return d.toLocaleDateString("en-CA",{month:"short",day:"numeric"});};
+const rangeDays=(a,b)=>{const o=[];let d=parse(a),e=parse(b);while(d<=e){o.push(iso(d));d=new Date(d.getTime()+DAY);}return o;};
+const yrs=s=>{if(!s)return 0;return Math.floor(days(s,today())/365.25);};
+const uid=()=>Math.random().toString(36).slice(2,10);
+
+/* Manitoba general holidays (9). Recomputed per year. */
+function nthWeekday(y,m,wd,n){let d=new Date(y,m,1),c=0;while(true){if(d.getDay()===wd){c++;if(c===n)return iso(d);}d=new Date(d.getTime()+DAY);}}
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return new Date(y,mo-1,da);}
+function statHolidays(y){
+  const gf=iso(new Date(easter(y).getTime()-2*DAY));
+  let vd=new Date(y,4,25);while(vd.getDay()!==1)vd=new Date(vd.getTime()-DAY);
+  return [
+    {d:y+"-01-01",n:"New Year's Day"},
+    {d:nthWeekday(y,1,1,3),n:"Louis Riel Day"},
+    {d:gf,n:"Good Friday"},
+    {d:iso(vd),n:"Victoria Day"},
+    {d:y+"-07-01",n:"Canada Day"},
+    {d:nthWeekday(y,8,1,1),n:"Labour Day"},
+    {d:y+"-09-30",n:"Truth & Reconciliation"},
+    {d:nthWeekday(y,9,1,2),n:"Thanksgiving"},
+    {d:y+"-12-25",n:"Christmas Day"}
+  ];
+}
+
+/* =========================================================================
+   TIME-OFF ENGINE
+   ========================================================================= */
+
+/* Who is already off on a given date, from approved requests only. */
+function offOn(db,date,exceptId){
+  return db.timeOff.filter(r=>r.status==="approved"&&r.id!==exceptId&&date>=r.start&&date<=r.end)
+           .map(r=>db.employees.find(e=>e.id===r.empId)).filter(e=>e&&e.active!==false);
+}
+
+/* Check a candidate range against the caps. Returns {ok, conflicts:[...]} */
+function checkRange(db,empId,start,end,exceptId){
+  const s=db.settings, me=db.employees.find(e=>e.id===empId);
+  const conflicts=[];
+  for(const d of rangeDays(start,end)){
+    const off=offOn(db,d,exceptId);
+    if(off.length>=s.maxOffTotal){
+      conflicts.push({date:d,why:"crew cap",who:off.map(e=>e.name)});
+      continue;
+    }
+    if(me&&me.keyTech){
+      const keys=off.filter(e=>e.keyTech);
+      if(keys.length>=s.maxKeyOff){
+        conflicts.push({date:d,why:"lead tech cap",who:keys.map(e=>e.name)});
+      }
+    }
+  }
+  /* collapse consecutive days into blocks for readable messaging */
+  const blocks=[];
+  for(const c of conflicts){
+    const last=blocks[blocks.length-1];
+    if(last&&last.why===c.why&&days(last.end,c.date)===1&&String(last.who)===String(c.who)) last.end=c.date;
+    else blocks.push({start:c.date,end:c.date,why:c.why,who:c.who});
+  }
+  return {ok:conflicts.length===0,conflicts:blocks,dayCount:conflicts.length};
+}
+
+/* Seniority allocation. Longest-serving employee wins; ties break on
+   submission time. Runs over all bids for the season and marks each
+   approved or declined, with the reason recorded. */
+function runAllocation(db){
+  const s=db.settings;
+  const bids=db.timeOff.filter(r=>r.status==="bid");
+  /* clear any prior auto-decisions so the run is repeatable */
+  bids.forEach(r=>{r.status="bid";r.reason="";});
+  const ranked=bids.slice().sort((a,b)=>{
+    const ea=db.employees.find(e=>e.id===a.empId), eb=db.employees.find(e=>e.id===b.empId);
+    const ha=ea?ea.hired:"9999", hb=eb?eb.hired:"9999";
+    if(ha!==hb) return ha<hb?-1:1;          /* earlier hire date = more senior */
+    return a.submitted<b.submitted?-1:1;     /* then first in */
+  });
+  const out={approved:0,declined:0,order:[]};
+  for(const r of ranked){
+    const emp=db.employees.find(e=>e.id===r.empId);
+    const chk=checkRange(db,r.empId,r.start,r.end,r.id);
+    if(chk.ok){
+      r.status="approved"; r.decidedAt=iso(today()); r.reason="Granted on seniority ("+yrs(emp&&emp.hired)+" yrs).";
+      out.approved++;
+    }else{
+      r.status="declined"; r.decidedAt=iso(today());
+      const c=chk.conflicts[0];
+      r.reason="Full on "+fmtShort(c.start)+(c.start!==c.end?"–"+fmtShort(c.end):"")+" — "+c.why+" ("+c.who.join(", ")+" already granted).";
+      out.declined++;
+    }
+    out.order.push({name:emp?emp.name:"?",yrs:yrs(emp&&emp.hired),status:r.status});
+  }
+  return out;
+}
+
+/* =========================================================================
+   SAMPLE DATA  — clearable from Settings
+   ========================================================================= */
+function seed(){
+  const Y=new Date().getFullYear();
+  const E=(name,role,hired,keyTech)=>({id:uid(),name,role,hired,keyTech,email:"",phone:"",active:true,ec:"",ecPhone:""});
+  const employees=[
+    E("Dave Kowalchuk","Lead Installer","2011-04-18",true),
+    E("Marc Bergeron","Lead Programmer","2014-06-02",true),
+    E("Tyler Friesen","Installer","2018-09-10",false),
+    E("Jordan Peters","Installer","2021-03-15",false),
+    E("Sam Dyck","Service Tech","2023-05-01",false),
+    E("Alex Reimer","Apprentice","2025-01-13",false)
+  ];
+  const id=n=>employees[n].id;
+  const timeOff=[
+    {id:uid(),empId:id(2),start:Y+"-07-13",end:Y+"-07-24",type:"Vacation",status:"bid",submitted:Y+"-02-10",note:"Family trip",reason:""},
+    {id:uid(),empId:id(0),start:Y+"-07-20",end:Y+"-07-31",type:"Vacation",status:"bid",submitted:Y+"-02-18",note:"Lake",reason:""},
+    {id:uid(),empId:id(3),start:Y+"-08-03",end:Y+"-08-14",type:"Vacation",status:"bid",submitted:Y+"-01-28",note:"",reason:""},
+    {id:uid(),empId:id(1),start:Y+"-08-10",end:Y+"-08-21",type:"Vacation",status:"bid",submitted:Y+"-02-02",note:"",reason:""},
+    {id:uid(),empId:id(4),start:Y+"-07-20",end:Y+"-07-24",type:"Vacation",status:"bid",submitted:Y+"-02-25",note:"Wedding",reason:""},
+    {id:uid(),empId:id(5),start:Y+"-08-17",end:Y+"-08-21",type:"Vacation",status:"bid",submitted:Y+"-02-27",note:"",reason:""}
+  ];
+  const training=[
+    {id:uid(),empId:id(0),name:"Working at Heights",provider:"SAFE Work MB",done:"2024-05-14",expires:"2027-05-14",note:""},
+    {id:uid(),empId:id(0),name:"Standard First Aid & CPR",provider:"St. John",done:"2023-09-08",expires:iso(addD(today(),24)),note:"Renewal booked"},
+    {id:uid(),empId:id(1),name:"Control4 Level 3",provider:"Snap One",done:"2024-11-02",expires:"2027-11-02",note:""},
+    {id:uid(),empId:id(1),name:"Lutron HomeWorks QSX",provider:"Lutron",done:"2025-02-19",expires:"",note:"No expiry"},
+    {id:uid(),empId:id(2),name:"WHMIS",provider:"In-house",done:"2025-01-20",expires:iso(addD(today(),-9)),note:""},
+    {id:uid(),empId:id(3),name:"Driver's Abstract",provider:"MPI",done:iso(addD(today(),-330)),expires:iso(addD(today(),35)),note:"Annual"},
+    {id:uid(),empId:id(4),name:"WHMIS",provider:"In-house",done:"2025-06-11",expires:"2028-06-11",note:""},
+    {id:uid(),empId:id(5),name:"Ladder Safety",provider:"In-house",done:"2026-01-15",expires:"2029-01-15",note:""}
+  ];
+  const tools=[
+    {id:uid(),name:"Fluke Networks CIQ-100",serial:"FN-4417",cat:"Test",insp:"",status:"out",holder:id(1),since:iso(addD(today(),-21)),note:""},
+    {id:uid(),name:"Little Giant 22' Ladder",serial:"LG-0092",cat:"Access",insp:iso(addD(today(),-40)),status:"out",holder:id(0),since:iso(addD(today(),-3)),note:""},
+    {id:uid(),name:"Hilti TE 6-A22 Hammer Drill",serial:"HT-8830",cat:"Power",insp:"",status:"in",holder:"",since:"",note:""},
+    {id:uid(),name:"Bosch GLL3-330CG Laser",serial:"BS-2041",cat:"Layout",insp:"",status:"in",holder:"",since:"",note:""},
+    {id:uid(),name:"Genie AWP-25S Lift",serial:"GN-1177",cat:"Access",insp:iso(addD(today(),-200)),status:"in",holder:"",since:"",note:"Annual inspection due"},
+    {id:uid(),name:"Klein Wire Tracer",serial:"KL-5520",cat:"Test",insp:"",status:"in",holder:"",since:"",note:""}
+  ];
+  const vehicles=[
+    {id:uid(),name:"Van 1",unit:"Transit 250",plate:"HXK 442",year:2021,odo:148200,driver:id(0),
+     regDue:iso(addD(today(),52)),insDue:iso(addD(today(),52)),safetyDue:iso(addD(today(),190)),tires:"summer"},
+    {id:uid(),name:"Van 2",unit:"ProMaster 2500",plate:"JRT 019",year:2023,odo:71450,driver:id(2),
+     regDue:iso(addD(today(),-6)),insDue:iso(addD(today(),-6)),safetyDue:iso(addD(today(),240)),tires:"summer"},
+    {id:uid(),name:"Van 3",unit:"Transit 150",plate:"KLM 806",year:2019,odo:213900,driver:id(4),
+     regDue:iso(addD(today(),128)),insDue:iso(addD(today(),128)),safetyDue:iso(addD(today(),20)),tires:"summer"}
+  ];
+  const vid=n=>vehicles[n].id;
+  const service=[
+    {id:uid(),vehId:vid(0),type:"Oil change",date:iso(addD(today(),-96)),odo:140100,cost:"",note:"Full synthetic"},
+    {id:uid(),vehId:vid(0),type:"Tire rotation",date:iso(addD(today(),-96)),odo:140100,cost:"",note:""},
+    {id:uid(),vehId:vid(1),type:"Oil change",date:iso(addD(today(),-40)),odo:66900,cost:"",note:""},
+    {id:uid(),vehId:vid(2),type:"Oil change",date:iso(addD(today(),-150)),odo:205400,cost:"",note:""},
+    {id:uid(),vehId:vid(2),type:"Brakes — front",date:iso(addD(today(),-60)),odo:210100,cost:"",note:"Pads + rotors"}
+  ];
+  const incidents=[
+    {id:uid(),date:iso(addD(today(),-12)),empId:id(3),kind:"Near miss",where:"732 South Drive",
+     what:"Ladder shifted on uneven deck board while pulling wire. No injury.",action:"Added levelling feet to van kit; toolbox talk on ladder footing.",closed:true}
+  ];
+  const policies=[
+    {id:"p1",title:"Workplace Harassment Prevention Policy",ver:"1.0",req:true},
+    {id:"p2",title:"Workplace Safety & Health Policy",ver:"1.0",req:true},
+    {id:"p3",title:"Time Off & Leave Policy",ver:"1.0",req:true},
+    {id:"p4",title:"Employment Agreement",ver:"1.0",req:true},
+    {id:"p5",title:"Performance Review",ver:"1.0",req:false},
+    {id:"p6",title:"Onboarding & Offboarding Checklist",ver:"1.0",req:false}
+  ];
+  const acks=[];
+  employees.forEach((e,i)=>{ if(i<4){ acks.push({id:uid(),empId:e.id,polId:"p1",at:iso(addD(today(),-200))});
+                                       acks.push({id:uid(),empId:e.id,polId:"p2",at:iso(addD(today(),-200))}); } });
+  return {
+    employees,timeOff,training,tools,toolLog:[],vehicles,service,incidents,policies,acks,
+    settings:{
+      seasonStart:Y+"-06-15", seasonEnd:Y+"-09-05",
+      bidDeadline:Y+"-03-01",
+      maxOffTotal:2, maxKeyOff:1, noticeDays:14,
+      oilKm:8000, oilMonths:6,
+      company:"Advanced Residential Technology",
+      demo:true
+    }
+  };
+}
+
+/* =========================================================================
+   APP STATE
+   ========================================================================= */
+let db=null, view="dash", modal=null, toastT=null, filters={};
+
+function phase(){
+  const s=db.settings, t=iso(today());
+  if(t<s.bidDeadline) return "bidding";
+  if(db.timeOff.some(r=>r.status==="bid")) return "toAllocate";
+  return "open";
+}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function emp(id){return db.employees.find(e=>e.id===id);}
+function empName(id){const e=emp(id);return e?e.name:"—";}
+async function commit(msg){ await Store.save(db); if(msg) toast(msg); render(); }
+function toast(m){
+  clearTimeout(toastT);
+  let el=document.getElementById("toast");
+  if(!el){el=document.createElement("div");el.id="toast";el.className="toast";document.body.appendChild(el);}
+  el.textContent=m; el.style.display="block";
+  toastT=setTimeout(()=>{el.style.display="none";},2600);
+}
+
+/* =========================================================================
+   ALERTS  — one place that decides what needs attention
+   ========================================================================= */
+function alerts(){
+  const A={certExp:[],certSoon:[],vehDue:[],toolLong:[],pending:[],ackMissing:[],reviews:[]};
+  const t=iso(today());
+  db.training.forEach(r=>{
+    if(!r.expires)return;
+    const d=days(t,r.expires);
+    if(d<0)A.certExp.push({...r,d});
+    else if(d<=60)A.certSoon.push({...r,d});
+  });
+  db.vehicles.forEach(v=>{
+    ["regDue","insDue","safetyDue"].forEach(k=>{
+      if(!v[k])return;
+      const d=days(t,v[k]);
+      const label={regDue:"Registration",insDue:"Insurance",safetyDue:"Safety inspection"}[k];
+      if(d<=30)A.vehDue.push({veh:v,label,date:v[k],d});
+    });
+    const last=db.service.filter(s=>s.vehId===v.id&&/oil/i.test(s.type)).sort((a,b)=>b.date<a.date?-1:1)[0];
+    if(last){
+      const km=v.odo-last.odo, mo=days(last.date,t)/30.4;
+      if(km>=db.settings.oilKm||mo>=db.settings.oilMonths)
+        A.vehDue.push({veh:v,label:"Oil change",date:last.date,d:-1,km});
+    }else A.vehDue.push({veh:v,label:"Oil change",date:"",d:-1,km:null});
+  });
+  db.tools.forEach(x=>{ if(x.status==="out"&&x.since&&days(x.since,t)>30) A.toolLong.push(x); });
+  A.pending=db.timeOff.filter(r=>r.status==="pending");
+  db.policies.filter(p=>p.req).forEach(p=>{
+    db.employees.filter(e=>e.active).forEach(e=>{
+      if(!db.acks.some(a=>a.empId===e.id&&a.polId===p.id)) A.ackMissing.push({p,e});
+    });
+  });
+  db.employees.filter(e=>e.active).forEach(e=>{
+    if(!e.hired)return;
+    const anniv=new Date(today().getFullYear(),parse(e.hired).getMonth(),parse(e.hired).getDate());
+    let d=days(t,iso(anniv)); if(d<0)d+=365;
+    if(d<=30)A.reviews.push({e,d,due:iso(anniv)});
+  });
+  return A;
+}
+
+/* =========================================================================
+   VIEW: DASHBOARD
+   ========================================================================= */
+function vDash(){
+  const A=alerts(), ph=phase(), s=db.settings;
+  const off=db.timeOff.filter(r=>r.status==="approved"&&r.end>=iso(today())).sort((a,b)=>a.start<b.start?-1:1);
+  const out=db.tools.filter(x=>x.status==="out");
+  const need=A.certExp.length+A.vehDue.length+A.pending.length;
+
+  const phBan = ph==="bidding"
+    ? `<div class="banner b-ink"><span class="bi">◷</span><div><b>Vacation bidding is open until ${fmt(s.bidDeadline)}</b>
+        Summer requests submitted by the deadline are ranked by length of service, not by who asks first. ${days(iso(today()),s.bidDeadline)} days left.</div></div>`
+    : ph==="toAllocate"
+    ? `<div class="banner b-warn"><span class="bi">▲</span><div><b>Bidding has closed with ${db.timeOff.filter(r=>r.status==="bid").length} requests waiting</b>
+        Run the seniority allocation to award the summer schedule.</div>
+        <button class="btn pri" style="margin-left:auto;align-self:center" onclick="go('timeoff')">Open time off</button></div>`
+    : `<div class="banner b-ok"><span class="bi">✓</span><div><b>Summer schedule is set — open requests are running</b>
+        New requests need ${s.noticeDays} days' notice and are checked against the board automatically.</div></div>`;
+
+  return `
+  ${phBan}
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="stat ${need?"alert":"good"}"><div class="n">${need}</div><div class="l">Need attention</div></div>
+    <div class="stat"><div class="n">${db.employees.filter(e=>e.active).length}</div><div class="l">Active crew</div></div>
+    <div class="stat"><div class="n">${off.length}</div><div class="l">Time off booked</div></div>
+    <div class="stat"><div class="n">${out.length}</div><div class="l">Tools signed out</div></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <div class="hd"><h3>Needs attention</h3></div>
+      <div class="bd tight">
+        ${need===0&&!A.certSoon.length&&!A.ackMissing.length
+          ? `<div class="empty"><div class="big">All clear</div>Nothing is overdue or waiting on a decision.</div>`
+          : `<table><tbody>
+        ${A.pending.map(r=>`<tr><td><span class="tag t-warn">Approve</span></td>
+          <td><span class="nm">${esc(empName(r.empId))}</span><div class="sm2">${fmtShort(r.start)} – ${fmtShort(r.end)} · ${esc(r.type)}</div></td>
+          <td style="text-align:right"><button class="btn sm" onclick="go('timeoff')">Review</button></td></tr>`).join("")}
+        ${A.certExp.map(r=>`<tr><td><span class="tag t-red">Expired</span></td>
+          <td><span class="nm">${esc(r.name)}</span><div class="sm2">${esc(empName(r.empId))} · lapsed ${Math.abs(r.d)} days ago</div></td>
+          <td style="text-align:right"><button class="btn sm" onclick="go('training')">Open</button></td></tr>`).join("")}
+        ${A.vehDue.map(v=>`<tr><td><span class="tag ${v.d<0?"t-red":"t-warn"}">${v.d<0?"Overdue":"Soon"}</span></td>
+          <td><span class="nm">${esc(v.veh.name)} — ${esc(v.label)}</span><div class="sm2">${v.km!=null?v.km.toLocaleString()+" km since last":v.date?fmt(v.date):"never recorded"}</div></td>
+          <td style="text-align:right"><button class="btn sm" onclick="go('vehicles')">Open</button></td></tr>`).join("")}
+        ${A.certSoon.map(r=>`<tr><td><span class="tag t-warn">${r.d}d</span></td>
+          <td><span class="nm">${esc(r.name)}</span><div class="sm2">${esc(empName(r.empId))} · expires ${fmt(r.expires)}</div></td>
+          <td style="text-align:right"><button class="btn sm" onclick="go('training')">Open</button></td></tr>`).join("")}
+        ${A.toolLong.map(x=>`<tr><td><span class="tag t-grey">Out ${days(x.since,iso(today()))}d</span></td>
+          <td><span class="nm">${esc(x.name)}</span><div class="sm2">${esc(empName(x.holder))}</div></td>
+          <td style="text-align:right"><button class="btn sm" onclick="go('tools')">Open</button></td></tr>`).join("")}
+        ${A.ackMissing.length?`<tr><td><span class="tag t-warn">Sign-off</span></td>
+          <td><span class="nm">${A.ackMissing.length} policy acknowledgements outstanding</span><div class="sm2">Required policies not yet signed</div></td>
+          <td style="text-align:right"><button class="btn sm" onclick="go('policies')">Open</button></td></tr>`:""}
+        </tbody></table>`}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><h3>Who's off next</h3></div>
+      <div class="bd tight">
+        ${off.length?`<table><tbody>${off.slice(0,8).map(r=>{
+          const e=emp(r.empId), st=days(iso(today()),r.start);
+          return `<tr><td><span class="nm">${esc(e?e.name:"—")}</span> ${e&&e.keyTech?'<span class="key">Lead</span>':""}
+            <div class="sm2">${esc(r.type)}${r.note?" · "+esc(r.note):""}</div></td>
+            <td class="num" style="text-align:right;white-space:nowrap">${fmtShort(r.start)} – ${fmtShort(r.end)}
+            <div class="sm2">${st<=0?"off now":"in "+st+" days"}</div></td></tr>`;}).join("")}</tbody></table>`
+        :`<div class="empty"><div class="big">Nothing booked</div>Approved time off will show up here.</div>`}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><h3>Upcoming reviews</h3></div>
+      <div class="bd tight">
+        ${A.reviews.length?`<table><tbody>${A.reviews.sort((a,b)=>a.d-b.d).map(r=>
+          `<tr><td><span class="nm">${esc(r.e.name)}</span><div class="sm2">${yrs(r.e.hired)+1} year mark</div></td>
+           <td style="text-align:right"><span class="tag ${r.d<=7?"t-warn":"t-grey"}">${r.d===0?"today":"in "+r.d+"d"}</span></td></tr>`).join("")}</tbody></table>`
+        :`<div class="empty"><div class="big">None in the next 30 days</div>Annual reviews are keyed to each hire date.</div>`}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><h3>Tools out</h3></div>
+      <div class="bd tight">
+        ${out.length?`<table><tbody>${out.map(x=>
+          `<tr><td><span class="nm">${esc(x.name)}</span><div class="sm2">${esc(x.serial)}</div></td>
+           <td style="text-align:right">${esc(empName(x.holder))}<div class="sm2">${days(x.since,iso(today()))} days</div></td></tr>`).join("")}</tbody></table>`
+        :`<div class="empty"><div class="big">Everything's in the crib</div></div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* =========================================================================
+   VIEW: TIME OFF  (season board + availability + queues)
+   ========================================================================= */
+function seasonWeeks(){
+  const s=db.settings;
+  let d=parse(s.seasonStart);
+  while(d.getDay()!==1) d=new Date(d.getTime()-DAY);   /* back up to Monday */
+  const w=[], end=parse(s.seasonEnd);
+  while(d<=end){ w.push(iso(d)); d=new Date(d.getTime()+7*DAY); }
+  return w;
+}
+function weekLoad(wkStart){
+  const d1=rangeDays(wkStart,iso(addD(wkStart,6)));
+  let peak=0, peakKey=0;
+  d1.forEach(d=>{
+    const o=offOn(db,d);
+    peak=Math.max(peak,o.length);
+    peakKey=Math.max(peakKey,o.filter(e=>e.keyTech).length);
+  });
+  return {peak,peakKey};
+}
+function vTimeOff(){
+  const s=db.settings, ph=phase(), weeks=seasonWeeks();
+  const bids=db.timeOff.filter(r=>r.status==="bid");
+  const pend=db.timeOff.filter(r=>r.status==="pending");
+  const stats=statHolidays(parse(s.seasonStart).getFullYear()).filter(h=>h.d>=weeks[0]&&h.d<=s.seasonEnd);
+  const crew=db.employees.filter(e=>e.active).sort((a,b)=>a.hired<b.hired?-1:1);
+
+  /* --- season board rows --- */
+  const head=weeks.map(w=>{
+    const d=parse(w), hol=stats.find(h=>h.d>=w&&h.d<=iso(addD(w,6)));
+    return `<th class="bw${hol?" stat-col":""}" title="${hol?esc(hol.n):""}">
+      <span class="mo">${d.toLocaleDateString("en-CA",{month:"short"})}</span>${d.getDate()}${hol?'<div style="color:var(--red);font-size:9px;line-height:1">★</div>':""}</th>`;
+  }).join("");
+
+  const rows=crew.map(e=>{
+    const cells=weeks.map(w=>{
+      const wEnd=iso(addD(w,6));
+      const r=db.timeOff.find(x=>x.empId===e.id&&x.status!=="declined"&&x.status!=="cancelled"&&x.start<=wEnd&&x.end>=w);
+      const cls=r?(r.status==="approved"?"appr":r.status==="bid"?"bid":"pend"):"";
+      return `<td class="bw"><div class="cellwrap">${r?`<div class="blk ${cls}" title="${esc(e.name)}: ${fmtShort(r.start)}–${fmtShort(r.end)} (${r.status})"></div>`:""}</div></td>`;
+    }).join("");
+    return `<tr><td class="bname"><span class="nm">${esc(e.name)}</span> ${e.keyTech?'<span class="key">Lead</span>':""}
+      <div class="sm2">${yrs(e.hired)} yrs · since ${parse(e.hired).getFullYear()}</div></td>${cells}</tr>`;
+  }).join("");
+
+  const capRow=weeks.map(w=>{
+    const {peak,peakKey}=weekLoad(w);
+    const pct=Math.min(100,Math.round(peak/s.maxOffTotal*100));
+    const cls=peak>=s.maxOffTotal?"full":peak>0?"mid":"";
+    return `<td class="bw cap"><div class="capcell" title="${peak} off (cap ${s.maxOffTotal})${peakKey?" · "+peakKey+" lead":""}">
+      <div class="capfill ${cls}" style="height:${Math.max(pct,4)}%"></div><div class="capnum">${peak||""}</div></div></td>`;
+  }).join("");
+
+  return `
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="stat"><div class="n">${s.maxOffTotal}</div><div class="l">Crew off at once</div></div>
+    <div class="stat"><div class="n">${s.maxKeyOff}</div><div class="l">Leads off at once</div></div>
+    <div class="stat ${ph==="toAllocate"?"alert":""}"><div class="n">${bids.length}</div><div class="l">Bids waiting</div></div>
+    <div class="stat ${pend.length?"alert":""}"><div class="n">${pend.length}</div><div class="l">To approve</div></div>
+  </div>
+
+  ${ph==="toAllocate"?`<div class="banner b-warn"><span class="bi">▲</span>
+    <div><b>Bidding closed ${fmt(s.bidDeadline)} — ${bids.length} requests to award</b>
+    Allocation grants requests in order of length of service, skipping any that would break the caps above. You can run it as many times as you like; it recalculates from scratch each time.</div>
+    <button class="btn pri" style="margin-left:auto;align-self:center" onclick="allocate()">Run allocation</button></div>`:""}
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="hd"><h3>Season board</h3><span class="sm2">${fmt(s.seasonStart)} – ${fmt(s.seasonEnd)}</span>
+      <div style="margin-left:auto" class="btnrow">
+        <button class="btn sm" onclick="openReq()">Request time off</button>
+        <button class="btn sm" onclick="openCheck()">Check a date</button>
+      </div></div>
+    <div class="bd">
+      <div class="board">
+        <table>
+          <thead><tr><th class="bname" style="text-align:left">Crew · by seniority</th>${head}</tr></thead>
+          <tbody>${rows}
+            <tr><td class="bname" style="background:#FBFBF9"><span class="eyebrow">Crew off</span></td>${capRow}</tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>Approved</span>
+        <span><i style="background:#E3B23C"></i>Requested / bid</span>
+        <span><i style="background:var(--red)"></i>Week at capacity</span>
+        <span><span style="color:var(--red)">★</span> General holiday</span>
+      </div>
+    </div>
+  </div>
+
+  ${bids.length?`<div class="card" style="margin-bottom:16px">
+    <div class="hd"><h3>Bids — ranked by service</h3><span class="sm2">Order the allocation will use</span></div>
+    <div class="bd tight"><table>
+      <thead><tr><th style="width:34px">#</th><th>Employee</th><th>Service</th><th>Dates</th><th>Submitted</th><th></th></tr></thead>
+      <tbody>${bids.slice().sort((a,b)=>{const A=emp(a.empId),B=emp(b.empId);
+        if(A.hired!==B.hired)return A.hired<B.hired?-1:1;return a.submitted<b.submitted?-1:1;})
+        .map((r,i)=>{const e=emp(r.empId);return `<tr>
+        <td class="num" style="color:var(--muted);font-weight:700">${i+1}</td>
+        <td><span class="nm">${esc(e.name)}</span> ${e.keyTech?'<span class="key">Lead</span>':""}${r.note?`<div class="sm2">${esc(r.note)}</div>`:""}</td>
+        <td class="num">${yrs(e.hired)} yrs</td>
+        <td class="num">${fmtShort(r.start)} – ${fmtShort(r.end)}<div class="sm2">${days(r.start,r.end)+1} days</div></td>
+        <td class="num sm2">${fmtShort(r.submitted)}</td>
+        <td style="text-align:right"><button class="btn sm" onclick="delReq('${r.id}')">Remove</button></td></tr>`;}).join("")}
+      </tbody></table></div></div>`:""}
+
+  ${pend.length?`<div class="card" style="margin-bottom:16px">
+    <div class="hd"><h3>Waiting on you</h3></div>
+    <div class="bd tight"><table><tbody>${pend.map(r=>{
+      const chk=checkRange(db,r.empId,r.start,r.end,r.id);
+      return `<tr><td><span class="nm">${esc(empName(r.empId))}</span>
+        <div class="sm2">${fmtShort(r.start)} – ${fmtShort(r.end)} · ${esc(r.type)}${r.note?" · "+esc(r.note):""}</div>
+        ${chk.ok?'<span class="tag t-ok">Fits the schedule</span>':'<span class="tag t-red">Conflicts</span>'}</td>
+        <td style="text-align:right" class="btnrow"><button class="btn sm ok" onclick="decide('${r.id}','approved')">Approve</button>
+        <button class="btn sm" onclick="decide('${r.id}','declined')">Decline</button></td></tr>`;}).join("")}
+    </tbody></table></div></div>`:""}
+
+  <div class="card">
+    <div class="hd"><h3>All requests</h3>
+      <div style="margin-left:auto"><select onchange="filters.to=this.value;render()" style="width:auto">
+        <option value="">All statuses</option><option value="approved">Approved</option>
+        <option value="bid">Bid</option><option value="pending">Pending</option><option value="declined">Declined</option>
+      </select></div></div>
+    <div class="bd tight"><table>
+      <thead><tr><th>Employee</th><th>Dates</th><th>Type</th><th>Status</th><th>Note</th><th></th></tr></thead>
+      <tbody>${db.timeOff.filter(r=>!filters.to||r.status===filters.to)
+        .sort((a,b)=>a.start<b.start?-1:1).map(r=>{
+        const tg={approved:"t-ok",bid:"t-grey",pending:"t-warn",declined:"t-red",cancelled:"t-grey"}[r.status]||"t-grey";
+        return `<tr><td class="nm">${esc(empName(r.empId))}</td>
+          <td class="num">${fmtShort(r.start)} – ${fmtShort(r.end)}</td>
+          <td>${esc(r.type)}</td>
+          <td><span class="tag ${tg}">${esc(r.status)}</span></td>
+          <td class="sm2">${esc(r.reason||r.note||"")}</td>
+          <td style="text-align:right"><button class="btn sm" onclick="delReq('${r.id}')">Remove</button></td></tr>`;}).join("")
+        ||`<tr><td colspan="6"><div class="empty"><div class="big">No requests yet</div></div></td></tr>`}
+      </tbody></table></div>
+  </div>`;
+}
+
+/* =========================================================================
+   VIEWS: TEAM / TRAINING / TOOLS / VEHICLES / SAFETY / POLICIES / SETTINGS
+   ========================================================================= */
+function vTeam(){
+  const list=db.employees.slice().sort((a,b)=>a.hired<b.hired?-1:1);
+  return `
+  <div class="btnrow" style="margin-bottom:13px"><button class="btn pri" onclick="openEmp()">Add employee</button></div>
+  <div class="card"><div class="bd tight"><table>
+    <thead><tr><th>Name</th><th>Role</th><th>Hired</th><th>Service</th><th>Lead tech</th><th>Contact</th><th></th></tr></thead>
+    <tbody>${list.map(e=>`<tr>
+      <td><span class="nm">${esc(e.name)}</span>${e.active?"":' <span class="tag t-grey">Inactive</span>'}</td>
+      <td>${esc(e.role)}</td>
+      <td class="num">${fmt(e.hired)}</td>
+      <td class="num">${yrs(e.hired)} yrs</td>
+      <td>${e.keyTech?'<span class="key">Lead</span>':'<span class="sm2">—</span>'}</td>
+      <td class="sm2">${esc(e.email||"")}${e.phone?"<br>"+esc(e.phone):""}</td>
+      <td style="text-align:right"><button class="btn sm" onclick="openEmp('${e.id}')">Edit</button></td></tr>`).join("")
+      ||`<tr><td colspan="7"><div class="empty"><div class="big">No one on the roster</div>Add your crew to get started.</div></td></tr>`}
+    </tbody></table></div></div>
+  <p class="mini" style="margin-top:11px">Hire date drives seniority in the vacation allocation and sets each annual review date. Lead techs are the people you can't have off at the same time.</p>`;
+}
+
+function vTraining(){
+  const t=iso(today());
+  const rows=db.training.slice().sort((a,b)=>{
+    const A=a.expires||"9999", B=b.expires||"9999"; return A<B?-1:1;});
+  return `
+  <div class="btnrow" style="margin-bottom:13px"><button class="btn pri" onclick="openTrain()">Log training</button></div>
+  <div class="card"><div class="bd tight"><table>
+    <thead><tr><th>Employee</th><th>Training / certification</th><th>Provider</th><th>Completed</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map(r=>{
+      let tag='<span class="tag t-grey">No expiry</span>';
+      if(r.expires){const d=days(t,r.expires);
+        tag=d<0?`<span class="tag t-red">Expired ${Math.abs(d)}d</span>`
+           :d<=60?`<span class="tag t-warn">${d} days</span>`
+           :`<span class="tag t-ok">Current</span>`;}
+      return `<tr><td class="nm">${esc(empName(r.empId))}</td><td>${esc(r.name)}${r.note?`<div class="sm2">${esc(r.note)}</div>`:""}</td>
+        <td class="sm2">${esc(r.provider)}</td><td class="num">${fmt(r.done)}</td><td class="num">${r.expires?fmt(r.expires):"—"}</td>
+        <td>${tag}</td><td style="text-align:right"><button class="btn sm" onclick="del('training','${r.id}')">Remove</button></td></tr>`;}).join("")
+      ||`<tr><td colspan="7"><div class="empty"><div class="big">Nothing logged yet</div>Record tickets, manufacturer certs, and safety training here.</div></td></tr>`}
+    </tbody></table></div></div>
+  <p class="mini" style="margin-top:11px">Anything with an expiry — first aid, working at heights, WHMIS, driver's abstracts, manufacturer certifications — raises a flag 60 days out and again once it lapses.</p>`;
+}
+
+function vTools(){
+  const t=iso(today());
+  return `
+  <div class="btnrow" style="margin-bottom:13px"><button class="btn pri" onclick="openTool()">Add tool</button></div>
+  <div class="card"><div class="bd tight"><table>
+    <thead><tr><th>Tool</th><th>Serial</th><th>Category</th><th>Status</th><th>Signed out to</th><th>Last inspected</th><th></th></tr></thead>
+    <tbody>${db.tools.map(x=>{
+      const out=x.status==="out", dur=out&&x.since?days(x.since,t):0;
+      let insp='<span class="sm2">—</span>';
+      if(x.insp){const d=days(x.insp,t); insp=d>365?`<span class="tag t-red">${fmt(x.insp)}</span>`:`<span class="num">${fmt(x.insp)}</span>`;}
+      return `<tr><td class="nm">${esc(x.name)}${x.note?`<div class="sm2">${esc(x.note)}</div>`:""}</td>
+        <td class="num sm2">${esc(x.serial)}</td><td>${esc(x.cat)}</td>
+        <td>${out?`<span class="tag ${dur>30?"t-red":"t-warn"}">Out ${dur}d</span>`:'<span class="tag t-ok">In</span>'}</td>
+        <td>${out?esc(empName(x.holder)):'<span class="sm2">—</span>'}</td>
+        <td>${insp}</td>
+        <td style="text-align:right">${out?`<button class="btn sm ok" onclick="checkIn('${x.id}')">Check in</button>`
+                                          :`<button class="btn sm" onclick="openOut('${x.id}')">Sign out</button>`}</td></tr>`;}).join("")
+      ||`<tr><td colspan="7"><div class="empty"><div class="big">No tools registered</div>Add the gear that walks off first.</div></td></tr>`}
+    </tbody></table></div></div>
+  ${db.toolLog.length?`<div class="card" style="margin-top:16px"><div class="hd"><h3>Recent movement</h3></div>
+    <div class="bd tight"><table><tbody>${db.toolLog.slice(-12).reverse().map(l=>{
+      const x=db.tools.find(y=>y.id===l.toolId);
+      return `<tr><td><span class="nm">${esc(x?x.name:"—")}</span></td>
+        <td>${l.action==="out"?"Signed out to":"Returned by"} ${esc(empName(l.empId))}</td>
+        <td class="num sm2" style="text-align:right">${fmt(l.at)}</td></tr>`;}).join("")}
+    </tbody></table></div></div>`:""}
+  <p class="mini" style="margin-top:11px">Anything out more than 30 days flags on the dashboard. Ladders and lifts also track an inspection date — the safety policy requires they be inspected before use and taken out of service if damaged.</p>`;
+}
+
+function vVehicles(){
+  const t=iso(today()), s=db.settings;
+  return `
+  <div class="btnrow" style="margin-bottom:13px">
+    <button class="btn pri" onclick="openVeh()">Add vehicle</button>
+    <button class="btn" onclick="openSvc()">Log service</button></div>
+  <div class="grid g3" style="margin-bottom:16px">
+  ${db.vehicles.map(v=>{
+    const last=db.service.filter(x=>x.vehId===v.id&&/oil/i.test(x.type)).sort((a,b)=>b.date<a.date?-1:1)[0];
+    const km=last?v.odo-last.odo:null, mo=last?Math.floor(days(last.date,t)/30.4):null;
+    const due=last?(km>=s.oilKm||mo>=s.oilMonths):true;
+    const pct=last?Math.min(100,Math.round(km/s.oilKm*100)):100;
+    const renew=[["Registration",v.regDue],["Insurance",v.insDue],["Safety",v.safetyDue]]
+      .filter(([,d])=>d).map(([l,d])=>{const dd=days(t,d);
+        return `<div style="display:flex;justify-content:space-between;padding:3px 0">
+          <span class="sm2">${l}</span><span class="${dd<0?"tag t-red":dd<=30?"tag t-warn":"num sm2"}">${dd<0?"Overdue":fmt(d)}</span></div>`;}).join("");
+    return `<div class="card"><div class="hd"><h3>${esc(v.name)}</h3>
+        <span class="sm2" style="margin-left:auto">${esc(v.plate)}</span></div>
+      <div class="bd">
+        <div class="sm2" style="margin-bottom:9px">${v.year} ${esc(v.unit)} · ${esc(empName(v.driver))}</div>
+        <div style="font-family:var(--disp);font-size:26px;font-weight:600" class="num">${v.odo.toLocaleString()} <span style="font-size:13px;color:var(--muted)">km</span></div>
+        <div style="margin:11px 0 4px" class="eyebrow">Oil change</div>
+        <div class="pbar"><i style="width:${pct}%;background:${due?"var(--red)":"var(--ok)"}"></i></div>
+        <div class="mini">${last?`${km.toLocaleString()} km / ${s.oilKm.toLocaleString()} km since ${fmtShort(last.date)}`:"No oil change on record"}
+          ${due?' <span class="tag t-red" style="margin-left:4px">Due</span>':""}</div>
+        <div style="margin:12px 0 4px" class="eyebrow">Renewals</div>${renew||'<div class="mini">None set</div>'}
+        <div class="btnrow" style="margin-top:12px">
+          <button class="btn sm" onclick="openSvc('${v.id}')">Log service</button>
+          <button class="btn sm" onclick="openVeh('${v.id}')">Edit</button></div>
+      </div></div>`;}).join("")
+    ||`<div class="card"><div class="bd"><div class="empty"><div class="big">No vehicles</div>Add your vans to track service and renewals.</div></div></div>`}
+  </div>
+
+  <div class="card"><div class="hd"><h3>Service history</h3></div><div class="bd tight"><table>
+    <thead><tr><th>Vehicle</th><th>Work</th><th>Date</th><th>Odometer</th><th>Notes</th><th></th></tr></thead>
+    <tbody>${db.service.slice().sort((a,b)=>b.date<a.date?-1:1).map(x=>{
+      const v=db.vehicles.find(y=>y.id===x.vehId);
+      return `<tr><td class="nm">${esc(v?v.name:"—")}</td><td>${esc(x.type)}</td><td class="num">${fmt(x.date)}</td>
+        <td class="num">${x.odo?Number(x.odo).toLocaleString()+" km":"—"}</td><td class="sm2">${esc(x.note)}</td>
+        <td style="text-align:right"><button class="btn sm" onclick="del('service','${x.id}')">Remove</button></td></tr>`;}).join("")
+      ||`<tr><td colspan="6"><div class="empty"><div class="big">Nothing logged</div></div></td></tr>`}
+    </tbody></table></div></div>
+  <p class="mini" style="margin-top:11px">Oil changes are flagged at ${s.oilKm.toLocaleString()} km or ${s.oilMonths} months, whichever lands first — adjustable in Settings. Winnipeg extra: keep the tire changeover in the service log so you can see at a glance which vans are still on winters in May.</p>`;
+}
+
+function vSafety(){
+  return `
+  <div class="btnrow" style="margin-bottom:13px"><button class="btn pri" onclick="openInc()">Report incident or near miss</button></div>
+  <div class="banner b-ink"><span class="bi">§</span><div><b>Reporting is a requirement, not a formality</b>
+    Your safety policy commits every worker to report injuries, incidents, near misses, and property damage immediately. Near misses are reported without blame — they're the cheapest warning you get.</div></div>
+  <div class="card"><div class="bd tight"><table>
+    <thead><tr><th>Date</th><th>Type</th><th>Who</th><th>Where</th><th>What happened</th><th>Action taken</th><th>Status</th></tr></thead>
+    <tbody>${db.incidents.slice().sort((a,b)=>b.date<a.date?-1:1).map(i=>`<tr>
+      <td class="num">${fmt(i.date)}</td>
+      <td><span class="tag ${i.kind==="Injury"?"t-red":i.kind==="Near miss"?"t-warn":"t-grey"}">${esc(i.kind)}</span></td>
+      <td class="nm">${esc(empName(i.empId))}</td><td class="sm2">${esc(i.where)}</td>
+      <td style="max-width:230px">${esc(i.what)}</td><td style="max-width:210px" class="sm2">${esc(i.action)}</td>
+      <td>${i.closed?'<span class="tag t-ok">Closed</span>':'<span class="tag t-warn">Open</span>'}</td></tr>`).join("")
+      ||`<tr><td colspan="7"><div class="empty"><div class="big">Nothing reported</div>An empty log is good news — but only if people know to use it.</div></td></tr>`}
+    </tbody></table></div></div>`;
+}
+
+function vPolicies(){
+  const active=db.employees.filter(e=>e.active);
+  return `
+  <p class="lede">Every policy in the handbook, and who has signed off on it. Acknowledgements are your proof that a policy was received — worth keeping tidy for the harassment and safety policies in particular, since both are legally required to be given to every worker.</p>
+  <div class="card"><div class="bd tight"><table>
+    <thead><tr><th>Policy</th><th>Version</th><th>Sign-off</th><th>Acknowledged</th><th></th></tr></thead>
+    <tbody>${db.policies.map(p=>{
+      const signed=db.acks.filter(a=>a.polId===p.id).length, pct=active.length?Math.round(signed/active.length*100):0;
+      return `<tr><td class="nm">${esc(p.title)}</td><td class="num sm2">v${esc(p.ver)}</td>
+        <td>${p.req?'<span class="tag t-ink">Required</span>':'<span class="sm2">Optional</span>'}</td>
+        <td style="min-width:150px"><div class="pbar"><i style="width:${pct}%;background:${pct===100?"var(--ok)":"var(--warn)"}"></i></div>
+          <div class="mini">${signed} of ${active.length}</div></td>
+        <td style="text-align:right"><button class="btn sm" onclick="openAck('${p.id}')">Record sign-off</button></td></tr>`;}).join("")}
+    </tbody></table></div></div>
+
+  <div class="card" style="margin-top:16px"><div class="hd"><h3>Who still needs to sign</h3></div><div class="bd tight">
+    ${(()=>{const miss=[];db.policies.filter(p=>p.req).forEach(p=>active.forEach(e=>{
+      if(!db.acks.some(a=>a.empId===e.id&&a.polId===p.id))miss.push({p,e});}));
+      return miss.length?`<table><tbody>${miss.map(m=>`<tr><td class="nm">${esc(m.e.name)}</td><td>${esc(m.p.title)}</td>
+        <td style="text-align:right"><button class="btn sm" onclick="ackNow('${m.e.id}','${m.p.id}')">Mark signed</button></td></tr>`).join("")}</tbody></table>`
+        :`<div class="empty"><div class="big">Everyone's signed</div>All required policies are acknowledged by the active crew.</div>`;})()}
+  </div></div>`;
+}
+
+function vSettings(){
+  const s=db.settings;
+  return `
+  <div class="grid g2">
+    <div class="card"><div class="hd"><h3>Vacation season</h3></div><div class="bd">
+      <label class="f"><span class="lb">Season starts</span><input type="date" value="${s.seasonStart}" onchange="setS('seasonStart',this.value)"></label>
+      <label class="f"><span class="lb">Season ends</span><input type="date" value="${s.seasonEnd}" onchange="setS('seasonEnd',this.value)"></label>
+      <label class="f"><span class="lb">Bids must be in by</span><input type="date" value="${s.bidDeadline}" onchange="setS('bidDeadline',this.value)"></label>
+      <p class="mini">Requests for season dates submitted before the deadline are pooled and awarded by seniority. After it, requests are first-come and checked live against the board.</p>
+    </div></div>
+    <div class="card"><div class="hd"><h3>Coverage caps</h3></div><div class="bd">
+      <label class="f"><span class="lb">Most crew off at once</span><input type="number" min="1" value="${s.maxOffTotal}" onchange="setS('maxOffTotal',+this.value)"></label>
+      <label class="f"><span class="lb">Most lead techs off at once</span><input type="number" min="1" value="${s.maxKeyOff}" onchange="setS('maxKeyOff',+this.value)"></label>
+      <label class="f"><span class="lb">Notice required after bidding (days)</span><input type="number" min="0" value="${s.noticeDays}" onchange="setS('noticeDays',+this.value)"></label>
+      <p class="mini">Mark who counts as a lead tech on the Team page.</p>
+    </div></div>
+    <div class="card"><div class="hd"><h3>Vehicle service intervals</h3></div><div class="bd">
+      <label class="f"><span class="lb">Oil change — kilometres</span><input type="number" step="500" value="${s.oilKm}" onchange="setS('oilKm',+this.value)"></label>
+      <label class="f"><span class="lb">Oil change — months</span><input type="number" min="1" value="${s.oilMonths}" onchange="setS('oilMonths',+this.value)"></label>
+    </div></div>
+    <div class="card"><div class="hd"><h3>Data</h3></div><div class="bd">
+      <p class="mini" style="margin-bottom:11px">Everything lives in this browser until you connect it to SharePoint. Export regularly, or wire up the Store adapter at the top of the file to your ART43 lists.</p>
+      <div class="btnrow">
+        <button class="btn dark" onclick="exportJSON()">Export JSON</button>
+        <button class="btn" onclick="document.getElementById('imp').click()">Import JSON</button>
+        <input id="imp" type="file" accept="application/json" style="display:none" onchange="importJSON(this)">
+      </div>
+      ${s.demo?`<div style="margin-top:14px;padding-top:13px;border-top:1px solid var(--line2)">
+        <p class="mini" style="margin-bottom:9px">This is loaded with sample crew, tools, and vans so you can try the allocation. Clear it before real use.</p>
+        <button class="btn" onclick="clearDemo()">Clear sample data</button></div>`:""}
+    </div></div>
+  </div>`;
+}
+
+/* =========================================================================
+   MODALS
+   ========================================================================= */
+function mo(title,body,footer){modal={title,body,footer};render();}
+function closeModal(){modal=null;render();}
+function val(id){const e=document.getElementById(id);return e?e.value:"";}
+function chkd(id){const e=document.getElementById(id);return e?e.checked:false;}
+function empOpts(sel){return db.employees.filter(e=>e.active).map(e=>`<option value="${e.id}"${e.id===sel?" selected":""}>${esc(e.name)}</option>`).join("");}
+
+function openReq(){
+  const s=db.settings, ph=phase();
+  mo("Request time off",`
+    ${ph==="bidding"?`<div class="banner b-ink" style="margin:0 0 15px"><span class="bi">◷</span><div>
+      <b>Bidding is open</b>Requests for season dates go into the pool and are awarded by length of service after ${fmt(s.bidDeadline)}.</div></div>`
+    :`<div class="banner b-ok" style="margin:0 0 15px"><span class="bi">✓</span><div>
+      <b>Open requests</b>Needs ${s.noticeDays} days' notice and has to fit the schedule. You'll see right away if it doesn't.</div></div>`}
+    <label class="f"><span class="lb">Employee</span><select id="r_emp">${empOpts()}</select></label>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">First day off</span><input type="date" id="r_start" value="${iso(addD(today(),21))}" onchange="liveCheck()"></label>
+      <label class="f"><span class="lb">Last day off</span><input type="date" id="r_end" value="${iso(addD(today(),28))}" onchange="liveCheck()"></label>
+    </div>
+    <label class="f"><span class="lb">Type</span><select id="r_type">
+      <option>Vacation</option><option>Personal</option><option>Unpaid</option><option>Bereavement</option><option>Family leave</option></select></label>
+    <label class="f"><span class="lb">Note (optional)</span><input type="text" id="r_note" placeholder="Anything the schedule should know"></label>
+    <div id="r_live"></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveReq()">Submit request</button>`);
+  setTimeout(()=>{document.getElementById("r_emp").onchange=liveCheck;liveCheck();},0);
+}
+function liveCheck(){
+  const box=document.getElementById("r_live"); if(!box)return;
+  const e=val("r_emp"), a=val("r_start"), b=val("r_end"), s=db.settings, ph=phase();
+  if(!a||!b||b<a){box.innerHTML=`<div class="avail a-warn"><b>Pick your dates</b>The last day has to fall on or after the first.</div>`;return;}
+  const notice=days(iso(today()),a);
+  const chk=checkRange(db,e,a,b);
+  let html="";
+  if(ph!=="bidding"&&notice<s.noticeDays)
+    html+=`<div class="avail a-warn"><b>Short notice</b>That's ${notice} days out; ${s.noticeDays} are normally required. It'll go through as a request for approval.</div>`;
+  if(chk.ok)
+    html+=`<div class="avail a-ok"><b>Those dates are open</b>${days(a,b)+1} days, no clash with anything already approved.</div>`;
+  else
+    html+=`<div class="avail a-no"><b>Not available</b>The schedule is already full on:
+      <ul>${chk.conflicts.map(c=>`<li>${fmtShort(c.start)}${c.start!==c.end?" – "+fmtShort(c.end):""} — ${c.why} (${esc(c.who.join(", "))})</li>`).join("")}</ul></div>`;
+  box.innerHTML=html;
+}
+function saveReq(){
+  const e=val("r_emp"),a=val("r_start"),b=val("r_end");
+  if(!e||!a||!b||b<a){toast("Check the dates first");return;}
+  const ph=phase(), chk=checkRange(db,e,a,b);
+  let status;
+  if(ph==="bidding"&&a<=db.settings.seasonEnd&&b>=db.settings.seasonStart) status="bid";
+  else if(!chk.ok){toast("Those dates are full — pick something else");return;}
+  else status="pending";
+  db.timeOff.push({id:uid(),empId:e,start:a,end:b,type:val("r_type"),status,
+    submitted:iso(today()),note:val("r_note"),reason:""});
+  modal=null; commit(status==="bid"?"Added to the bidding pool":"Request submitted for approval");
+}
+function openCheck(){
+  mo("Check a date range",`
+    <p class="lede">See what's open before anyone fills out a request.</p>
+    <label class="f"><span class="lb">Employee</span><select id="c_emp" onchange="doCheck()">${empOpts()}</select></label>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">From</span><input type="date" id="c_start" value="${iso(addD(today(),21))}" onchange="doCheck()"></label>
+      <label class="f"><span class="lb">To</span><input type="date" id="c_end" value="${iso(addD(today(),28))}" onchange="doCheck()"></label></div>
+    <div id="c_out"></div>`,`<button class="btn" onclick="closeModal()">Close</button>`);
+  setTimeout(doCheck,0);
+}
+function doCheck(){
+  const box=document.getElementById("c_out"); if(!box)return;
+  const e=val("c_emp"),a=val("c_start"),b=val("c_end");
+  if(!a||!b||b<a){box.innerHTML="";return;}
+  const chk=checkRange(db,e,a,b);
+  box.innerHTML=chk.ok
+    ?`<div class="avail a-ok"><b>Open</b>All ${days(a,b)+1} days are clear.</div>`
+    :`<div class="avail a-no"><b>${chk.dayCount} of ${days(a,b)+1} days are full</b>
+      <ul>${chk.conflicts.map(c=>`<li>${fmtShort(c.start)}${c.start!==c.end?" – "+fmtShort(c.end):""} — ${c.why} (${esc(c.who.join(", "))})</li>`).join("")}</ul></div>`;
+}
+function openEmp(id){
+  const e=id?emp(id):{name:"",role:"",hired:iso(today()),keyTech:false,email:"",phone:"",active:true,ec:"",ecPhone:""};
+  mo(id?"Edit employee":"Add employee",`
+    <label class="f"><span class="lb">Name</span><input type="text" id="e_name" value="${esc(e.name)}"></label>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Role</span><input type="text" id="e_role" value="${esc(e.role)}" placeholder="Installer"></label>
+      <label class="f"><span class="lb">Hire date</span><input type="date" id="e_hired" value="${e.hired}"></label></div>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Email</span><input type="text" id="e_email" value="${esc(e.email)}"></label>
+      <label class="f"><span class="lb">Phone</span><input type="text" id="e_phone" value="${esc(e.phone)}"></label></div>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Emergency contact</span><input type="text" id="e_ec" value="${esc(e.ec)}"></label>
+      <label class="f"><span class="lb">Emergency phone</span><input type="text" id="e_ecp" value="${esc(e.ecPhone)}"></label></div>
+    <label class="chk"><input type="checkbox" id="e_key" ${e.keyTech?"checked":""}><span>Lead tech — limited by the lead-tech cap</span></label>
+    <label class="chk"><input type="checkbox" id="e_act" ${e.active?"checked":""}><span>Currently employed</span></label>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveEmp('${id||""}')">Save</button>`);
+}
+function saveEmp(id){
+  const n=val("e_name").trim(); if(!n){toast("Name is required");return;}
+  const o={name:n,role:val("e_role"),hired:val("e_hired"),email:val("e_email"),phone:val("e_phone"),
+           ec:val("e_ec"),ecPhone:val("e_ecp"),keyTech:chkd("e_key"),active:chkd("e_act")};
+  if(id)Object.assign(emp(id),o); else db.employees.push({id:uid(),...o});
+  modal=null; commit("Saved");
+}
+function openTrain(){
+  mo("Log training",`
+    <label class="f"><span class="lb">Employee</span><select id="t_emp">${empOpts()}</select></label>
+    <label class="f"><span class="lb">Training or certification</span><input type="text" id="t_name" placeholder="Working at Heights"></label>
+    <label class="f"><span class="lb">Provider</span><input type="text" id="t_prov" placeholder="SAFE Work Manitoba"></label>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Completed</span><input type="date" id="t_done" value="${iso(today())}"></label>
+      <label class="f"><span class="lb">Expires (blank if none)</span><input type="date" id="t_exp"></label></div>
+    <label class="f"><span class="lb">Note</span><input type="text" id="t_note"></label>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveTrain()">Save</button>`);
+}
+function saveTrain(){
+  if(!val("t_name").trim()){toast("Name the training");return;}
+  db.training.push({id:uid(),empId:val("t_emp"),name:val("t_name"),provider:val("t_prov"),
+    done:val("t_done"),expires:val("t_exp"),note:val("t_note")});
+  modal=null; commit("Training logged");
+}
+function openTool(){
+  mo("Add tool",`
+    <label class="f"><span class="lb">Tool</span><input type="text" id="k_name" placeholder="Hilti TE 6-A22"></label>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Serial / asset tag</span><input type="text" id="k_ser"></label>
+      <label class="f"><span class="lb">Category</span><input type="text" id="k_cat" placeholder="Power"></label></div>
+    <label class="f"><span class="lb">Last inspected (ladders, lifts)</span><input type="date" id="k_insp"></label>
+    <label class="f"><span class="lb">Note</span><input type="text" id="k_note"></label>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveTool()">Save</button>`);
+}
+function saveTool(){
+  if(!val("k_name").trim()){toast("Name the tool");return;}
+  db.tools.push({id:uid(),name:val("k_name"),serial:val("k_ser"),cat:val("k_cat"),
+    insp:val("k_insp"),status:"in",holder:"",since:"",note:val("k_note")});
+  modal=null; commit("Tool added");
+}
+function openOut(id){
+  const x=db.tools.find(t=>t.id===id);
+  mo("Sign out "+x.name,`<label class="f"><span class="lb">To</span><select id="o_emp">${empOpts()}</select></label>
+    <label class="f"><span class="lb">Note</span><input type="text" id="o_note" placeholder="Job or site"></label>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="doOut('${id}')">Sign out</button>`);
+}
+function doOut(id){
+  const x=db.tools.find(t=>t.id===id), e=val("o_emp");
+  x.status="out"; x.holder=e; x.since=iso(today());
+  db.toolLog.push({id:uid(),toolId:id,empId:e,action:"out",at:iso(today()),note:val("o_note")});
+  modal=null; commit("Signed out to "+empName(e));
+}
+function checkIn(id){
+  const x=db.tools.find(t=>t.id===id), who=x.holder;
+  x.status="in"; x.holder=""; x.since="";
+  db.toolLog.push({id:uid(),toolId:id,empId:who,action:"in",at:iso(today()),note:""});
+  commit("Checked in");
+}
+function openVeh(id){
+  const v=id?db.vehicles.find(x=>x.id===id):{name:"",unit:"",plate:"",year:new Date().getFullYear(),odo:0,driver:"",regDue:"",insDue:"",safetyDue:"",tires:"summer"};
+  mo(id?"Edit vehicle":"Add vehicle",`
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Name</span><input type="text" id="v_name" value="${esc(v.name)}" placeholder="Van 1"></label>
+      <label class="f"><span class="lb">Make / model</span><input type="text" id="v_unit" value="${esc(v.unit)}"></label></div>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Plate</span><input type="text" id="v_plate" value="${esc(v.plate)}"></label>
+      <label class="f"><span class="lb">Year</span><input type="number" id="v_year" value="${v.year}"></label></div>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Odometer (km)</span><input type="number" id="v_odo" value="${v.odo}"></label>
+      <label class="f"><span class="lb">Assigned to</span><select id="v_drv"><option value="">—</option>${empOpts(v.driver)}</select></label></div>
+    <div class="grid g3" style="gap:11px">
+      <label class="f"><span class="lb">Registration due</span><input type="date" id="v_reg" value="${v.regDue}"></label>
+      <label class="f"><span class="lb">Insurance due</span><input type="date" id="v_ins" value="${v.insDue}"></label>
+      <label class="f"><span class="lb">Safety due</span><input type="date" id="v_saf" value="${v.safetyDue}"></label></div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveVeh('${id||""}')">Save</button>`);
+}
+function saveVeh(id){
+  if(!val("v_name").trim()){toast("Name the vehicle");return;}
+  const o={name:val("v_name"),unit:val("v_unit"),plate:val("v_plate"),year:+val("v_year"),odo:+val("v_odo"),
+           driver:val("v_drv"),regDue:val("v_reg"),insDue:val("v_ins"),safetyDue:val("v_saf")};
+  if(id)Object.assign(db.vehicles.find(x=>x.id===id),o); else db.vehicles.push({id:uid(),tires:"summer",...o});
+  modal=null; commit("Saved");
+}
+function openSvc(vid){
+  mo("Log service",`
+    <label class="f"><span class="lb">Vehicle</span><select id="s_veh">${db.vehicles.map(v=>`<option value="${v.id}"${v.id===vid?" selected":""}>${esc(v.name)}</option>`).join("")}</select></label>
+    <label class="f"><span class="lb">Work done</span><select id="s_type">
+      <option>Oil change</option><option>Tire rotation</option><option>Tires — winter on</option><option>Tires — summer on</option>
+      <option>Brakes</option><option>Safety inspection</option><option>Battery</option><option>Wipers</option><option>Other repair</option></select></label>
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Date</span><input type="date" id="s_date" value="${iso(today())}"></label>
+      <label class="f"><span class="lb">Odometer (km)</span><input type="number" id="s_odo" placeholder="Updates the vehicle"></label></div>
+    <label class="f"><span class="lb">Note</span><input type="text" id="s_note"></label>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveSvc()">Save</button>`);
+}
+function saveSvc(){
+  const vid=val("s_veh"), odo=+val("s_odo")||0;
+  db.service.push({id:uid(),vehId:vid,type:val("s_type"),date:val("s_date"),odo,cost:"",note:val("s_note")});
+  const v=db.vehicles.find(x=>x.id===vid); if(v&&odo>v.odo)v.odo=odo;
+  modal=null; commit("Service logged");
+}
+function openInc(){
+  mo("Report incident or near miss",`
+    <div class="grid g2" style="gap:11px">
+      <label class="f"><span class="lb">Date</span><input type="date" id="i_date" value="${iso(today())}"></label>
+      <label class="f"><span class="lb">Type</span><select id="i_kind"><option>Near miss</option><option>Injury</option><option>Property damage</option><option>Hazard</option></select></label></div>
+    <label class="f"><span class="lb">Who was involved</span><select id="i_emp">${empOpts()}</select></label>
+    <label class="f"><span class="lb">Where</span><input type="text" id="i_where" placeholder="Site or address"></label>
+    <label class="f"><span class="lb">What happened</span><textarea id="i_what"></textarea></label>
+    <label class="f"><span class="lb">Action taken to prevent a repeat</span><textarea id="i_act"></textarea></label>
+    <label class="chk"><input type="checkbox" id="i_closed"><span>Closed — corrective action complete</span></label>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveInc()">Save report</button>`);
+}
+function saveInc(){
+  if(!val("i_what").trim()){toast("Describe what happened");return;}
+  db.incidents.push({id:uid(),date:val("i_date"),kind:val("i_kind"),empId:val("i_emp"),
+    where:val("i_where"),what:val("i_what"),action:val("i_act"),closed:chkd("i_closed")});
+  modal=null; commit("Report saved");
+}
+function openAck(pid){
+  const p=db.policies.find(x=>x.id===pid);
+  mo("Record sign-off",`<p class="lede">Confirm who has received and signed ${esc(p.title)}.</p>
+    ${db.employees.filter(e=>e.active).map(e=>{
+      const has=db.acks.some(a=>a.empId===e.id&&a.polId===pid);
+      return `<label class="chk"><input type="checkbox" id="ak_${e.id}" ${has?"checked":""}><span>${esc(e.name)}${has?' <span class="tag t-ok">Signed</span>':""}</span></label>`;}).join("")}`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveAck('${pid}')">Save</button>`);
+}
+function saveAck(pid){
+  db.employees.filter(e=>e.active).forEach(e=>{
+    const on=chkd("ak_"+e.id), has=db.acks.some(a=>a.empId===e.id&&a.polId===pid);
+    if(on&&!has)db.acks.push({id:uid(),empId:e.id,polId:pid,at:iso(today())});
+    if(!on&&has)db.acks=db.acks.filter(a=>!(a.empId===e.id&&a.polId===pid));
+  });
+  modal=null; commit("Sign-off updated");
+}
+function ackNow(eid,pid){db.acks.push({id:uid(),empId:eid,polId:pid,at:iso(today())});commit("Marked signed");}
+
+/* =========================================================================
+   ACTIONS
+   ========================================================================= */
+function go(v){view=v;modal=null;window.scrollTo(0,0);render();}
+function setS(k,v){db.settings[k]=v;commit();}
+function del(coll,id){db[coll]=db[coll].filter(x=>x.id!==id);commit("Removed");}
+function delReq(id){db.timeOff=db.timeOff.filter(r=>r.id!==id);commit("Removed");}
+function decide(id,st){
+  const r=db.timeOff.find(x=>x.id===id);
+  if(st==="approved"){
+    const chk=checkRange(db,r.empId,r.start,r.end,r.id);
+    if(!chk.ok&&!confirm("This overlaps time already approved. Approve anyway?"))return;
+  }
+  r.status=st; r.decidedAt=iso(today());
+  commit(st==="approved"?"Approved":"Declined");
+}
+function allocate(){
+  if(!confirm("Award the summer schedule by seniority? Every bid is recalculated from scratch."))return;
+  const res=runAllocation(db);
+  commit(res.approved+" granted, "+res.declined+" declined");
+}
+function exportJSON(){
+  const b=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download="art-hr-hub-"+iso(today())+".json"; a.click();
+  toast("Exported");
+}
+function importJSON(inp){
+  const f=inp.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{db=JSON.parse(r.result);commit("Imported");}catch(e){toast("That file wouldn't parse");}};
+  r.readAsText(f);
+}
+function clearDemo(){
+  if(!confirm("Remove all sample data and start empty?"))return;
+  const s=db.settings; s.demo=false;
+  db={employees:[],timeOff:[],training:[],tools:[],toolLog:[],vehicles:[],service:[],incidents:[],
+      policies:db.policies,acks:[],settings:s};
+  commit("Cleared — add your crew on the Team page");
+}
+
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+const NAV=[
+  ["dash","Dashboard","▣"],["timeoff","Time off","◷"],["team","Team","☰"],
+  ["training","Training","✦"],["tools","Tools","⚒"],["vehicles","Vehicles","▤"],
+  ["safety","Safety","⚠"],["policies","Policies","§"],["settings","Settings","⚙"]
+];
+const TITLES={dash:["Dashboard","What needs you today"],timeoff:["Time off","Requests, coverage, and the summer schedule"],
+  team:["Team","Roster, seniority, and emergency contacts"],training:["Training","Tickets, certifications, and expiries"],
+  tools:["Tools","Sign-out register and inspections"],vehicles:["Vehicles","Service, odometers, and renewals"],
+  safety:["Safety","Incident and near-miss log"],policies:["Policies","The handbook and who's signed it"],
+  settings:["Settings","Rules, intervals, and your data"]};
+
+function render(){
+  const A=alerts();
+  const pips={timeoff:A.pending.length+(phase()==="toAllocate"?db.timeOff.filter(r=>r.status==="bid").length:0),
+              training:A.certExp.length,vehicles:A.vehDue.length,policies:A.ackMissing.length};
+  const body={dash:vDash,timeoff:vTimeOff,team:vTeam,training:vTraining,tools:vTools,
+              vehicles:vVehicles,safety:vSafety,policies:vPolicies,settings:vSettings}[view]();
+  const [t1,t2]=TITLES[view];
+  document.getElementById("root").innerHTML=`
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><div class="mark"><span class="art">ART</span>
+        <span class="sub">Advanced<br>Residential<br>Technology</span></div>
+        <div class="bar"></div><div class="hub">HR Hub</div></div>
+      <nav>${NAV.map(([k,l,i])=>`<button class="navb ${view===k?"on":""}" onclick="go('${k}')">
+        <span class="ic">${i}</span>${l}${pips[k]?`<span class="pip">${pips[k]}</span>`:""}</button>`).join("")}</nav>
+      <div class="sidefoot">Data stays in this browser.<br>Export from Settings.</div>
+    </aside>
+    <div class="main">
+      <header class="top"><h1>${t1}</h1><span class="sub">${t2}</span><span class="sp"></span>
+        <button class="btn dark" onclick="openReq()">Request time off</button></header>
+      <div class="wrap">${body}</div>
+    </div>
+  </div>
+  ${modal?`<div class="modal" onclick="if(event.target===this)closeModal()"><div class="box">
+      <div class="mh"><h3>${esc(modal.title)}</h3><button class="x" onclick="closeModal()">×</button></div>
+      <div class="mb">${modal.body}</div><div class="mf">${modal.footer}</div></div></div>`:""}`;
+}
+
+/* ---------------- boot ---------------- */
+(async function(){
+  db=await Store.load();
+  if(!db){ db=seed(); await Store.save(db); }
+  if(!db.settings)db.settings=seed().settings;
+  render();
+})();
+</script>
