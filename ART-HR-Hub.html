@@ -322,7 +322,13 @@ async function spFetch(method,path,body){
     "Prefer":"HonorNonIndexedQueriesWarningMayFailRandomly"}};
   if(body) opts.body=JSON.stringify(body);
   const r=await fetch("https://graph.microsoft.com/v1.0"+path,opts);
-  if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error((e&&e.error&&e.error.message)||"HTTP "+r.status); }
+  if(!r.ok){
+    const e=await r.json().catch(()=>({}));
+    console.error("Graph "+method+" "+path,body,e);
+    const inner=e&&e.error&&e.error.innerError;
+    const detail=[e&&e.error&&e.error.message, inner&&(inner.message||inner["request-id"])].filter(Boolean).join(" — ");
+    throw new Error(detail||"HTTP "+r.status);
+  }
   if(r.status===204) return null;
   return r.json();
 }
