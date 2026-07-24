@@ -363,7 +363,7 @@ async function deleteItem(listName,itemId){
 /* =========================================================================
    FIELD MAPPERS
    -------------------------------------------------------------------------
-   Every list carries an AppId text column holding this app's own uid(), so
+   Every list carries an AppKey text column holding this app's own uid(), so
    the existing empId/vehId/toolId/polId cross-references never have to
    change. Date fields (Hired, StartDate, DoneDate, etc.) must be created in
    SharePoint as plain SINGLE LINE OF TEXT columns, not "Date and Time" —
@@ -375,52 +375,52 @@ const b2t=v=>v?"Yes":"No", t2b=v=>v==="Yes"||v===true;
 
 const M={
   employees:{
-    from:f=>({id:f.AppId||uid(),name:f.Title||"",role:f.Role||"",hired:f.Hired||"",
+    from:f=>({id:f.AppKey||uid(),name:f.Title||"",role:f.Role||"",hired:f.Hired||"",
       keyTech:t2b(f.KeyTech),email:f.Email||"",phone:f.Phone||"",ec:f.EC||"",ecPhone:f.ECPhone||"",
       active:f.Active===undefined?true:t2b(f.Active),isManager:t2b(f.IsManager)}),
-    to:r=>({Title:r.name,AppId:r.id,Role:r.role,Hired:r.hired,KeyTech:b2t(r.keyTech),Email:r.email,
+    to:r=>({Title:r.name,AppKey:r.id,Role:r.role,Hired:r.hired,KeyTech:b2t(r.keyTech),Email:r.email,
       Phone:r.phone,EC:r.ec,ECPhone:r.ecPhone,Active:b2t(r.active),IsManager:b2t(r.isManager)})
   },
   timeOff:{
-    from:f=>({id:f.AppId||uid(),empId:f.EmpId||"",start:f.StartDate||"",end:f.EndDate||"",type:f.ReqType||"",
+    from:f=>({id:f.AppKey||uid(),empId:f.EmpId||"",start:f.StartDate||"",end:f.EndDate||"",type:f.ReqType||"",
       status:f.Status||"pending",submitted:f.Submitted||"",note:f.Note||"",reason:f.Reason||"",decidedAt:f.DecidedAt||""}),
-    to:r=>({Title:(r.type||"Time off")+" "+r.start,AppId:r.id,EmpId:r.empId,StartDate:r.start,EndDate:r.end,
+    to:r=>({Title:(r.type||"Time off")+" "+r.start,AppKey:r.id,EmpId:r.empId,StartDate:r.start,EndDate:r.end,
       ReqType:r.type,Status:r.status,Submitted:r.submitted,Note:r.note,Reason:r.reason,DecidedAt:r.decidedAt||""})
   },
   training:{
-    from:f=>({id:f.AppId||uid(),empId:f.EmpId||"",name:f.Title||"",provider:f.Provider||"",
+    from:f=>({id:f.AppKey||uid(),empId:f.EmpId||"",name:f.Title||"",provider:f.Provider||"",
       done:f.DoneDate||"",expires:f.ExpiresDate||"",note:f.Note||""}),
-    to:r=>({Title:r.name,AppId:r.id,EmpId:r.empId,Provider:r.provider,DoneDate:r.done,ExpiresDate:r.expires,Note:r.note})
+    to:r=>({Title:r.name,AppKey:r.id,EmpId:r.empId,Provider:r.provider,DoneDate:r.done,ExpiresDate:r.expires,Note:r.note})
   },
   tools:{
-    from:f=>({id:f.AppId||uid(),name:f.Title||"",serial:f.Serial||"",cat:f.Cat||"",insp:f.InspDate||"",
+    from:f=>({id:f.AppKey||uid(),name:f.Title||"",serial:f.Serial||"",cat:f.Cat||"",insp:f.InspDate||"",
       status:f.Status||"in",holder:f.Holder||"",since:f.SinceDate||"",note:f.Note||""}),
-    to:r=>({Title:r.name,AppId:r.id,Serial:r.serial,Cat:r.cat,InspDate:r.insp,Status:r.status,
+    to:r=>({Title:r.name,AppKey:r.id,Serial:r.serial,Cat:r.cat,InspDate:r.insp,Status:r.status,
       Holder:r.holder,SinceDate:r.since,Note:r.note})
   },
   toolLog:{
-    from:f=>({id:f.AppId||uid(),toolId:f.ToolId||"",empId:f.EmpId||"",action:f.Action||"",at:f.AtDate||"",note:f.Note||""}),
-    to:r=>({Title:r.action+" "+r.at,AppId:r.id,ToolId:r.toolId,EmpId:r.empId,Action:r.action,AtDate:r.at,Note:r.note})
+    from:f=>({id:f.AppKey||uid(),toolId:f.ToolId||"",empId:f.EmpId||"",action:f.Action||"",at:f.AtDate||"",note:f.Note||""}),
+    to:r=>({Title:r.action+" "+r.at,AppKey:r.id,ToolId:r.toolId,EmpId:r.empId,Action:r.action,AtDate:r.at,Note:r.note})
   },
   vehicles:{
-    from:f=>({id:f.AppId||uid(),name:f.Title||"",unit:f.Unit||"",plate:f.Plate||"",year:+f.Year||0,
+    from:f=>({id:f.AppKey||uid(),name:f.Title||"",unit:f.Unit||"",plate:f.Plate||"",year:+f.Year||0,
       odo:+f.Odo||0,driver:f.Driver||"",regDue:f.RegDue||"",insDue:f.InsDue||"",safetyDue:f.SafetyDue||"",tires:f.Tires||"summer"}),
-    to:r=>({Title:r.name,AppId:r.id,Unit:r.unit,Plate:r.plate,Year:r.year,Odo:r.odo,Driver:r.driver,
+    to:r=>({Title:r.name,AppKey:r.id,Unit:r.unit,Plate:r.plate,Year:r.year,Odo:r.odo,Driver:r.driver,
       RegDue:r.regDue,InsDue:r.insDue,SafetyDue:r.safetyDue,Tires:r.tires})
   },
   service:{
-    from:f=>({id:f.AppId||uid(),vehId:f.VehId||"",type:f.SvcType||"",date:f.SvcDate||"",odo:+f.Odo||0,cost:f.Cost||"",note:f.Note||""}),
-    to:r=>({Title:(r.type||"Service")+" "+r.date,AppId:r.id,VehId:r.vehId,SvcType:r.type,SvcDate:r.date,Odo:r.odo||0,Cost:String(r.cost||""),Note:r.note})
+    from:f=>({id:f.AppKey||uid(),vehId:f.VehId||"",type:f.SvcType||"",date:f.SvcDate||"",odo:+f.Odo||0,cost:f.Cost||"",note:f.Note||""}),
+    to:r=>({Title:(r.type||"Service")+" "+r.date,AppKey:r.id,VehId:r.vehId,SvcType:r.type,SvcDate:r.date,Odo:r.odo||0,Cost:String(r.cost||""),Note:r.note})
   },
   incidents:{
-    from:f=>({id:f.AppId||uid(),date:f.IncDate||"",kind:f.Kind||"",empId:f.EmpId||"",where:f.Loc||"",
+    from:f=>({id:f.AppKey||uid(),date:f.IncDate||"",kind:f.Kind||"",empId:f.EmpId||"",where:f.Loc||"",
       what:f.What||"",action:f.Action||"",closed:t2b(f.Closed)}),
-    to:r=>({Title:(r.kind||"Incident")+" "+r.date,AppId:r.id,IncDate:r.date,Kind:r.kind,EmpId:r.empId,
+    to:r=>({Title:(r.kind||"Incident")+" "+r.date,AppKey:r.id,IncDate:r.date,Kind:r.kind,EmpId:r.empId,
       Loc:r.where,What:r.what,Action:r.action,Closed:b2t(r.closed)})
   },
   acks:{
-    from:f=>({id:f.AppId||uid(),empId:f.EmpId||"",polId:f.PolId||"",at:f.AtDate||""}),
-    to:r=>({Title:"Ack "+r.at,AppId:r.id,EmpId:r.empId,PolId:r.polId,AtDate:r.at})
+    from:f=>({id:f.AppKey||uid(),empId:f.EmpId||"",polId:f.PolId||"",at:f.AtDate||""}),
+    to:r=>({Title:"Ack "+r.at,AppKey:r.id,EmpId:r.empId,PolId:r.polId,AtDate:r.at})
   }
 };
 const COLLECTIONS=Object.keys(M);
