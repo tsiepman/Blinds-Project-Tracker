@@ -371,7 +371,7 @@ async function deleteItem(listName,itemId){
    Policies are a small fixed list maintained in code (see seed()); only
    who-signed-what (HR_Acks) is synced.
    ========================================================================= */
-const b2t=v=>v?"Yes":"No", t2b=v=>v==="Yes"||v===true;
+const b2t=v=>!!v, t2b=v=>v===true||v==="Yes"||v===1;
 
 const M={
   employees:{
