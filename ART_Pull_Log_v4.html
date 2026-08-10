@@ -493,6 +493,48 @@ async function spFetch(method, path, body) {
   return r.json();
 }
 
+// ── ARCHIVE SNAPSHOT (auto-saved CSV for invoice reconciliation) ──
+const SNAPSHOT_FOLDER = 'Pull Log/Archives';
+
+async function spPutFile(path, text, contentType) {
+  const tok = await getToken();
+  const r = await fetch('https://graph.microsoft.com/v1.0' + path, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': contentType || 'text/csv' },
+    body: new Blob([text], { type: contentType || 'text/csv' })
+  });
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e?.error?.message || 'HTTP ' + r.status); }
+  return r.json();
+}
+
+function encodePath(p) { return p.split('/').map(encodeURIComponent).join('/'); }
+
+function buildArchiveCSV(records, weekLabel) {
+  const head = ['Week Of','Installer','Bar Code','Product Name','SKU','Mfr SKU','Vendor','Unit Cost','Qty','Line Total','Date','Job'];
+  const rows = [head];
+  records.forEach(f => rows.push([
+    weekLabel, f.Installer||'', f.Barcode||'', f.ProductName||'', f.SKU||'', f.MfrSKU||'',
+    f.Vendor||'', f.UnitCost||'0', f.Qty||'1', f.LineTotal||'0', f.DateScanned||'', f.Job||''
+  ]));
+  return rows.map(r => r.map(v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"').join(',')).join('\r\n');
+}
+
+// Writes the week's archive to SharePoint as a CSV. Never blocks the archive itself.
+async function saveArchiveSnapshot(records, weekLabel) {
+  try {
+    const sid = await getSiteId();
+    const slug = String(weekLabel).replace(/[^\w-]+/g,'_').replace(/^_+|_+$/g,'');
+    const fname = 'ART_Archive_' + slug + '.csv';
+    await spPutFile('/sites/' + sid + '/drive/root:/' + encodePath(SNAPSHOT_FOLDER + '/' + fname) + ':/content',
+                    buildArchiveCSV(records, weekLabel), 'text/csv');
+    toast('Saved ' + fname + ' to ' + SNAPSHOT_FOLDER, 'success');
+    return true;
+  } catch(e) {
+    toast('Archive saved, but the CSV snapshot failed: ' + e.message, 'warning');
+    return false;
+  }
+}
+
 async function getSiteId() {
   if (siteId) return siteId;
   const d = await spFetch('GET', '/sites/' + SITE_HOSTNAME + ':' + SITE_PATH);
@@ -847,6 +889,7 @@ async function doArchive() {
       await createItem(LIST.archive, { WeekOf: weekLabel, Installer: f.Installer||''  , Barcode: f.Barcode||''  , ProductName: f.ProductName||''  , SKU: f.SKU||''  , MfrSKU: f.MfrSKU||''  , Vendor: f.Vendor||''  , UnitCost: f.UnitCost||'0', Qty: f.Qty||'1', LineTotal: f.LineTotal||'0', DateScanned: f.DateScanned||''  , Job: f.Job||''   });
       done++; fill.style.width=Math.round(done/(total*2)*100)+'%';
     }
+    await saveArchiveSnapshot(allPulls.map(i => i.fields || {}), weekLabel);
     for (const item of allPulls) { await deleteItem(LIST.pull, item.id); done++; fill.style.width=Math.round(done/(total*2)*100)+'%'; }
     localStorage.setItem('art_last_archived', new Date().toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}));
     pullEntries=[]; renderPull(); updateWeekLabel(); setStatus('connected','Connected');
