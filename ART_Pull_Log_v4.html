@@ -971,41 +971,53 @@ async function parseXLSX(arrayBuf) {
       shared.push(s);
     }
   }
-  let sheetPath = 'xl/worksheets/sheet1.xml';
+  // Map every sheet, so a workbook with a cover/read-me tab still works.
+  const paths = [];
   const wb = await zip.text('xl/workbook.xml'), rel = await zip.text('xl/_rels/workbook.xml.rels');
   if (wb && rel) {
-    const sh = new DOMParser().parseFromString(wb, 'application/xml').getElementsByTagName('sheet')[0];
-    const rid = sh && (sh.getAttribute('r:id') || sh.getAttribute('id'));
-    if (rid) {
-      const rels = new DOMParser().parseFromString(rel, 'application/xml').getElementsByTagName('Relationship');
+    const shs = new DOMParser().parseFromString(wb, 'application/xml').getElementsByTagName('sheet');
+    const rels = new DOMParser().parseFromString(rel, 'application/xml').getElementsByTagName('Relationship');
+    for (let s = 0; s < shs.length; s++) {
+      const rid = shs[s].getAttribute('r:id') || shs[s].getAttribute('id');
       for (let r = 0; r < rels.length; r++) {
-        if (rels[r].getAttribute('Id') === rid) { sheetPath = 'xl/' + rels[r].getAttribute('Target').replace(/^\/?xl\//, '').replace(/^\//, ''); break; }
+        if (rels[r].getAttribute('Id') === rid) {
+          paths.push({ name: shs[s].getAttribute('name') || ('Sheet' + (s + 1)),
+                       path: 'xl/' + rels[r].getAttribute('Target').replace(/^\/?xl\//, '').replace(/^\//, '') });
+          break;
+        }
       }
     }
   }
-  const shTxt = await zip.text(sheetPath);
-  if (!shTxt) throw new Error('Could not read the first worksheet.');
-  const rowsEl = new DOMParser().parseFromString(shTxt, 'application/xml').getElementsByTagName('row');
-  const out = [];
-  for (let ri = 0; ri < rowsEl.length; ri++) {
-    const cells = rowsEl[ri].getElementsByTagName('c'), arr = [];
-    for (let ci = 0; ci < cells.length; ci++) {
-      const c = cells[ci], idx = colToIdx(c.getAttribute('r') || ''), t = c.getAttribute('t');
-      let val = '';
-      if (t === 'inlineStr') {
-        const its = c.getElementsByTagName('t');
-        for (let q = 0; q < its.length; q++) val += its[q].textContent;
-      } else {
-        const v = c.getElementsByTagName('v')[0];
-        val = v ? v.textContent : '';
-        if (t === 's') val = shared[parseInt(val, 10)] || '';
+  if (!paths.length) paths.push({ name: 'Sheet1', path: 'xl/worksheets/sheet1.xml' });
+
+  const sheets = [];
+  for (const sp of paths) {
+    const shTxt = await zip.text(sp.path);
+    if (!shTxt) continue;
+    const rowsEl = new DOMParser().parseFromString(shTxt, 'application/xml').getElementsByTagName('row');
+    const out = [];
+    for (let ri = 0; ri < rowsEl.length; ri++) {
+      const cells = rowsEl[ri].getElementsByTagName('c'), arr = [];
+      for (let ci = 0; ci < cells.length; ci++) {
+        const c = cells[ci], idx = colToIdx(c.getAttribute('r') || ''), t = c.getAttribute('t');
+        let val = '';
+        if (t === 'inlineStr') {
+          const its = c.getElementsByTagName('t');
+          for (let q = 0; q < its.length; q++) val += its[q].textContent;
+        } else {
+          const v = c.getElementsByTagName('v')[0];
+          val = v ? v.textContent : '';
+          if (t === 's') val = shared[parseInt(val, 10)] || '';
+        }
+        while (arr.length < idx) arr.push('');
+        arr[idx] = val;
       }
-      while (arr.length < idx) arr.push('');
-      arr[idx] = val;
+      out.push(arr);
     }
-    out.push(arr);
+    sheets.push({ name: sp.name, rows: out.filter(r => r.some(v => String(v).trim() !== '')) });
   }
-  return out.filter(r => r.some(v => String(v).trim() !== ''));
+  if (!sheets.length) throw new Error('Could not read any worksheet.');
+  return sheets;
 }
 
 function parseDelimited(text) {
@@ -1037,28 +1049,37 @@ async function mergeProductsFile(event) {
   const pb = document.getElementById('import-progress'), fill = document.getElementById('import-fill');
   try {
     status.textContent = 'Reading ' + file.name + '…';
-    const rows = /\.xlsx$/i.test(file.name)
+    const sheets = /\.xlsx$/i.test(file.name)
       ? await parseXLSX(await file.arrayBuffer())
-      : parseDelimited(await file.text());
-    if (rows.length < 2) throw new Error('File looks empty.');
+      : [{ name: file.name, rows: parseDelimited(await file.text()) }];
 
-    // find the header row (tolerates title rows above it)
-    let hi = 0, best = -1;
-    for (let i = 0; i < Math.min(rows.length, 15); i++) {
-      const j = rows[i].map(c => String(c || '').toLowerCase()).join('|');
-      let sc = 0;
-      ['bar', 'code', 'name', 'sku', 'cost', 'vendor', 'price', 'desc'].forEach(k => { if (j.indexOf(k) >= 0) sc++; });
-      if (sc > best) { best = sc; hi = i; }
+    // A workbook may lead with a cover or read-me tab — use the first sheet
+    // that actually carries a barcode column and a name column.
+    let rows = null, hi = 0, H = null, bcIdx = -1, nameIdx = -1, skuIdx = -1, mfrIdx = -1, costIdx = -1, vendIdx = -1, usedSheet = '';
+    for (const sheet of sheets) {
+      if (!sheet.rows || sheet.rows.length < 2) continue;
+      let h = 0, best = -1;
+      for (let i = 0; i < Math.min(sheet.rows.length, 15); i++) {
+        const j = sheet.rows[i].map(c => String(c || '').toLowerCase()).join('|');
+        let sc = 0;
+        ['bar', 'code', 'name', 'sku', 'cost', 'vendor', 'price', 'desc'].forEach(k => { if (j.indexOf(k) >= 0) sc++; });
+        if (sc > best) { best = sc; h = i; }
+      }
+      const hdr = sheet.rows[h].map(x => String(x || '').trim());
+      const find = re => hdr.findIndex(x => re.test(x));
+      const b = find(/bar.*code|^barcode$|^upc$/i), n = find(/product.*name|^name$|descr/i);
+      if (b < 0 || n < 0) continue;
+      rows = sheet.rows; hi = h; H = hdr; usedSheet = sheet.name;
+      bcIdx = b; nameIdx = n;
+      skuIdx = find(/product.*sku|^sku$|part/i);
+      mfrIdx = find(/mfr.*sku|manufact/i);
+      costIdx = find(/unit.*cost|^cost$|price/i);
+      vendIdx = find(/vendor|supplier/i);
+      break;
     }
-    const H = rows[hi].map(h => String(h || '').trim());
-    const find = re => H.findIndex(h => re.test(h));
-    const bcIdx = find(/bar.*code|^barcode$|^upc$/i);
-    const nameIdx = find(/product.*name|^name$|descr/i);
-    const skuIdx = find(/product.*sku|^sku$|part/i);
-    const mfrIdx = find(/mfr.*sku|manufact/i);
-    const costIdx = find(/unit.*cost|^cost$|price/i);
-    const vendIdx = find(/vendor|supplier/i);
-    if (bcIdx < 0 || nameIdx < 0) throw new Error('Need at least a Bar Code column and a Product Name column.');
+    if (!rows) throw new Error('Need at least a Bar Code column and a Product Name column. Checked ' +
+                               sheets.length + ' sheet(s): ' + sheets.map(s => s.name).join(', '));
+    if (sheets.length > 1) status.textContent = 'Reading sheet "' + usedSheet + '"…';
 
     const parsed = [];
     const seen = {};
