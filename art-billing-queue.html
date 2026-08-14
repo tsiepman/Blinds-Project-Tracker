@@ -74,7 +74,7 @@
 
   /* ── Layout ── */
   main {
-    max-width: 1100px;
+    max-width: 1260px;
     margin: 0 auto;
     padding: 28px 24px 60px;
   }
@@ -120,10 +120,12 @@
   }
   .form-row {
     display: grid;
-    grid-template-columns: 110px 1fr 1fr 130px 140px 100px 120px auto;
     gap: 10px;
     align-items: end;
   }
+  .form-row + .form-row { margin-top: 12px; }
+  .form-row.r1 { grid-template-columns: 110px 1fr 1fr 130px 140px; }
+  .form-row.r2 { grid-template-columns: 150px 110px 120px 1fr auto; }
   .field label {
     display: block;
     font-size: 11px;
@@ -235,6 +237,47 @@
   }
   .type-pill.co { background: var(--co-dim); color: var(--co); }
   .type-pill.proj { background: var(--proj-dim); color: var(--proj); }
+
+  /* phase pill */
+  .phase-pill {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+    background: var(--surface2);
+    color: var(--text-mid);
+    border: 1px solid var(--border);
+  }
+  .phase-none { color: var(--text-dim); font-size: 12px; }
+
+  /* notes */
+  .note-cell { cursor: text; max-width: 220px; }
+  .note-text {
+    font-size: 12px;
+    color: var(--text-mid);
+    line-height: 1.4;
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .note-text.empty { color: var(--text-dim); font-style: italic; }
+  .note-cell:hover .note-text.empty { color: var(--text-mid); }
+  .note-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 6px 8px;
+    outline: none;
+    resize: vertical;
+    min-height: 44px;
+  }
 
   /* age indicator */
   .age {
@@ -355,8 +398,9 @@
 
   @media (max-width: 900px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
-    .form-row { grid-template-columns: 1fr 1fr; }
-    .form-row .btn-add { grid-column: span 2; }
+    .form-row.r1, .form-row.r2 { grid-template-columns: 1fr 1fr; }
+    .form-row .btn-add { grid-column: span 2; width: 100%; }
+    .note-cell { max-width: none; }
   }
 </style>
 </head>
@@ -398,7 +442,7 @@
     <!-- Add form -->
     <div class="add-card">
       <h2>Add to queue</h2>
-      <div class="form-row">
+      <div class="form-row r1">
         <div class="field">
           <label>Type</label>
           <select id="f-type">
@@ -422,6 +466,12 @@
           <label>CO #</label>
           <input id="f-conum" type="text" placeholder="e.g. CO-004">
         </div>
+      </div>
+      <div class="form-row r2">
+        <div class="field">
+          <label>Phase</label>
+          <select id="f-phase"></select>
+        </div>
         <div class="field">
           <label>Amount ($)</label>
           <input id="f-amount" type="number" min="0" step="0.01" placeholder="0.00">
@@ -434,6 +484,10 @@
             <option value="Lyall">Lyall</option>
             <option value="Trevor">Trevor</option>
           </select>
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <input id="f-notes" type="text" placeholder="e.g. rough-in only, install to follow">
         </div>
         <div class="field">
           <button class="btn-add" id="btn-add" onclick="addItem()">Add →</button>
@@ -454,10 +508,12 @@
           <th>Type</th>
           <th>Client</th>
           <th>Project</th>
+          <th>Phase</th>
           <th>D-Tools #</th>
           <th>CO #</th>
           <th>Rep</th>
           <th>Amount</th>
+          <th>Notes</th>
           <th>Added</th>
           <th>Age</th>
           <th></th>
@@ -483,10 +539,12 @@
             <th>Type</th>
             <th>Client</th>
             <th>Project</th>
+            <th>Phase</th>
             <th>D-Tools #</th>
             <th>CO #</th>
             <th>Rep</th>
             <th>Amount</th>
+            <th>Notes</th>
             <th>Added</th>
             <th>Invoiced</th>
             <th>By</th>
@@ -510,6 +568,24 @@ const SITE_PATH   = '/sites/ART43';
 const LIST_NAME   = 'ARTBillingQueue';
 const DROP_WEEKS  = 4; // weeks after invoicing before item drops off
 const WARN_DAYS   = 5; // days before "overdue" highlight kicks in
+
+// Job phases offered in the Phase dropdown. Edit this list to change the options —
+// it drives the form select and nothing else needs touching.
+const PHASES = [
+  'Rough-in',
+  'Trim/Install',
+  'Final',
+  'Service',
+  'Deposit',
+  'Progress billing'
+];
+
+// Columns the tool needs. Checked against the live list on every load and added
+// if missing, so the list schema keeps itself in sync with the code.
+const REQUIRED_COLUMNS = [
+  { name: 'Phase', text: {} },
+  { name: 'Notes', text: { allowMultipleLines: true, appendChangesToExistingText: false, linesForEditing: 4 } }
+];
 
 // Users who can mark as invoiced (matched against AD display name)
 const BILLING_USERS = ['Brian Benson', 'Terry Young'];
@@ -595,6 +671,7 @@ async function getSiteAndList() {
     const lists = await graph(`/sites/${siteId}/lists?$filter=displayName eq '${LIST_NAME}'`);
     if (lists.value.length > 0) {
       listId = lists.value[0].id;
+      await ensureColumns();
       return;
     }
   } catch(e) {}
@@ -608,9 +685,11 @@ async function getSiteAndList() {
         { name: 'ItemType',     text: {} },
         { name: 'ClientName',   text: {} },
         { name: 'ProjectName',  text: {} },
+        { name: 'Phase',        text: {} },
         { name: 'DToolsNum',    text: {} },
         { name: 'CONum',        text: {} },
         { name: 'Amount',       number: {} },
+        { name: 'Notes',        text: { allowMultipleLines: true, appendChangesToExistingText: false, linesForEditing: 4 } },
         { name: 'SalesRep',     text: {} },
         { name: 'AddedBy',      text: {} },
         { name: 'Invoiced',     boolean: {} },
@@ -621,6 +700,36 @@ async function getSiteAndList() {
     })
   });
   listId = newList.id;
+}
+
+// Adds any columns in REQUIRED_COLUMNS that the live list is missing. Runs on
+// every load; a no-op once the columns exist. Needs Manage Lists rights on the
+// site — a user without them just sees a warning and the tool keeps working.
+async function ensureColumns() {
+  let existing;
+  try {
+    const res = await graph(`/sites/${siteId}/lists/${listId}/columns`);
+    existing = new Set(res.value.map(c => c.name));
+  } catch(e) {
+    console.warn('Could not read list columns:', e);
+    return;
+  }
+
+  const missing = REQUIRED_COLUMNS.filter(c => !existing.has(c.name));
+  if (missing.length === 0) return;
+
+  for (const col of missing) {
+    try {
+      await graph(`/sites/${siteId}/lists/${listId}/columns`, {
+        method: 'POST',
+        body: JSON.stringify(col)
+      });
+      console.log(`Added missing list column: ${col.name}`);
+    } catch(e) {
+      console.error(`Couldn't add column "${col.name}":`, e);
+      toast(`The ${col.name} column is missing and couldn't be added. Ask a site owner to open this page once.`, 'error');
+    }
+  }
 }
 
 async function getItems() {
@@ -684,6 +793,63 @@ function canInvoice() {
   return isBillingUser(currentUser);
 }
 
+function phaseCell(phase) {
+  if (!phase) return '<span class="phase-none">—</span>';
+  return `<span class="phase-pill">${esc(phase)}</span>`;
+}
+
+function noteText(note) {
+  const has = note && String(note).trim();
+  return has
+    ? `<span class="note-text">${esc(note)}</span>`
+    : `<span class="note-text empty">Add a note</span>`;
+}
+
+// ── INLINE NOTE EDITING ───────────────────────────────────────────────────────
+// Click any note cell on a pending row to edit. Enter saves, Shift+Enter adds a
+// line, Escape cancels. Clicking away also saves.
+function startEditNote(td, id) {
+  if (td.querySelector('textarea')) return;
+
+  const item = allItems.find(i => i.id === id);
+  const original = (item && item.Notes) || '';
+
+  td.innerHTML = '<textarea class="note-input" rows="2"></textarea>';
+  const ta = td.querySelector('textarea');
+  ta.value = original;
+  ta.focus();
+  ta.setSelectionRange(original.length, original.length);
+
+  let closed = false;
+  const finish = async (save) => {
+    if (closed) return;
+    closed = true;
+    const val = ta.value.trim();
+    if (save && val !== original.trim()) {
+      await saveNote(id, val);
+    }
+    render();
+  };
+
+  ta.addEventListener('blur', () => finish(true));
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+}
+
+async function saveNote(id, val) {
+  try {
+    await updateItem(id, { Notes: val });
+    const item = allItems.find(i => i.id === id);
+    if (item) item.Notes = val;
+    toast(val ? 'Note saved.' : 'Note cleared.', 'success');
+  } catch(e) {
+    toast('Note didn\'t save. Check connection and try again.', 'error');
+    console.error(e);
+  }
+}
+
 // ── EMAIL NOTIFY ───────────────────────────────────────────────────────────────
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g,
@@ -717,10 +883,12 @@ async function notifyBilling(fields, recipients) {
       <table style="border-collapse:collapse;margin:12px 0">
         ${row('Client', client)}
         ${row('Project', project)}
+        ${row('Phase', fields.Phase)}
         ${row('D-Tools #', fields.DToolsNum)}
         ${fields.ItemType === 'CO' ? row('CO #', fields.CONum) : ''}
         ${row('Amount', amount)}
         ${row('Sales rep', fields.SalesRep)}
+        ${row('Notes', fields.Notes)}
       </table>
       <p><a href="${esc(link)}" style="color:#0a66c2;text-decoration:none">Open the billing queue →</a></p>
     </div>`;
@@ -764,7 +932,7 @@ function render() {
   // Pending table
   const pb = document.getElementById('body-pending');
   if (pending.length === 0) {
-    pb.innerHTML = `<tr><td colspan="10"><div class="empty"><strong>Queue is clear</strong>Nothing pending invoice right now.</div></td></tr>`;
+    pb.innerHTML = `<tr><td colspan="12"><div class="empty"><strong>Queue is clear</strong>Nothing pending invoice right now.</div></td></tr>`;
   } else {
     pending.sort((a, b) => new Date(a.Created) - new Date(b.Created));
     pb.innerHTML = pending.map(item => {
@@ -775,10 +943,12 @@ function render() {
         <td><span class="type-pill ${isPro ? 'proj' : 'co'}">${item.ItemType}</span></td>
         <td>${item.ClientName || '—'}</td>
         <td>${item.ProjectName || '—'}</td>
+        <td>${phaseCell(item.Phase)}</td>
         <td style="color:var(--text-mid);font-size:12px">${item.DToolsNum || '—'}</td>
         <td style="color:var(--text-mid);font-size:12px">${item.CONum || '—'}</td>
         <td style="color:var(--text-mid);font-size:12px">${item.SalesRep || '—'}</td>
         <td class="amount">${fmtAmount(item.Amount)}</td>
+        <td class="note-cell" onclick="startEditNote(this, '${item.id}')" title="Click to edit">${noteText(item.Notes)}</td>
         <td style="color:var(--text-mid);font-size:12px">${fmtDate(item.Created)}</td>
         <td><span class="age ${age.cls}">${age.text}</span></td>
         <td style="display:flex;gap:6px;align-items:center">
@@ -792,7 +962,7 @@ function render() {
   // Done table
   const db = document.getElementById('body-done');
   if (done.length === 0) {
-    db.innerHTML = `<tr><td colspan="10"><div class="empty"><strong>Nothing here</strong>Invoiced items appear here for ${DROP_WEEKS} weeks.</div></td></tr>`;
+    db.innerHTML = `<tr><td colspan="12"><div class="empty"><strong>Nothing here</strong>Invoiced items appear here for ${DROP_WEEKS} weeks.</div></td></tr>`;
   } else {
     done.sort((a, b) => new Date(b.InvoicedDate) - new Date(a.InvoicedDate));
     db.innerHTML = done.map(item => {
@@ -801,10 +971,12 @@ function render() {
         <td><span class="type-pill ${isPro ? 'proj' : 'co'}">${item.ItemType}</span></td>
         <td>${item.ClientName || '—'}</td>
         <td>${item.ProjectName || '—'}</td>
+        <td>${phaseCell(item.Phase)}</td>
         <td style="font-size:12px">${item.DToolsNum || '—'}</td>
         <td style="font-size:12px">${item.CONum || '—'}</td>
         <td style="font-size:12px;color:var(--text-mid)">${item.SalesRep || '—'}</td>
         <td class="amount">${fmtAmount(item.Amount)}</td>
+        <td style="max-width:220px">${noteText(item.Notes)}</td>
         <td style="font-size:12px;color:var(--text-dim)">${fmtDate(item.Created)}</td>
         <td><span class="invoiced-badge">✓ ${fmtDate(item.InvoicedDate)}</span></td>
         <td style="font-size:12px;color:var(--text-mid)">${item.InvoicedBy || '—'}</td>
@@ -821,6 +993,8 @@ async function addItem() {
   const dtnum   = document.getElementById('f-dtnum').value.trim();
   const conum   = document.getElementById('f-conum').value.trim();
   const amount  = parseFloat(document.getElementById('f-amount').value) || 0;
+  const phase   = document.getElementById('f-phase').value;
+  const notes   = document.getElementById('f-notes').value.trim();
 
   if (!client && !project) { toast('Enter at least a client or project name.', 'error'); return; }
 
@@ -833,9 +1007,11 @@ async function addItem() {
       ItemType: type,
       ClientName: client,
       ProjectName: project,
+      Phase: phase,
       DToolsNum: dtnum,
       CONum: type === 'CO' ? conum : '',
       Amount: amount,
+      Notes: notes,
       SalesRep: document.getElementById('f-salesrep').value,
       AddedBy: currentUser || 'Unknown',
       Invoiced: false
@@ -844,10 +1020,11 @@ async function addItem() {
     allItems.push({ id: created.id, ...created.fields, Created: new Date().toISOString() });
 
     // Clear form
-    ['f-client','f-project','f-dtnum','f-conum','f-amount'].forEach(id => {
+    ['f-client','f-project','f-dtnum','f-conum','f-amount','f-notes'].forEach(id => {
       document.getElementById(id).value = '';
     });
     document.getElementById('f-salesrep').value = '';
+    document.getElementById('f-phase').value = '';
     render();
 
     // Notify the billing team — best-effort, never blocks the add.
@@ -922,6 +1099,11 @@ function toggleCompleted() {
   document.getElementById('completed-section').style.display = showCompleted ? 'block' : 'none';
   document.getElementById('toggle-label').textContent = showCompleted ? 'Hide' : 'Show';
 }
+
+// Build the Phase dropdown from the PHASES config list
+document.getElementById('f-phase').innerHTML =
+  '<option value="">— Select —</option>' +
+  PHASES.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
 
 // Toggle CO # field visibility
 document.getElementById('f-type').addEventListener('change', function() {
