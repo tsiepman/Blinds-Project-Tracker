@@ -36,7 +36,7 @@
   .home-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 52px); padding: 40px 20px; }
   .home-title { font-size: 28px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 6px; }
   .home-sub { color: var(--text2); font-size: 15px; margin-bottom: 40px; }
-  .installer-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; width: 100%; max-width: 720px; }
+  .installer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; width: 100%; max-width: 720px; }
   .installer-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 16px; text-align: center; cursor: pointer; transition: all .15s; display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .installer-card:hover { border-color: var(--accent); background: var(--surface2); transform: translateY(-1px); }
   .installer-avatar { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-dim); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; }
@@ -368,7 +368,7 @@ const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
 const SITE_PATH = '/sites/ART43';
 const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
-const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris', 'Barry', 'Andrew', 'Darwin', 'Yoan', 'Trevor', 'Lyall'];
+const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris M', 'Chris T', 'Barry', 'Andrew', 'Darwin', 'Yoan', 'Trevor', 'Lyall'];
 const LIST = { pull: 'PullLog', returns: 'ReturnsLog', archive: 'Archive', products: 'ProductLookup' };
 
 // Seed archive data from Excel
