@@ -5,24 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ART Wire Tracker</title>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<link rel="stylesheet" href="art-theme.css">
 <style>
+  /* Legacy names used throughout this file, mapped onto the shared theme.
+     --bg, --border, --text, --accent, --red now come from art-theme.css.
+     Status colours became translucent tints so they read on a dark table. */
   :root {
-    --navy: #1a2940;
-    --navy-light: #243a5e;
-    --accent: #e8a33d;
-    --bg: #f4f6f9;
-    --card: #ffffff;
-    --text: #1f2937;
-    --muted: #6b7280;
-    --border: #e5e7eb;
-    --green-bg: #e2efda; --green-tx: #2f6b2f;
-    --orange-bg: #fce4d6; --orange-tx: #9a4b12;
-    --blue-bg: #deeaf1; --blue-tx: #1f5a82;
-    --gray-bg: #f2f2f2; --gray-tx: #555;
-    --red: #c0392b;
+    --navy:       var(--surface);
+    --navy-light: var(--surface2);
+    --card:       var(--surface);
+    --muted:      var(--text-mid);
+    --green-bg: rgba(34,197,94,0.16);   --green-tx:  var(--green);
+    --orange-bg: rgba(243,156,18,0.16); --orange-tx: var(--yellow);
+    --blue-bg: rgba(129,140,248,0.16);  --blue-tx:   var(--co);
+    --gray-bg: var(--surface2);         --gray-tx:   var(--text-mid);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
 
   /* ===== Sign-in screen ===== */
   #signinScreen {
@@ -30,41 +29,41 @@
     display: flex; align-items: center; justify-content: center; z-index: 1000;
   }
   .signin-card {
-    background: #fff; border-radius: 14px; padding: 44px 40px; width: 380px; max-width: 92vw;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 44px 40px; width: 380px; max-width: 92vw;
     text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
   }
-  .signin-card h1 { font-size: 22px; color: var(--navy); margin-bottom: 6px; letter-spacing: 0.5px; }
+  .signin-card h1 { font-size: 22px; color: var(--text); margin-bottom: 6px; letter-spacing: 0.5px; }
   .signin-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
   .signin-card .logo { font-size: 38px; margin-bottom: 12px; }
   .btn-signin {
-    background: var(--navy); color: #fff; border: none; border-radius: 8px; padding: 13px 28px;
+    background: var(--accent); color: var(--on-accent); border: none; border-radius: 8px; padding: 13px 28px;
     font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; transition: background 0.15s;
   }
-  .btn-signin:hover { background: var(--navy-light); }
+  .btn-signin:hover { filter: brightness(1.08); }
   #signinStatus { margin-top: 16px; font-size: 13px; color: var(--muted); min-height: 18px; }
 
   /* ===== Header ===== */
   header {
-    background: var(--navy); color: #fff; padding: 14px 20px;
+    background: var(--surface); color: var(--text); border-bottom: 1px solid var(--border); padding: 14px 20px;
     display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
   }
   header .title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
   header .title span { color: var(--accent); }
   header .userbox { font-size: 12px; opacity: 0.85; display: flex; align-items: center; gap: 12px; }
   header .userbox button {
-    background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4);
+    background: transparent; color: var(--text-mid); border: 1px solid var(--border);
     border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer;
   }
-  header .userbox button:hover { background: rgba(255,255,255,0.12); }
+  header .userbox button:hover { border-color: var(--accent); color: var(--accent); }
 
   /* ===== Tabs ===== */
-  nav { background: #fff; border-bottom: 1px solid var(--border); display: flex; padding: 0 12px; overflow-x: auto; }
+  nav { background: var(--surface); border-bottom: 1px solid var(--border); display: flex; padding: 0 12px; overflow-x: auto; }
   nav button {
     background: none; border: none; padding: 14px 18px; font-size: 14px; font-weight: 600;
     color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap;
   }
-  nav button.active { color: var(--navy); border-bottom-color: var(--accent); }
-  nav button:hover { color: var(--navy); }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  nav button:hover { color: var(--text); }
 
   main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
   .tabpane { display: none; }
@@ -75,35 +74,35 @@
     background: var(--card); border-radius: 14px; padding: 28px; max-width: 560px; margin: 0 auto;
     box-shadow: 0 4px 16px rgba(0,0,0,0.07);
   }
-  .scan-card h2 { font-size: 16px; color: var(--navy); margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; }
+  .scan-card h2 { font-size: 16px; color: var(--text); margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; }
   .field { margin-bottom: 18px; }
   .field label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
   .field input, .field select {
     width: 100%; padding: 12px 14px; font-size: 16px; border: 2px solid var(--border); border-radius: 8px;
-    background: #fff; color: var(--text);
+    background: var(--surface2); color: var(--text);
   }
   .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
   #barcodeInput { font-size: 20px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
   .decode-hint { font-size: 13px; margin-top: 6px; min-height: 17px; font-weight: 600; }
-  .decode-hint.ok { color: #2f6b2f; }
+  .decode-hint.ok { color: var(--green); }
   .decode-hint.bad { color: var(--red); }
 
   .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .action-btn {
-    padding: 14px 8px; border: 2px solid var(--border); border-radius: 10px; background: #fff;
+    padding: 14px 8px; border: 2px solid var(--border); border-radius: 10px; background: var(--surface2);
     font-size: 14px; font-weight: 700; cursor: pointer; color: var(--muted); transition: all 0.12s;
   }
-  .action-btn[data-action="Received"].sel    { background: var(--green-bg); border-color: #6aa84f; color: var(--green-tx); }
-  .action-btn[data-action="Checked Out"].sel { background: var(--orange-bg); border-color: #e08a3c; color: var(--orange-tx); }
-  .action-btn[data-action="Checked In"].sel  { background: var(--blue-bg); border-color: #5b9bd5; color: var(--blue-tx); }
-  .action-btn[data-action="Empty"].sel       { background: var(--gray-bg); border-color: #999; color: var(--gray-tx); }
+  .action-btn[data-action="Received"].sel    { background: var(--green-bg); border-color: var(--green); color: var(--green-tx); }
+  .action-btn[data-action="Checked Out"].sel { background: var(--orange-bg); border-color: var(--yellow); color: var(--orange-tx); }
+  .action-btn[data-action="Checked In"].sel  { background: var(--blue-bg); border-color: var(--co); color: var(--blue-tx); }
+  .action-btn[data-action="Empty"].sel       { background: var(--gray-bg); border-color: var(--text-dim); color: var(--gray-tx); }
   .action-btn:hover { border-color: var(--accent); }
 
   #installerField, #footageField { display: none; }
 
   .btn-log {
     width: 100%; padding: 16px; font-size: 17px; font-weight: 800; letter-spacing: 1px;
-    background: var(--accent); color: var(--navy); border: none; border-radius: 10px; cursor: pointer;
+    background: var(--accent); color: var(--on-accent); border: none; border-radius: 10px; cursor: pointer;
     margin-top: 4px; transition: filter 0.12s;
   }
   .btn-log:hover { filter: brightness(1.07); }
@@ -114,7 +113,7 @@
     display: none;
   }
   #confirmMsg.ok { display: block; background: var(--green-bg); color: var(--green-tx); }
-  #confirmMsg.err { display: block; background: #fde8e6; color: var(--red); }
+  #confirmMsg.err { display: block; background: var(--red-dim); color: var(--red); }
 
   /* ===== Tables ===== */
   .table-card { background: var(--card); border-radius: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.07); overflow: hidden; }
@@ -125,18 +124,18 @@
   .table-toolbar input { flex: 1; min-width: 160px; }
   .table-toolbar .btn-sm {
     padding: 8px 14px; font-size: 13px; font-weight: 600; border: none; border-radius: 8px;
-    background: var(--navy); color: #fff; cursor: pointer;
+    background: var(--accent); color: var(--on-accent); cursor: pointer;
   }
-  .table-toolbar .btn-sm:hover { background: var(--navy-light); }
+  .table-toolbar .btn-sm:hover { filter: brightness(1.08); }
   .tbl-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { background: var(--navy); color: #fff; text-align: left; padding: 10px 12px; white-space: nowrap; position: sticky; top: 0; }
+  th { background: var(--surface2); color: var(--text-mid); text-align: left; padding: 10px 12px; white-space: nowrap; position: sticky; top: 0; }
   td { padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   tr.act-Received td    { background: var(--green-bg); }
   tr.act-CheckedOut td  { background: var(--orange-bg); }
   tr.act-CheckedIn td   { background: var(--blue-bg); }
-  tr.act-Empty td       { background: var(--gray-bg); color: #777; }
-  .empty-row td { text-align: center; color: var(--muted); padding: 30px; background: #fff !important; }
+  tr.act-Empty td       { background: var(--gray-bg); color: var(--text-mid); }
+  .empty-row td { text-align: center; color: var(--muted); padding: 30px; background: var(--surface) !important; }
 
   /* ===== Status summary chips ===== */
   .chips { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -144,11 +143,11 @@
     background: var(--card); border-radius: 10px; padding: 12px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     min-width: 110px;
   }
-  .chip .num { font-size: 24px; font-weight: 800; color: var(--navy); }
+  .chip .num { font-size: 24px; font-weight: 800; color: var(--text); }
   .chip .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
-  .chip.c-out .num { color: #b15a16; }
-  .chip.c-in .num { color: #2f6b2f; }
-  .chip.c-empty .num { color: #888; }
+  .chip.c-out .num { color: var(--yellow); }
+  .chip.c-in .num { color: var(--green); }
+  .chip.c-empty .num { color: var(--text-mid); }
 
   .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
   .badge.Received, .badge.CheckedIn { background: var(--green-bg); color: var(--green-tx); }
@@ -157,14 +156,14 @@
 
   #loadingBar {
     display: none; position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1200;
-    background: linear-gradient(90deg, var(--accent), #f5c97a, var(--accent)); background-size: 200% 100%;
+    background: linear-gradient(90deg, var(--accent), #ffd27a, var(--accent)); background-size: 200% 100%;
     animation: slide 1.2s linear infinite;
   }
   @keyframes slide { 0% { background-position: 0% 0; } 100% { background-position: 200% 0; } }
 
   #toast {
-    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--navy);
-    color: #fff; padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface2);
+    border: 1px solid var(--border); color: var(--text); padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 600;
     box-shadow: 0 8px 24px rgba(0,0,0,0.25); display: none; z-index: 1300; max-width: 90vw;
   }
   #toast.err { background: var(--red); }
@@ -193,9 +192,10 @@
 
 <!-- ============ APP ============ -->
 <header>
-  <div class="title">ART <span>WIRE TRACKER</span></div>
+  <div class="art-mark"><div class="art-mark-row"><span class="art-mark-box">ART</span><span class="art-mark-name">Wire Tracker</span></div></div>
   <div class="userbox">
     <span id="userName"></span>
+    <a class="art-back" href="index.html">← All tools</a>
     <button onclick="refreshAll()">↻ Refresh</button>
     <button onclick="signOut()">Sign out</button>
   </div>
