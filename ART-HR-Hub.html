@@ -114,6 +114,7 @@ h2.sec{font-family:var(--disp);text-transform:uppercase;letter-spacing:.05em;fon
   padding:7px 13px;cursor:pointer;font-size:13px;font-weight:500;
   transition:background .12s,border-color .12s;
 }
+.btn{text-decoration:none}
 .btn:hover{background:var(--surface2);border-color:var(--text-dim)}
 .btn.pri{background:var(--red);border-color:var(--red);color:var(--on-accent);font-weight:600}
 .btn.pri:hover{background:var(--red2);border-color:var(--red2)}
@@ -1573,10 +1574,11 @@ function render(){
         <span class="ic">${i}</span>${l}${pips[k]?`<span class="pip">${pips[k]}</span>`:""}</button>`).join("")}</nav>
       <div class="sidefoot">${esc(me.name)}${isManager?' <span class="key">Manager</span>':""}
         <br>Synced with SharePoint · <a href="#" onclick="signOut();return false" style="color:inherit">Sign out</a>
-        <br><a href="index.html" style="color:inherit">\u2190 All ART tools</a></div>
+        <br><a href="index.html" style="color:inherit">← All ART tools</a></div>
     </aside>
     <div class="main">
       <header class="top"><h1>${t1}</h1><span class="sub">${t2}</span><span class="sp"></span>
+        <a class="btn" href="index.html">← All tools</a>
         <button class="btn dark" onclick="openReq()">Request time off</button></header>
       <div class="wrap">${body}</div>
     </div>
