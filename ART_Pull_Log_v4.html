@@ -312,13 +312,11 @@
   <div class="lookup-bar">
     <input type="text" id="prod-search" placeholder="Search by barcode, name, SKU, vendor…" oninput="renderProducts()">
     <button class="btn btn-ghost btn-sm" onclick="exportProductsCSV()">⬇ Export CSV</button>
-    <label class="btn btn-ghost btn-sm" style="cursor:pointer;" title="Adds new products and updates changed ones. Never deletes.">➕ Add / Update from File<input type="file" id="prod-merge" accept=".csv,.xlsx" style="display:none" onchange="mergeProductsFile(event)"></label>
-    <label class="btn btn-ghost btn-sm" style="cursor:pointer;opacity:.65" title="DESTRUCTIVE: wipes the entire product list and rebuilds it from the file.">♻ Replace All (CSV)<input type="file" id="prod-import" accept=".csv" style="display:none" onchange="importProductsCSV(event)"></label>
+    <label class="btn btn-ghost btn-sm" style="cursor:pointer;">⬆ Import CSV<input type="file" id="prod-import" accept=".csv" style="display:none" onchange="importProductsCSV(event)"></label>
     <span class="table-count" id="prod-count"></span>
   </div>
   <div style="font-size:12px;color:var(--text3);margin-bottom:12px;padding:0 4px;">
-    Columns: <code style="color:var(--text2);">Bar Code, Product Name, Product SKU, Mfr SKU, Unit Cost, Vendor</code>
-    &nbsp;·&nbsp; <b>Add / Update</b> merges a .csv or .xlsx into the list — new barcodes are added, existing ones updated, nothing is deleted.
+    Import CSV columns: <code style="color:var(--text2);">Bar Code, Product Name, Product SKU, Mfr SKU, Unit Cost, Vendor</code>
     &nbsp;·&nbsp; <span id="prod-sync-status" style="color:var(--text2)"></span>
   </div>
   <div class="table-wrap">
@@ -377,7 +375,7 @@ const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
 const SITE_PATH = '/sites/ART43';
 const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
-const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris', 'Barry', 'Andrew', 'Darwin', 'Yoan'];
+const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris', 'Barry', 'Andrew', 'Darwin', 'Yoan', 'Trevor', 'Lyall'];
 const LIST = { pull: 'PullLog', returns: 'ReturnsLog', archive: 'Archive', products: 'ProductLookup' };
 
 // Seed archive data from Excel
@@ -493,48 +491,6 @@ async function spFetch(method, path, body) {
   if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e?.error?.message || 'HTTP ' + r.status); }
   if (r.status === 204) return null;
   return r.json();
-}
-
-// ── ARCHIVE SNAPSHOT (auto-saved CSV for invoice reconciliation) ──
-const SNAPSHOT_FOLDER = 'Pull Log/Archives';
-
-async function spPutFile(path, text, contentType) {
-  const tok = await getToken();
-  const r = await fetch('https://graph.microsoft.com/v1.0' + path, {
-    method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': contentType || 'text/csv' },
-    body: new Blob([text], { type: contentType || 'text/csv' })
-  });
-  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e?.error?.message || 'HTTP ' + r.status); }
-  return r.json();
-}
-
-function encodePath(p) { return p.split('/').map(encodeURIComponent).join('/'); }
-
-function buildArchiveCSV(records, weekLabel) {
-  const head = ['Week Of','Installer','Bar Code','Product Name','SKU','Mfr SKU','Vendor','Unit Cost','Qty','Line Total','Date','Job'];
-  const rows = [head];
-  records.forEach(f => rows.push([
-    weekLabel, f.Installer||'', f.Barcode||'', f.ProductName||'', f.SKU||'', f.MfrSKU||'',
-    f.Vendor||'', f.UnitCost||'0', f.Qty||'1', f.LineTotal||'0', f.DateScanned||'', f.Job||''
-  ]));
-  return rows.map(r => r.map(v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"').join(',')).join('\r\n');
-}
-
-// Writes the week's archive to SharePoint as a CSV. Never blocks the archive itself.
-async function saveArchiveSnapshot(records, weekLabel) {
-  try {
-    const sid = await getSiteId();
-    const slug = String(weekLabel).replace(/[^\w-]+/g,'_').replace(/^_+|_+$/g,'');
-    const fname = 'ART_Archive_' + slug + '.csv';
-    await spPutFile('/sites/' + sid + '/drive/root:/' + encodePath(SNAPSHOT_FOLDER + '/' + fname) + ':/content',
-                    buildArchiveCSV(records, weekLabel), 'text/csv');
-    toast('Saved ' + fname + ' to ' + SNAPSHOT_FOLDER, 'success');
-    return true;
-  } catch(e) {
-    toast('Archive saved, but the CSV snapshot failed: ' + e.message, 'warning');
-    return false;
-  }
 }
 
 async function getSiteId() {
@@ -891,7 +847,6 @@ async function doArchive() {
       await createItem(LIST.archive, { WeekOf: weekLabel, Installer: f.Installer||''  , Barcode: f.Barcode||''  , ProductName: f.ProductName||''  , SKU: f.SKU||''  , MfrSKU: f.MfrSKU||''  , Vendor: f.Vendor||''  , UnitCost: f.UnitCost||'0', Qty: f.Qty||'1', LineTotal: f.LineTotal||'0', DateScanned: f.DateScanned||''  , Job: f.Job||''   });
       done++; fill.style.width=Math.round(done/(total*2)*100)+'%';
     }
-    await saveArchiveSnapshot(allPulls.map(i => i.fields || {}), weekLabel);
     for (const item of allPulls) { await deleteItem(LIST.pull, item.id); done++; fill.style.width=Math.round(done/(total*2)*100)+'%'; }
     localStorage.setItem('art_last_archived', new Date().toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}));
     pullEntries=[]; renderPull(); updateWeekLabel(); setStatus('connected','Connected');
@@ -912,262 +867,6 @@ function renderProducts() {
   empty.style.display='none';
   tbody.innerHTML=show.map(([k,v])=>`<tr><td class="td-sku">${esc(k)}</td><td class="td-name">${esc(v.name)}</td><td class="td-sku">${esc(v.sku)}</td><td class="td-sku">${esc(v.mfrSku)}</td><td class="td-cost">$${(v.cost||0).toFixed(2)}</td><td class="td-sku">${esc(v.vendor)}</td></tr>`).join('');
   if (filtered.length>200) tbody.innerHTML+=`<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">Showing first 200 of ${filtered.length.toLocaleString()} — refine your search</td></tr>`;
-}
-
-// ══════════════════════════════════════════════════════════
-//  ADD / UPDATE PRODUCTS FROM FILE  (merge — never deletes)
-// ══════════════════════════════════════════════════════════
-
-async function inflateRaw(bytes) {
-  if (typeof DecompressionStream === 'undefined') throw new Error("This browser can't open .xlsx — save the file as CSV instead.");
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-async function readZip(arrayBuf) {
-  const u8 = new Uint8Array(arrayBuf), dv = new DataView(arrayBuf);
-  let eocd = -1;
-  for (let i = u8.length - 22; i >= 0 && i > u8.length - 66000; i--) {
-    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd < 0) throw new Error('Not a valid .xlsx file.');
-  const count = dv.getUint16(eocd + 10, true);
-  let p = dv.getUint32(eocd + 16, true);
-  const files = {};
-  for (let n = 0; n < count; n++) {
-    if (dv.getUint32(p, true) !== 0x02014b50) break;
-    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
-    const nlen = dv.getUint16(p + 28, true), elen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
-    const lho = dv.getUint32(p + 42, true);
-    files[new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nlen))] = { method, csize, lho };
-    p += 46 + nlen + elen + clen;
-  }
-  return {
-    files,
-    async text(name) {
-      const f = files[name]; if (!f) return null;
-      const ln = dv.getUint16(f.lho + 26, true), le = dv.getUint16(f.lho + 28, true);
-      const raw = u8.subarray(f.lho + 30 + ln + le, f.lho + 30 + ln + le + f.csize);
-      return new TextDecoder().decode(f.method === 0 ? raw : await inflateRaw(raw));
-    }
-  };
-}
-
-function colToIdx(ref) {
-  const m = /^([A-Z]+)/.exec(ref); if (!m) return 0;
-  let n = 0; for (let i = 0; i < m[1].length; i++) n = n * 26 + (m[1].charCodeAt(i) - 64);
-  return n - 1;
-}
-
-async function parseXLSX(arrayBuf) {
-  const zip = await readZip(arrayBuf);
-  const shared = [];
-  const ss = await zip.text('xl/sharedStrings.xml');
-  if (ss) {
-    const sis = new DOMParser().parseFromString(ss, 'application/xml').getElementsByTagName('si');
-    for (let i = 0; i < sis.length; i++) {
-      const ts = sis[i].getElementsByTagName('t'); let s = '';
-      for (let j = 0; j < ts.length; j++) s += ts[j].textContent;
-      shared.push(s);
-    }
-  }
-  // Map every sheet, so a workbook with a cover/read-me tab still works.
-  const paths = [];
-  const wb = await zip.text('xl/workbook.xml'), rel = await zip.text('xl/_rels/workbook.xml.rels');
-  if (wb && rel) {
-    const shs = new DOMParser().parseFromString(wb, 'application/xml').getElementsByTagName('sheet');
-    const rels = new DOMParser().parseFromString(rel, 'application/xml').getElementsByTagName('Relationship');
-    for (let s = 0; s < shs.length; s++) {
-      const rid = shs[s].getAttribute('r:id') || shs[s].getAttribute('id');
-      for (let r = 0; r < rels.length; r++) {
-        if (rels[r].getAttribute('Id') === rid) {
-          paths.push({ name: shs[s].getAttribute('name') || ('Sheet' + (s + 1)),
-                       path: 'xl/' + rels[r].getAttribute('Target').replace(/^\/?xl\//, '').replace(/^\//, '') });
-          break;
-        }
-      }
-    }
-  }
-  if (!paths.length) paths.push({ name: 'Sheet1', path: 'xl/worksheets/sheet1.xml' });
-
-  const sheets = [];
-  for (const sp of paths) {
-    const shTxt = await zip.text(sp.path);
-    if (!shTxt) continue;
-    const rowsEl = new DOMParser().parseFromString(shTxt, 'application/xml').getElementsByTagName('row');
-    const out = [];
-    for (let ri = 0; ri < rowsEl.length; ri++) {
-      const cells = rowsEl[ri].getElementsByTagName('c'), arr = [];
-      for (let ci = 0; ci < cells.length; ci++) {
-        const c = cells[ci], idx = colToIdx(c.getAttribute('r') || ''), t = c.getAttribute('t');
-        let val = '';
-        if (t === 'inlineStr') {
-          const its = c.getElementsByTagName('t');
-          for (let q = 0; q < its.length; q++) val += its[q].textContent;
-        } else {
-          const v = c.getElementsByTagName('v')[0];
-          val = v ? v.textContent : '';
-          if (t === 's') val = shared[parseInt(val, 10)] || '';
-        }
-        while (arr.length < idx) arr.push('');
-        arr[idx] = val;
-      }
-      out.push(arr);
-    }
-    sheets.push({ name: sp.name, rows: out.filter(r => r.some(v => String(v).trim() !== '')) });
-  }
-  if (!sheets.length) throw new Error('Could not read any worksheet.');
-  return sheets;
-}
-
-function parseDelimited(text) {
-  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-  const rows = []; let row = [], cur = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) {
-      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c;
-    } else if (c === '"') q = true;
-    else if (c === ',') { row.push(cur); cur = ''; }
-    else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
-    else if (c !== '\r') cur += c;
-  }
-  if (cur.length || row.length) { row.push(cur); rows.push(row); }
-  return rows.filter(r => r.some(v => String(v).trim() !== ''));
-}
-
-// Excel sometimes hands back long barcodes in scientific notation.
-function normBarcode(v) {
-  let s = String(v == null ? '' : v).trim();
-  if (/^\d+(\.\d+)?[eE]\+?\d+$/.test(s)) { const n = Number(s); if (isFinite(n)) s = n.toFixed(0); }
-  return s.toLowerCase();
-}
-
-async function mergeProductsFile(event) {
-  const file = event.target.files[0]; if (!file) return;
-  const status = document.getElementById('prod-sync-status');
-  const pb = document.getElementById('import-progress'), fill = document.getElementById('import-fill');
-  try {
-    status.textContent = 'Reading ' + file.name + '…';
-    const sheets = /\.xlsx$/i.test(file.name)
-      ? await parseXLSX(await file.arrayBuffer())
-      : [{ name: file.name, rows: parseDelimited(await file.text()) }];
-
-    // A workbook may lead with a cover or read-me tab — use the first sheet
-    // that actually carries a barcode column and a name column.
-    let rows = null, hi = 0, H = null, bcIdx = -1, nameIdx = -1, skuIdx = -1, mfrIdx = -1, costIdx = -1, vendIdx = -1, usedSheet = '';
-    for (const sheet of sheets) {
-      if (!sheet.rows || sheet.rows.length < 2) continue;
-      let h = 0, best = -1;
-      for (let i = 0; i < Math.min(sheet.rows.length, 15); i++) {
-        const j = sheet.rows[i].map(c => String(c || '').toLowerCase()).join('|');
-        let sc = 0;
-        ['bar', 'code', 'name', 'sku', 'cost', 'vendor', 'price', 'desc'].forEach(k => { if (j.indexOf(k) >= 0) sc++; });
-        if (sc > best) { best = sc; h = i; }
-      }
-      const hdr = sheet.rows[h].map(x => String(x || '').trim());
-      const find = re => hdr.findIndex(x => re.test(x));
-      const b = find(/bar.*code|^barcode$|^upc$/i), n = find(/product.*name|^name$|descr/i);
-      if (b < 0 || n < 0) continue;
-      rows = sheet.rows; hi = h; H = hdr; usedSheet = sheet.name;
-      bcIdx = b; nameIdx = n;
-      skuIdx = find(/product.*sku|^sku$|part/i);
-      mfrIdx = find(/mfr.*sku|manufact/i);
-      costIdx = find(/unit.*cost|^cost$|price/i);
-      vendIdx = find(/vendor|supplier/i);
-      break;
-    }
-    if (!rows) throw new Error('Need at least a Bar Code column and a Product Name column. Checked ' +
-                               sheets.length + ' sheet(s): ' + sheets.map(s => s.name).join(', '));
-    if (sheets.length > 1) status.textContent = 'Reading sheet "' + usedSheet + '"…';
-
-    const parsed = [];
-    const seen = {};
-    for (let i = hi + 1; i < rows.length; i++) {
-      const r = rows[i];
-      const bc = normBarcode(r[bcIdx]);
-      const name = String(r[nameIdx] == null ? '' : r[nameIdx]).trim();
-      if (!bc || !name || seen[bc]) continue;
-      seen[bc] = 1;
-      // null means "this file says nothing about that field" — leave the existing value alone
-      const cell = (idx) => { if (idx < 0) return null; const v = String(r[idx] == null ? '' : r[idx]).trim(); return v === '' ? null : v; };
-      const costRaw = cell(costIdx);
-      parsed.push({
-        bc, name,
-        sku: cell(skuIdx),
-        mfrSku: cell(mfrIdx),
-        cost: costRaw === null ? null : (parseFloat(costRaw.replace(/[$,\s]/g, '')) || 0),
-        vendor: cell(vendIdx)
-      });
-    }
-    if (!parsed.length) throw new Error('No usable rows found.');
-
-    // work out what actually changes before touching anything
-    await loadProducts(true);
-    const toAdd = [], toUpdate = [];
-    parsed.forEach(p => {
-      const ex = products[p.bc];
-      if (!ex) { toAdd.push(p); return; }
-      const diff = (incoming, current) => incoming !== null && incoming !== current;
-      if (p.name !== ex.name || diff(p.sku, ex.sku) || diff(p.mfrSku, ex.mfrSku) ||
-          diff(p.vendor, ex.vendor) || (p.cost !== null && p.cost !== (ex.cost || 0))) toUpdate.push(p);
-    });
-    const unchanged = parsed.length - toAdd.length - toUpdate.length;
-
-    if (!toAdd.length && !toUpdate.length) {
-      status.textContent = 'Nothing to do — all ' + parsed.length + ' rows already match.';
-      toast('No changes: all ' + parsed.length + ' products already up to date', 'success');
-      event.target.value = ''; return;
-    }
-
-    const cols = ['Product Name'];
-    if (skuIdx >= 0) cols.push('SKU'); if (mfrIdx >= 0) cols.push('Mfr SKU');
-    if (costIdx >= 0) cols.push('Unit Cost'); if (vendIdx >= 0) cols.push('Vendor');
-    if (!confirm('Add ' + toAdd.length + ' new product(s) and update ' + toUpdate.length +
-                 ' existing one(s)?\n' + unchanged + ' unchanged. Nothing will be deleted.\n\n' +
-                 'On existing products this file updates: ' + cols.join(', ') +
-                 '.\nAny other details, and blank cells, are left as they are.')) {
-      status.textContent = 'Cancelled.'; event.target.value = ''; return;
-    }
-
-    pb.style.display = 'block'; fill.style.width = '0%';
-    const total = toAdd.length + toUpdate.length;
-    let done = 0, failed = 0;
-
-    for (const p of toAdd) {
-      try {
-        await createItem(LIST.products, { Barcode: p.bc, ProductName: p.name, SKU: p.sku || '',
-                                          MfrSKU: p.mfrSku || '', UnitCost: String(p.cost === null ? 0 : p.cost),
-                                          Vendor: p.vendor || '' });
-      } catch (e) { failed++; }
-      done++; fill.style.width = Math.round(done / total * 100) + '%';
-      if (done % 10 === 0) status.textContent = 'Adding… ' + done + ' of ' + total;
-    }
-    for (const p of toUpdate) {
-      try {
-        const patch = { ProductName: p.name };
-        if (p.sku !== null) patch.SKU = p.sku;
-        if (p.mfrSku !== null) patch.MfrSKU = p.mfrSku;
-        if (p.vendor !== null) patch.Vendor = p.vendor;
-        if (p.cost !== null) patch.UnitCost = String(p.cost);
-        await updateItem(LIST.products, products[p.bc].spId, patch);
-      } catch (e) { failed++; }
-      done++; fill.style.width = Math.round(done / total * 100) + '%';
-      if (done % 10 === 0) status.textContent = 'Updating… ' + done + ' of ' + total;
-    }
-
-    pb.style.display = 'none';
-    await loadProducts();
-    const msg = toAdd.length + ' added, ' + toUpdate.length + ' updated, ' + unchanged + ' unchanged' +
-                (failed ? ', ' + failed + ' FAILED' : '');
-    status.textContent = msg;
-    toast(msg, failed ? 'warning' : 'success');
-  } catch (err) {
-    pb.style.display = 'none';
-    status.textContent = 'Import failed.';
-    toast('Add/Update failed: ' + err.message, 'error');
-  }
-  event.target.value = '';
 }
 
 async function importProductsCSV(event) {
