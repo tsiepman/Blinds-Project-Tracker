@@ -5,16 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ART — Installer Pull Log</title>
 
+<link rel="stylesheet" href="art-theme.css">
 <style>
-  :root {
-    --bg: #0f1117; --surface: #1a1d27; --surface2: #222535; --border: #2e3248;
-    --accent: #4f7cff; --accent-dim: #2a3d7a; --green: #2ecc71; --green-dim: #1a5e38;
-    --red: #e74c3c; --red-dim: #5a1a14; --yellow: #f39c12; --yellow-dim: #5a3a06;
-    --text: #e8eaf0; --text2: #8b90a8; --text3: #555b77;
-    --font: 'Inter', system-ui, -apple-system, sans-serif;
-    --mono: 'JetBrains Mono', 'Fira Code', monospace;
-    --radius: 8px; --radius-lg: 12px;
-  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
 
@@ -167,7 +159,7 @@
 <body>
 
 <div class="header">
-  <div class="header-logo">ART <span>/ Pull Log</span></div>
+  <div class="art-mark"><div class="art-mark-row"><span class="art-mark-box">ART</span><span class="art-mark-name">Pull Log</span></div></div>
   <div id="sp-status" class="sp-status"></div>
   <div id="header-installer-badge" class="header-installer" style="display:none"></div>
   <div class="header-nav" id="main-nav" style="display:none">
