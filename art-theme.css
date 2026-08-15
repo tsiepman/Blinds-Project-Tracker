@@ -1,0 +1,209 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   ART TOOLS — SHARED THEME
+   ---------------------------------------------------------------------------
+   Dark surfaces for legibility in the field; ART red and the boxed wordmark
+   for identity. One stylesheet for every ART tool — change the look here and
+   every tool follows.
+
+   To use in a tool, put this ONE line in <head>, BEFORE the tool's own <style>:
+
+       <link rel="stylesheet" href="art-theme.css">
+
+   ...then delete that tool's :root { ... } block.
+
+   The header wordmark markup:
+
+       <div class="art-mark">
+         <div class="art-mark-row">
+           <span class="art-mark-box">ART</span>
+           <span class="art-mark-name">Billing Queue</span>
+         </div>
+       </div>
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700&display=swap');
+
+:root {
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --bg:          #14161c;
+  --surface:     #1c1f28;
+  --surface2:    #252935;
+  --border:      #343a4a;
+
+  /* ── Brand ────────────────────────────────────────────────────────────────
+     --accent      the working red: bright enough to read as text on dark
+     --accent-deep true ART red: solid fills, rules, the wordmark bar
+     --on-accent   text that sits ON a red fill                              */
+  --accent:      #e34a4a;
+  --accent-deep: #B1171C;
+  --accent-dim:  rgba(227,74,74,0.14);
+  --on-accent:   #ffffff;
+
+  /* ── Status ───────────────────────────────────────────────────────────────
+     Destructive red is deliberately lighter than the brand red, so an error
+     doesn't read as a brand element. Warnings carry amber.                  */
+  --green:       #3ecf7a;
+  --green-dim:   rgba(62,207,122,0.14);
+  --red:         #ff8080;
+  --red-dim:     rgba(255,128,128,0.14);
+  --yellow:      #e8a33d;
+  --yellow-dim:  rgba(232,163,61,0.14);
+
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --text:        #eceef4;
+  --text-mid:    #9aa1b8;
+  --text-dim:    #646b84;
+
+  /* Aliases — older names used by some tools, kept so they don't need
+     rewriting. Prefer the names above in anything new. */
+  --text2:       var(--text-mid);
+  --text3:       var(--text-dim);
+
+  /* ── Item types (billing queue, change orders) ────────────────────────── */
+  --co:          #8b95f5;
+  --co-dim:      rgba(139,149,245,0.14);
+  --proj:        var(--accent);
+  --proj-dim:    var(--accent-dim);
+
+  /* ── Type & shape ─────────────────────────────────────────────────────── */
+  --font:        'Inter', system-ui, -apple-system, sans-serif;
+  --disp:        'Barlow Condensed', Oswald, 'Arial Narrow', sans-serif;
+  --mono:        'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --radius:      8px;
+  --radius-lg:   12px;
+
+  /* ── Watermark ────────────────────────────────────────────────────────────
+     The oversized ART mark behind the page. The header wordmark now carries
+     the branding, so this sits very low. 0 turns it off entirely.           */
+  --watermark-opacity: 0.035;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* ── BACKGROUND MARK ────────────────────────────────────────────────────────
+   Drawn as a background image rather than a text element so it can never be
+   selected, tabbed to, read by a screen reader, or push the page sideways. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--watermark-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 110'><text x='150' y='95' font-family='Helvetica,Arial,sans-serif' font-size='120' font-weight='800' letter-spacing='-6' text-anchor='middle' fill='%23B1171C'>ART</text></svg>");
+  background-repeat: no-repeat;
+  background-position: right -5vw bottom -7vw;
+  background-size: 80vw auto;
+}
+body > * { position: relative; z-index: 1; }
+
+/* ── THE WORDMARK ───────────────────────────────────────────────────────────
+   White box + condensed ART + red rule. Lifted from the HR hub so every
+   tool wears the same mark.                                                 */
+.art-mark {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+  text-decoration: none;
+  color: inherit;
+}
+.art-mark-row { display: flex; align-items: baseline; gap: 8px; }
+.art-mark-box {
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 25px;
+  letter-spacing: 0.02em;
+  background: #fff;
+  color: #14161c;
+  padding: 0 7px;
+  line-height: 1.18;
+  display: inline-block;
+}
+.art-mark-name {
+  font-family: var(--disp);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+}
+.art-mark::after {
+  content: '';
+  display: block;
+  height: 3px;
+  width: 66px;
+  background: var(--accent-deep);
+}
+
+/* ── SHARED HEADER BAR ──────────────────────────────────────────────────── */
+.art-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.art-header-inner {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* "← All tools" link back to the hub. */
+.art-back {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-mid);
+  text-decoration: none;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  white-space: nowrap;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.art-back:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── BASE CONTROLS ──────────────────────────────────────────────────────── */
+input, select, textarea, button { font-family: var(--font); }
+
+input, select, textarea {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 9px 11px;
+  font-size: 13px;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--text-dim); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Bigger tap targets on phones — these get used in gloves.
+   16px also stops iOS Safari zooming the page on focus. */
+@media (max-width: 640px) {
+  input, select, textarea { padding: 11px 12px; font-size: 16px; }
+  .art-mark-box { font-size: 22px; }
+  .art-mark-name { font-size: 12px; }
+}
+
+@media print {
+  body::before { display: none; }
+}
