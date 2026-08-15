@@ -29,7 +29,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14
 .art-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:7px 14px;border-radius:var(--r);border:.5px solid var(--bmd);background:var(--surface);color:var(--text);cursor:pointer;font-family:inherit;white-space:nowrap}
 .art-btn{text-decoration:none}
 .art-btn:hover{background:var(--s2)}
-.art-btn-primary{background:var(--blue);color:var(--bg);border-color:var(--blue)}
+.art-btn-primary{background:var(--blue);color:var(--on-accent);border-color:var(--blue)}
 .art-btn-primary:hover{opacity:.88}
 .art-btn-sm{font-size:12px;padding:5px 10px}
 .art-summarybar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
@@ -186,7 +186,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-of
 
 <div class="art-app" id="mainApp" style="display:none">
   <div class="art-appheader">
-    <div class="art-apptitle">ART — Blinds tracker <span id="syncStatus" class="art-syncstatus">—</span></div>
+    <div class="art-mark"><div class="art-mark-row"><span class="art-mark-box">ART</span><span class="art-mark-name">Blinds Tracker</span></div></div><span id="syncStatus" class="art-syncstatus">—</span>
     <div class="art-headeractions">
       <span class="art-userbadge" id="userBadge">—</span>
       <a class="art-btn" href="index.html">← All tools</a>
