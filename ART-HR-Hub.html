@@ -702,6 +702,31 @@ function seed(){
    APP STATE
    ========================================================================= */
 let db=null, view="dash", modal=null, toastT=null, filters={};
+/* ── ACCESS WINDOW ─────────────────────────────────────────────────────────
+   Until OPEN_TO_ALL_FROM, only the emails in EARLY_ACCESS can open this tool.
+   On that date the restriction lifts on its own and everyone with an employee
+   record gets in.
+
+   ⚠ This hides the TOOL, it does not secure the DATA. Anyone who knows the
+   URL can read this file's source, and the HR_* SharePoint lists are still
+   readable by whoever has permission on the ART43 site. If the time-off,
+   training, or employee data must actually be private until January, set
+   permissions on those lists in SharePoint — that is the real control. */
+const OPEN_TO_ALL_FROM = '2027-01-01';   // takeover date
+const EARLY_ACCESS = [
+  'trevor@advance.mb.ca',
+  'bruno@advance.mb.ca',
+  'lyall@advance.mb.ca',
+  'brian@advance.mb.ca'
+];  // ⚠ CHECK THESE ADDRESSES — guessed from first names, must match the
+    //   sign-in email exactly (the same one in the HR_Employees list).
+
+function accessAllowed(email){
+  const t = new Date().toISOString().slice(0,10);
+  if (t >= OPEN_TO_ALL_FROM) return true;
+  return EARLY_ACCESS.map(x=>x.toLowerCase()).includes((email||'').trim().toLowerCase());
+}
+
 let phaseAuth="init", authErr="", me=null, isManager=false;
 
 async function afterSignedIn(){
@@ -709,6 +734,7 @@ async function afterSignedIn(){
   try{
     db=await Store.load();
     const email=(authAccount.username||"").trim().toLowerCase();
+    if(!accessAllowed(email)){ phaseAuth="notyet"; render(); return; }
     me=db.employees.find(e=>(e.email||"").trim().toLowerCase()===email)||null;
     if(!me){ phaseAuth=db.employees.length===0?"bootstrap":"nomatch"; render(); return; }
     isManager=!!me.isManager;
@@ -1540,6 +1566,12 @@ function renderGate(){
       <label class="f" style="text-align:left"><span class="lb">Your name</span><input type="text" id="bs_name"></label>
       <label class="f" style="text-align:left"><span class="lb">Role</span><input type="text" id="bs_role" placeholder="Owner"></label>
       <button class="btn pri" onclick="bootstrapSelf()">Create my record and continue</button>`;
+  }else if(phaseAuth==="notyet"){
+    inner=`<div class="banner b-warn" style="text-align:left"><span class="bi">▲</span><div>
+      <b>Not open yet</b>The HR Hub is still being set up and isn't available to
+      everyone yet. It opens to the full crew in the new year. Talk to Trevor if
+      you need something in the meantime.</div></div>
+      <button class="btn" onclick="signOut()">Sign out</button>`;
   }else if(phaseAuth==="nomatch"){
     inner=`<div class="banner b-red" style="text-align:left"><span class="bi">▲</span><div>
       <b>No matching employee record</b>Signed in as ${esc(authAccount&&authAccount.username)}, but no
