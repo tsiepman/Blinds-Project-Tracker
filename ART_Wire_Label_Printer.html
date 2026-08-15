@@ -6,25 +6,23 @@
 <title>ART Wire Label Printer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js" defer></script>
+<link rel="stylesheet" href="art-theme.css">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
+  /* Legacy names used in this file, mapped onto art-theme.css.
+     --bg, --surface, --border, --text, --radius, --radius-lg come from the theme.
+     NOTE: the .label-sheet / .label-cell / .label-text rules at the bottom of
+     this file are the PRINTED OUTPUT and stay white-on-black deliberately. */
   :root {
-    --bg: #f5f4f0;
-    --surface: #ffffff;
-    --border: #e2e0d8;
-    --border-strong: #c8c5ba;
-    --text: #1a1917;
-    --text-muted: #6b6860;
-    --accent: #1a472a;
-    --accent-light: #e8f0eb;
-    --accent-mid: #2d6a3f;
-    --danger: #c0392b;
-    --danger-light: #fdf0ee;
-    --warn: #b07d00;
-    --warn-light: #fdf8e8;
-    --radius: 8px;
-    --radius-lg: 12px;
+    --border-strong: var(--text-dim);
+    --text-muted:    var(--text-mid);
+    --accent-light:  var(--accent-dim);
+    --accent-mid:    var(--accent-deep);
+    --danger:        var(--red);
+    --danger-light:  var(--red-dim);
+    --warn:          var(--yellow);
+    --warn-light:    var(--yellow-dim);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -328,9 +326,14 @@
 
 <div class="header">
   <div>
-    <div class="header-title">ART Wire Label Printer</div>
-    <div class="header-sub">Advance Electronics — Warehouse</div>
+    <div class="art-mark">
+      <div class="art-mark-row">
+        <span class="art-mark-box">ART</span>
+        <span class="art-mark-name">Wire Label Printer</span>
+      </div>
+    </div>
   </div>
+  <a class="art-back" href="index.html">← All tools</a>
   <div class="user-badge" id="headerUser" style="display:none">
     <div class="user-dot" id="userDot"></div>
     <span id="userNameDisplay"></span>
