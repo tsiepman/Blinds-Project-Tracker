@@ -550,9 +550,16 @@ async function saveSettings(settings){
 const Store={
   async load(){
     await getSiteId();
-    for(const key of Object.keys(LIST)) await getListId(LIST[key]);
+    const OPTIONAL=["posAcks"];
+    for(const key of Object.keys(LIST)){
+      try{ await getListId(LIST[key]); }
+      catch(e){ if(!OPTIONAL.includes(key)) throw e; }
+    }
     const raw={};
-    await Promise.all(Object.keys(LIST).map(async key=>{ raw[key]=await getItems(LIST[key]); }));
+    await Promise.all(Object.keys(LIST).map(async key=>{
+      try{ raw[key]=await getItems(LIST[key]); }
+      catch(e){ if(OPTIONAL.includes(key)){ raw[key]=[]; } else { throw e; } }
+    }));
     synced={};
     const db={};
     for(const key of COLLECTIONS){
@@ -807,8 +814,8 @@ let posTab="div", posOpen={};
    The contract document is generated here from POSITIONS, so there are no
    Docusign templates to build or keep in step with this file.
    ========================================================================= */
-const DS_INTEGRATION_KEY = "";              // Docusign integration key (client ID)
-const DS_ENV             = "prod";          // "demo" while testing, "prod" when live
+const DS_INTEGRATION_KEY = "f158bd2c-6be8-4e43-8382-0e01ac8220d2";   // Docusign integration key (client ID — public, not a secret)
+const DS_ENV             = "demo";          // "demo" while testing, "prod" after Go Live
 const DS_AUTH  = DS_ENV==="demo" ? "https://account-d.docusign.com" : "https://account.docusign.com";
 const DS_SCOPE = "signature cors";
 let dsToken=null, dsBase=null, dsAccount=null, dsUser=null;
@@ -1990,11 +1997,14 @@ function render(){
 }
 
 /* ---------------- boot ---------------- */
+render();
+initMsal();
 (async function boot(){
-  const t=sessionStorage.getItem("ds_token");
-  if(t){ dsToken=t; try{ await dsLoadAccount(); }catch(e){} }
-  await dsHandleRedirect();
-  render();
-  initMsal();
+  try{
+    const t=sessionStorage.getItem("ds_token");
+    if(t){ dsToken=t; await dsLoadAccount(); }
+    await dsHandleRedirect();
+    if(phaseAuth==="ready") render();
+  }catch(e){ console.warn("Docusign init skipped:",e); }
 })();
 </script>
