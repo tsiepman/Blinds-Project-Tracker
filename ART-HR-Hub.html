@@ -802,9 +802,13 @@ let posTab="div", posOpen={};
    PKCE, which is what this does.
 
    BEFORE THIS WORKS, three things:
-     1. Create an app on the Docusign Apps and Keys page. Set the auth method
-        to Authorization Code Grant and answer NO to "can this app securely
-        store a client secret".
+     1. Create an app at https://admindemo.docusign.com/apps-and-keys. Answer NO
+        to "can this app securely store a client secret", and set the
+        Authentication Method to IMPLICIT GRANT.
+        Implicit Grant is required, not a preference: Docusign's /oauth/token
+        endpoint does not send CORS headers, so the Authorization Code + PKCE
+        flow cannot complete from a browser. Implicit Grant returns the token
+        in the redirect itself, so no blocked POST is involved.
      2. Add this page's exact URL as a redirect URI on that app.
      3. Have an account admin enable CORS for the app, with this page's origin
         as an allowed origin.
@@ -825,50 +829,45 @@ const dsConnected = ()=>!!(dsToken&&dsBase&&dsAccount);
 
 function dsRedirectUri(){ return location.origin+location.pathname; }
 
-async function dsPkce(){
-  const rnd=crypto.getRandomValues(new Uint8Array(32));
-  const verifier=btoa(String.fromCharCode(...rnd)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
-  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(verifier));
-  const challenge=btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
-  return {verifier,challenge};
-}
-
-async function dsConnect(){
+/* Implicit Grant: the token arrives in the URL fragment, so there is no POST
+   to /oauth/token — which is the call Docusign blocks from a browser. Tokens
+   last 8 hours and there is no refresh, so an expired token just means
+   clicking Connect again. */
+function dsConnect(){
   if(!dsReady()){ toast("Add your Docusign integration key first"); return; }
-  const {verifier,challenge}=await dsPkce();
-  sessionStorage.setItem("ds_verifier",verifier);
   sessionStorage.setItem("ds_return",view);
   const u=new URL(DS_AUTH+"/oauth/auth");
-  u.searchParams.set("response_type","code");
+  u.searchParams.set("response_type","token");
   u.searchParams.set("scope",DS_SCOPE);
   u.searchParams.set("client_id",DS_INTEGRATION_KEY);
   u.searchParams.set("redirect_uri",dsRedirectUri());
-  u.searchParams.set("code_challenge",challenge);
-  u.searchParams.set("code_challenge_method","S256");
   u.searchParams.set("state","ds");
   location.href=u.toString();
 }
 
-async function dsHandleRedirect(){
-  const q=new URLSearchParams(location.search);
-  if(q.get("state")!=="ds"||!q.get("code")) return false;
-  const verifier=sessionStorage.getItem("ds_verifier");
-  history.replaceState({},"",location.pathname);
-  if(!verifier) return false;
-  try{
-    const r=await fetch(DS_AUTH+"/oauth/token",{method:"POST",
-      headers:{"Content-Type":"application/x-www-form-urlencoded"},
-      body:new URLSearchParams({grant_type:"authorization_code",code:q.get("code"),
-        client_id:DS_INTEGRATION_KEY,code_verifier:verifier,redirect_uri:dsRedirectUri()})});
-    if(!r.ok) throw new Error("Docusign returned "+r.status);
-    const t=await r.json();
-    dsToken=t.access_token;
-    sessionStorage.setItem("ds_token",dsToken);
-    await dsLoadAccount();
-    const back=sessionStorage.getItem("ds_return"); if(back) view=back;
-    return true;
-  }catch(e){ toast("Docusign sign-in failed: "+e.message); return false; }
+/* Runs synchronously at boot, BEFORE initMsal(), so MSAL never sees or clears
+   a fragment that belongs to Docusign. */
+function dsCaptureHash(){
+  const h=location.hash||"";
+  if(h.indexOf("access_token=")<0) return false;
+  const q=new URLSearchParams(h.slice(1));
+  if(q.get("state")!=="ds") return false;
+  const tok=q.get("access_token");
+  history.replaceState({},"",location.pathname+location.search);
+  if(!tok) return false;
+  dsToken=tok;
+  sessionStorage.setItem("ds_token",tok);
+  const back=sessionStorage.getItem("ds_return"); if(back) view=back;
+  return true;
+}
+
+/* A 401 means the 8-hour token is done. Clear it and ask for a reconnect
+   rather than failing silently. */
+function dsExpired(){
+  dsToken=dsBase=dsAccount=dsUser=null;
+  sessionStorage.removeItem("ds_token");
+  toast("Docusign session expired — connect again");
+  render();
 }
 
 async function dsLoadAccount(){
@@ -937,6 +936,7 @@ async function dsSend(code,empId){
     const r=await fetch(dsBase+"/restapi/v2.1/accounts/"+dsAccount+"/envelopes",
       {method:"POST",headers:{Authorization:"Bearer "+dsToken,"Content-Type":"application/json"},
        body:JSON.stringify(env)});
+    if(r.status===401){ dsExpired(); return; }
     if(!r.ok){ throw new Error("Docusign returned "+r.status+" — "+(await r.text()).slice(0,180)); }
     const out=await r.json();
     const existing=db.posAcks.find(a=>a.empId===empId&&a.code===code);
@@ -956,6 +956,7 @@ async function dsRefresh(){
     try{
       const r=await fetch(dsBase+"/restapi/v2.1/accounts/"+dsAccount+"/envelopes/"+a.envId,
         {headers:{Authorization:"Bearer "+dsToken}});
+      if(r.status===401){ dsExpired(); return; }
       if(!r.ok) continue;
       const d=await r.json();
       if(d.status&&d.status!==a.status){
@@ -1997,14 +1998,13 @@ function render(){
 }
 
 /* ---------------- boot ---------------- */
+dsCaptureHash();
 render();
 initMsal();
 (async function boot(){
   try{
-    const t=sessionStorage.getItem("ds_token");
-    if(t){ dsToken=t; await dsLoadAccount(); }
-    await dsHandleRedirect();
-    if(phaseAuth==="ready") render();
+    if(!dsToken){ const t=sessionStorage.getItem("ds_token"); if(t) dsToken=t; }
+    if(dsToken){ await dsLoadAccount(); if(phaseAuth==="ready") render(); }
   }catch(e){ console.warn("Docusign init skipped:",e); }
 })();
 </script>
