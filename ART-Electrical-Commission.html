@@ -235,11 +235,26 @@ async function getSiteAndList() {
     const lists = await graph(`/sites/${siteId}/lists?$filter=displayName eq '${LIST_NAME}'`);
     if (lists.value.length > 0) { listId = lists.value[0].id; await ensureColumns(); return; }
   } catch(e) {}
-  const newList = await graph(`/sites/${siteId}/lists`, {
-    method: 'POST',
-    body: JSON.stringify({ displayName: LIST_NAME, columns: REQUIRED_COLUMNS, list: { template: 'genericList' } })
-  });
-  listId = newList.id;
+  try {
+    const newList = await graph(`/sites/${siteId}/lists`, {
+      method: 'POST',
+      body: JSON.stringify({ displayName: LIST_NAME, columns: REQUIRED_COLUMNS, list: { template: 'genericList' } })
+    });
+    listId = newList.id;
+  } catch(e) {
+    // 403 here almost always means the Sites.Manage.All scope is missing or
+    // hasn't been admin-consented, OR the signed-in user lacks Manage Lists
+    // rights on the site. Creating a list is a schema operation —
+    // Sites.ReadWrite.All is not enough on its own.
+    if (String(e).includes('403') || String(e).includes('accessDenied')) {
+      throw new Error(`Couldn't create the "${LIST_NAME}" list — access denied. `
+        + `Either the app is missing the Sites.Manage.All permission (Azure → `
+        + `App registrations → API permissions → grant admin consent), or your `
+        + `account doesn't have Manage Lists rights on ${SITE_PATH}. `
+        + `A site owner opening this page once will create it.`);
+    }
+    throw e;
+  }
 }
 
 async function ensureColumns() {
@@ -546,7 +561,9 @@ async function init() {
     console.error(e);
     setSync('Connection failed', 'err');
     document.getElementById('loading').innerHTML =
-      `<div style="color:var(--red)">Couldn't connect. Check the console (F12) and reload.</div>`;
+      `<div style="max-width:560px;margin:0 auto;text-align:left;background:var(--red-dim);`
+      + `border:1px solid var(--red);border-radius:var(--radius);padding:18px;font-size:13.5px;line-height:1.5">`
+      + `<b style="display:block;margin-bottom:6px">Couldn't load</b>${esc(e.message||e)}</div>`;
   }
 }
 </script>
