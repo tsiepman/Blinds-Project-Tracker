@@ -41,7 +41,7 @@
   .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
   .form-row { display: grid; gap: 10px; align-items: end; }
-  .r-outlet { grid-template-columns: 150px 1fr 1fr 110px auto; }
+  .r-outlet { grid-template-columns: 150px 1fr 1fr auto; }
   .r-light1 { grid-template-columns: 150px 1fr 1fr; }
   .r-light2 { grid-template-columns: 150px 130px 130px 180px auto; }
   .form-row + .form-row { margin-top: 12px; }
@@ -154,7 +154,7 @@ const ALLOWED = [
 const RESTRICTED_VIEW = ['cmacdearmid@advance.mb.ca'];
 
 // ── DEAL TERMS ────────────────────────────────────────────────────────────────
-const OUTLET_RATE     = 50;    // $ per electrical outlet service call
+const OUTLET_RATE     = 50;    // $ per CALL — flat, regardless of how many outlets
 const ORIGINATION_FEE = 150;   // $ flat when Chris found the lighting job himself
 const CHRIS_SHARE     = 0.10;  // 10% of PRODUCT profit
 const BASE_RATE       = 35;    // $/hr — used for the equivalent-rate figure
@@ -380,18 +380,11 @@ function renderEntry() {
         <div class="field"><label>Date</label><input id="o-date" type="date" value="${todayISO()}"></div>
         <div class="field"><label>Client</label><input id="o-client" type="text" placeholder="e.g. Goldman"></div>
         <div class="field"><label>Address / notes</label><input id="o-notes" type="text" placeholder="e.g. 732 South Drive — TV outlet"></div>
-        <div class="field"><label>Outlets</label><input id="o-count" type="number" min="1" step="1" value="1" oninput="previewOutlet()"></div>
         <div class="field"><button class="btn" onclick="submitOutlet()">Log call →</button></div>
       </div>
-      <div class="preview" id="o-preview">Pays <b>${money(OUTLET_RATE)}</b> — on top of hourly.</div>
+      <div class="preview" id="o-preview">Pays <b>${money(OUTLET_RATE)}</b> flat per call — on top of hourly.</div>
     </div>
     ${lighting}`;
-}
-
-function previewOutlet() {
-  const n = Math.max(1, parseInt(document.getElementById('o-count').value)||1);
-  document.getElementById('o-preview').innerHTML =
-    `Pays <b>${money(n*OUTLET_RATE)}</b>${n>1?` (${n} × ${money(OUTLET_RATE)})`:''} — on top of hourly.`;
 }
 
 function previewLighting() {
@@ -410,15 +403,16 @@ async function submitOutlet() {
   const date  = document.getElementById('o-date').value;
   const client= document.getElementById('o-client').value.trim();
   const notes = document.getElementById('o-notes').value.trim();
-  const count = Math.max(1, parseInt(document.getElementById('o-count').value)||1);
   if (!date || !client) { toast('Date and client are required.', 'error'); return; }
   try {
+    // Flat rate per CALL, not per outlet — a second outlet at the same house
+    // is a few extra minutes, not a second trip.
     await addItem({
       EntryType: 'Outlet', JobDate: new Date(date).toISOString(), Client: client,
-      Address: notes, Payout: count * OUTLET_RATE, Notes: count>1 ? `${count} outlets` : '',
+      Address: notes, Payout: OUTLET_RATE, Notes: '',
       Originated: false, EnteredBy: currentUser, Paid: false
     });
-    toast(`Outlet call logged — ${money(count*OUTLET_RATE)}.`, 'success');
+    toast(`Outlet call logged — ${money(OUTLET_RATE)}.`, 'success');
     await getItems(); render();
   } catch(e) { console.error(e); toast('Could not save. Check connection.', 'error'); }
 }
