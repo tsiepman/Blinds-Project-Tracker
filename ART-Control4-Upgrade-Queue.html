@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ART Control4 Upgrade Queue</title>
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  /* Tokens come from art-theme.css. Only this file's extra names live here. */
+  :root {
+    --blue:     var(--co);
+    --blue-dim: var(--co-dim);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .logo span { color: var(--text-mid); font-weight: 400; margin-left: 8px; letter-spacing: 0; text-transform: none; }
+  #sync-status { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); }
+  .dot.ok { background: var(--green); }
+  .dot.err { background: var(--red); }
+
+  main { max-width: 1260px; margin: 0 auto; padding: 24px 24px 60px; }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+  .tab {
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--text-dim); font: inherit; font-weight: 600;
+    padding: 10px 18px; cursor: pointer;
+  }
+  .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Stats ── */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+  .stat-val { font-size: 26px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+  .stat-label { font-size: 12px; color: var(--text-mid); }
+  .stat.warn .stat-val { color: var(--red); }
+  .stat.money .stat-val { color: var(--accent); }
+
+  /* ── Cards & forms ── */
+  .add-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 22px; margin-bottom: 24px;
+  }
+  .add-card h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-mid); margin-bottom: 16px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .fld { display: flex; flex-direction: column; gap: 5px; }
+  .fld.wide { grid-column: 1 / -1; }
+  .fld label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-dim); }
+  input, select, textarea {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font: inherit; padding: 10px 12px; width: 100%;
+  }
+  textarea { min-height: 72px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  ::placeholder { color: var(--text-dim); }
+  .hint { font-size: 11.5px; color: var(--text-dim); }
+
+  .btn {
+    background: var(--accent); border: 0; border-radius: 6px; color: #17181d;
+    font: inherit; font-weight: 700; padding: 11px 20px; cursor: pointer;
+  }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-mid); font-weight: 600; }
+  .btn.block { width: 100%; padding: 14px; font-size: 15px; }
+
+  /* ── Filters ── */
+  .filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 14px; }
+  .chip {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+    color: var(--text-mid); font: inherit; font-size: 13px; font-weight: 600;
+    padding: 7px 14px; cursor: pointer; white-space: nowrap;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+  /* ── Lead rows ── */
+  .lead { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; overflow: hidden; }
+  .lead.stale { border-color: rgba(239,68,68,0.45); }
+  .lead-head {
+    background: none; border: 0; color: inherit; font: inherit; text-align: left;
+    display: flex; align-items: flex-start; gap: 14px; padding: 15px 18px 12px; width: 100%; cursor: pointer;
+  }
+  .lead-main { flex: 1; min-width: 0; }
+  .lead-name { font-weight: 650; font-size: 15px; }
+  .lead-sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lead-meta { font-size: 12px; color: var(--text-mid); margin-top: 7px; }
+  .lead-meta .late { color: var(--red); font-weight: 650; }
+
+  .pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-New { background: var(--accent-dim); color: var(--accent); }
+  .p-Contacted, .p-Quoted { background: var(--blue-dim); color: var(--blue); }
+  .p-Won { background: var(--green-dim); color: var(--green); }
+  .p-Lost, .p-Noresponse { background: var(--red-dim); color: var(--red); }
+
+  /* signature: the clock */
+  .clock { height: 3px; background: var(--surface2); position: relative; }
+  .clock i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue); }
+  .clock i.warn { background: var(--accent); }
+  .clock i.dead { background: var(--red); }
+  .clock u { position: absolute; top: -2px; width: 1px; height: 7px; background: var(--text-dim); }
+
+  .detail { display: none; border-top: 1px solid var(--border); background: var(--surface2); padding: 16px 18px; }
+  .detail.open { display: block; }
+  .kv { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; font-size: 13.5px; border-bottom: 1px solid rgba(46,51,80,.5); }
+  .kv:last-of-type { border-bottom: 0; }
+  .kv b { color: var(--text-dim); font-weight: 600; }
+  .kv span, .kv a { text-align: right; }
+  .kv a { color: var(--accent); }
+
+  .upd { margin-top: 14px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .showif { display: none; }
+  .showif.on { display: flex; }
+  .readonly-note { font-size: 12px; color: var(--text-dim); margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+  .empty { text-align: center; padding: 48px 20px; color: var(--text-dim); }
+  .empty strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 6px; font-weight: 650; }
+
+  #toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 28px; z-index: 200;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 12px 20px; border-radius: 6px; font-size: 14px; max-width: 90vw;
+    opacity: 0; pointer-events: none; transition: opacity .18s;
+  }
+  #toast.show { opacity: 1; }
+  #toast.error { border-color: var(--red); color: #fca5a5; }
+
+  @media (max-width: 720px) {
+    header { padding: 0 16px; }
+    #sync-status { display: none; }
+    main { padding: 16px 14px 48px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; }
+    .tab { flex: 1; padding: 12px 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="art-mark"><div class="art-mark-row"><span class="art-mark-box">ART</span><span class="art-mark-name">Control4 Upgrade Queue</span></div></div>
+  <div id="sync-status"><span class="dot" id="sync-dot"></span><span id="sync-text">Connecting…</span></div>
+  <a class="art-back" href="index.html">← All tools</a>
+</header>
+
+<div id="loading" style="text-align:center;padding:60px;color:var(--text-dim)">Loading…</div>
+
+<main id="app" style="display:none">
+
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tab-add" role="tab" aria-selected="true">Add a lead</button>
+    <button class="tab" id="tab-queue" role="tab" aria-selected="false">Queue</button>
+  </div>
+
+  <!-- ── ADD ─────────────────────────────────────────────── -->
+  <section id="view-add">
+    <div class="add-card">
+      <h2>Upgrade opportunity</h2>
+      <div class="grid">
+        <div class="fld wide">
+          <label for="f-name">Client name</label>
+          <input id="f-name" type="text" autocomplete="off" placeholder="Who's the system registered to?">
+        </div>
+        <div class="fld">
+          <label for="f-addr">Address</label>
+          <input id="f-addr" type="text" autocomplete="off">
+        </div>
+        <div class="fld">
+          <label for="f-phone">Phone</label>
+          <input id="f-phone" type="tel" autocomplete="off">
+        </div>
+        <div class="fld">
+          <label for="f-model">Controller</label>
+          <select id="f-model">
+            <option value="">Select…</option>
+            <optgroup label="End of the road">
+              <option>HC-200</option><option>HC-250</option><option>HC-300</option>
+              <option>HC-800</option><option>EA-1</option>
+            </optgroup>
+            <optgroup label="Aging">
+              <option>EA-3</option><option>EA-5</option><option>CA-1</option><option>CA-10</option>
+            </optgroup>
+            <optgroup label="Current">
+              <option>CORE-1</option><option>CORE-3</option><option>CORE-5</option><option>CORELITE</option>
+            </optgroup>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label for="f-os">OS version</label>
+          <input id="f-os" type="text" placeholder="3.3.1" autocomplete="off">
+        </div>
+        <div class="fld wide">
+          <label for="f-notes">What you saw</label>
+          <textarea id="f-notes" placeholder="Touchscreens, keypads, what they said — anything that shapes the quote."></textarea>
+          <div class="hint">Write it before you leave the driveway. Three weeks from now nobody can reconstruct it.</div>
+        </div>
+        <div class="fld wide">
+          <button class="btn block" id="save">Send to sales</button>
+          <div class="hint" style="text-align:center;margin-top:10px">
+            Starts the 90-day clock. You're paid 4% of product if it closes inside it.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── QUEUE ───────────────────────────────────────────── -->
+  <section id="view-queue" style="display:none">
+    <div class="stats" id="stats"></div>
+    <div class="filters" id="filters"></div>
+    <div id="list"></div>
+  </section>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const CLIENT_ID   = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const TENANT_ID   = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const SITE_HOST   = 'advanceelectronics.sharepoint.com';
+const SITE_PATH   = '/sites/ART43';
+const LIST_NAME   = 'ARTUpgradeQueue';
+
+const SLA_DAYS        = 3;    // days to get a quote out before the row goes red
+const WINDOW_DAYS     = 90;   // finder's commission window
+const COMMISSION_RATE = 0.04; // 4% of product on the invoice
+const DROP_WEEKS      = 12;   // weeks a closed lead stays in the "All" view
+
+const STATUSES = ['New', 'Contacted', 'Quoted', 'Won', 'Lost', 'No response'];
+const OPEN     = ['New', 'Contacted', 'Quoted'];
+
+// Who can move a lead along. Matched against AD display name.
+// Everyone else can add leads and see status, but not change it.
+const SALES_USERS = ['Lyall Krahn', 'Bruno Deleau', 'Trevor Siepman'];
+
+// Who gets emailed when a tech adds a lead. ← confirm these addresses
+const NOTIFY_EMAILS = [
+  'lkrahn@advance.mb.ca',   // Lyall
+  'bdeleau@advance.mb.ca'   // Bruno
+];
+
+// Columns checked against the live list on every load and added if missing,
+// so the schema keeps itself in sync with the code.
+const REQUIRED_COLUMNS = [
+  { name: 'ContactedDate', dateTime: { displayAs: 'default' } },
+  { name: 'QuoteTotal',    number: {} },
+  { name: 'ConnectSold',   boolean: {} },
+  { name: 'LastUpdatedBy', text: {} }
+];
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+let accessToken = null;
+let currentUser = null;
+let msalInstance = null;
+
+function getMsalInstance() {
+  if (msalInstance) return msalInstance;
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: CLIENT_ID,
+      authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+      redirectUri: window.location.href.split('?')[0]
+    },
+    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: true }
+  });
+  return msalInstance;
+}
+
+async function getToken() {
+  const scopes = [
+    'https://graph.microsoft.com/Sites.ReadWrite.All',
+    'https://graph.microsoft.com/Mail.Send'
+  ];
+  const instance = getMsalInstance();
+  await instance.handleRedirectPromise();
+
+  const accounts = instance.getAllAccounts();
+  if (accounts.length > 0) {
+    try {
+      const r = await instance.acquireTokenSilent({ scopes, account: accounts[0] });
+      return { token: r.accessToken, name: accounts[0].name };
+    } catch(e) { /* fall through to redirect */ }
+  }
+  await instance.acquireTokenRedirect({ scopes });
+  return new Promise(() => {});
+}
+
+// ── GRAPH HELPERS ─────────────────────────────────────────────────────────────
+let siteId = null;
+let listId = null;
+
+async function graph(path, opts = {}) {
+  const r = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    ...opts,
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(opts.headers || {})
+    }
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`Graph ${r.status}: ${err}`);
+  }
+  if (r.status === 204 || r.status === 202) return null;
+  return r.json();
+}
+
+async function getSiteAndList() {
+  const site = await graph(`/sites/${SITE_HOST}:${SITE_PATH}`);
+  siteId = site.id;
+
+  try {
+    const lists = await graph(`/sites/${siteId}/lists?$filter=displayName eq '${LIST_NAME}'`);
+    if (lists.value.length > 0) {
+      listId = lists.value[0].id;
+      await ensureColumns();
+      return;
+    }
+  } catch(e) {}
+
+  const newList = await graph(`/sites/${siteId}/lists`, {
+    method: 'POST',
+    body: JSON.stringify({
+      displayName: LIST_NAME,
+      columns: [
+        { name: 'Address',         text: {} },
+        { name: 'Phone',           text: {} },
+        { name: 'ControllerModel', text: {} },
+        { name: 'OSVersion',       text: {} },
+        { name: 'SystemNotes',     text: { allowMultipleLines: true, appendChangesToExistingText: false, linesForEditing: 4 } },
+        { name: 'FoundBy',         text: {} },
+        { name: 'FoundDate',       dateTime: { displayAs: 'default' } },
+        { name: 'Status',          text: {} },
+        { name: 'AssignedTo',      text: {} },
+        { name: 'ContactedDate',   dateTime: { displayAs: 'default' } },
+        { name: 'QuotedDate',      dateTime: { displayAs: 'default' } },
+        { name: 'QuoteTotal',      number: {} },
+        { name: 'ClosedDate',      dateTime: { displayAs: 'default' } },
+        { name: 'ProductTotal',    number: {} },
+        { name: 'ConnectSold',     boolean: {} },
+        { name: 'Outcome',         text: { allowMultipleLines: true, appendChangesToExistingText: false, linesForEditing: 4 } },
+        { name: 'LastUpdatedBy',   text: {} }
+      ],
+      list: { template: 'genericList' }
+    })
+  });
+  listId = newList.id;
+}
+
+async function ensureColumns() {
+  let existing;
+  try {
+    const res = await graph(`/sites/${siteId}/lists/${listId}/columns`);
+    existing = new Set(res.value.map(c => c.name));
+  } catch(e) {
+    console.warn('Could not read list columns:', e);
+    return;
+  }
+  const missing = REQUIRED_COLUMNS.filter(c => !existing.has(c.name));
+  for (const col of missing) {
+    try {
+      await graph(`/sites/${siteId}/lists/${listId}/columns`, { method: 'POST', body: JSON.stringify(col) });
+      console.log(`Added missing list column: ${col.name}`);
+    } catch(e) {
+      console.error(`Couldn't add column "${col.name}":`, e);
+      toast(`The ${col.name} column is missing and couldn't be added. Ask a site owner to open this page once.`, 'error');
+    }
+  }
+}
+
+async function getItems() {
+  const res = await graph(`/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500`);
+  return res.value.map(i => ({ id: i.id, ...i.fields }));
+}
+async function createItem(fields) {
+  return graph(`/sites/${siteId}/lists/${listId}/items`, { method: 'POST', body: JSON.stringify({ fields }) });
+}
+async function updateItem(id, fields) {
+  return graph(`/sites/${siteId}/lists/${listId}/items/${id}/fields`, { method: 'PATCH', body: JSON.stringify(fields) });
+}
+async function sendMail(recipients, subject, bodyHtml) {
+  await graph('/me/sendMail', {
+    method: 'POST',
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'HTML', content: bodyHtml },
+        toRecipients: recipients.map(a => ({ emailAddress: { address: a } }))
+      },
+      saveToSentItems: true
+    })
+  });
+}
+
+// ── UTIL ──────────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const daysSince = d => Math.floor((Date.now() - new Date(d)) / 864e5);
+const money = n => (n == null || n === '') ? '—' : '$' + Number(n).toLocaleString('en-CA', { maximumFractionDigits: 0 });
+const shortDate = d => new Date(d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+
+function toast(msg, type = '') {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; }, 3000);
+}
+function setSyncStatus(ok, text) {
+  $('sync-dot').className = 'dot ' + (ok ? 'ok' : 'err');
+  $('sync-text').textContent = text;
+}
+const canEdit = () => SALES_USERS.includes(currentUser);
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let allItems = [];
+let filter = 'open';
+
+const FILTERS = [
+  ['open',      'Open'],
+  ['needquote', 'No quote yet'],
+  ['mine',      'Mine'],
+  ['Won',       'Won'],
+  ['closed',    'Closed out'],
+  ['all',       'All']
+];
+
+function matches(l) {
+  const st = l.Status || 'New';
+  if (filter === 'all')       return true;
+  if (filter === 'open')      return OPEN.includes(st);
+  if (filter === 'needquote') return st === 'New' || st === 'Contacted';
+  if (filter === 'mine')      return l.FoundBy === currentUser;
+  if (filter === 'closed')    return st === 'Lost' || st === 'No response';
+  return st === filter;
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function clockBar(l) {
+  const st = l.Status || 'New';
+  if (!OPEN.includes(st)) return '';
+  const age = daysSince(l.FoundDate);
+  const pct = Math.min(100, Math.round(age / WINDOW_DAYS * 100));
+  const unquoted = st !== 'Quoted';
+  const cls = age > WINDOW_DAYS ? 'dead' : (unquoted && age > SLA_DAYS) ? 'warn' : '';
+  const notch = (SLA_DAYS / WINDOW_DAYS * 100).toFixed(1);
+  return `<div class="clock"><i class="${cls}" style="width:${pct}%"></i><u style="left:${notch}%"></u></div>`;
+}
+
+function render() {
+  const late = allItems.filter(l => (l.Status === 'New' || l.Status === 'Contacted') && daysSince(l.FoundDate) > SLA_DAYS).length;
+  const open = allItems.filter(l => OPEN.includes(l.Status || 'New')).length;
+  const outQ = allItems.filter(l => l.Status === 'Quoted').length;
+  const won  = allItems.filter(l => l.Status === 'Won');
+  const owed = won.reduce((s, l) => s + (Number(l.ProductTotal) || 0) * COMMISSION_RATE, 0);
+
+  $('stats').innerHTML = `
+    <div class="stat"><div class="stat-val">${open}</div><div class="stat-label">Open leads</div></div>
+    <div class="stat${late ? ' warn' : ''}"><div class="stat-val">${late}</div><div class="stat-label">Past ${SLA_DAYS} days, no quote</div></div>
+    <div class="stat"><div class="stat-val">${outQ}</div><div class="stat-label">Quotes out</div></div>
+    <div class="stat"><div class="stat-val">${won.length}</div><div class="stat-label">Won</div></div>
+    <div class="stat money"><div class="stat-val">${money(owed)}</div><div class="stat-label">Commission earned</div></div>`;
+
+  $('filters').innerHTML = FILTERS.map(([k, lab]) =>
+    `<button class="chip" data-f="${k}" aria-pressed="${filter === k}">${lab}</button>`).join('');
+
+  const cutoff = Date.now() - DROP_WEEKS * 7 * 864e5;
+  const rows = allItems
+    .filter(matches)
+    .filter(l => OPEN.includes(l.Status || 'New') || !l.ClosedDate || new Date(l.ClosedDate) > cutoff)
+    .sort((a, b) => new Date(b.FoundDate) - new Date(a.FoundDate));
+
+  if (!rows.length) {
+    $('list').innerHTML = `<div class="empty"><strong>Nothing here</strong>${
+      filter === 'needquote' ? 'Every lead has a quote out.' : 'Add a lead from the other tab.'}</div>`;
+    return;
+  }
+
+  $('list').innerHTML = rows.map(l => {
+    const st = l.Status || 'New';
+    const age = daysSince(l.FoundDate);
+    const stale = (st === 'New' || st === 'Contacted') && age > SLA_DAYS;
+    const editable = canEdit();
+    return `
+    <div class="lead${stale ? ' stale' : ''}">
+      <button class="lead-head" data-open="${l.id}">
+        <div class="lead-main">
+          <div class="lead-name">${esc(l.Title)}</div>
+          <div class="lead-sub">${esc(l.Address || '')}</div>
+          <div class="lead-meta">${esc(l.ControllerModel || '?')} · OS ${esc(l.OSVersion || '?')} ·
+            found by ${esc(l.FoundBy || '')} · ${age === 0 ? 'today' : age + 'd ago'}${
+            stale ? ' · <span class="late">needs a quote</span>' : ''}</div>
+        </div>
+        <span class="pill p-${st.replace(/\s/g, '')}">${esc(st)}</span>
+      </button>
+      ${clockBar(l)}
+      <div class="detail" id="d-${l.id}">
+        ${l.Phone ? `<div class="kv"><b>Phone</b><a href="tel:${esc(l.Phone)}">${esc(l.Phone)}</a></div>` : ''}
+        ${l.SystemNotes ? `<div class="kv"><b>What was seen</b><span>${esc(l.SystemNotes)}</span></div>` : ''}
+        ${l.AssignedTo ? `<div class="kv"><b>Working it</b><span>${esc(l.AssignedTo)}</span></div>` : ''}
+        ${l.ContactedDate ? `<div class="kv"><b>Reached out</b><span>${shortDate(l.ContactedDate)}</span></div>` : ''}
+        ${l.QuotedDate ? `<div class="kv"><b>Quoted</b><span>${shortDate(l.QuotedDate)} · ${money(l.QuoteTotal)}</span></div>` : ''}
+        ${st === 'Won' ? `
+          <div class="kv"><b>Product on invoice</b><span>${money(l.ProductTotal)}</span></div>
+          <div class="kv"><b>${esc(l.FoundBy || 'Finder')} earns (4%)</b><span>${money((Number(l.ProductTotal) || 0) * COMMISSION_RATE)}</span></div>
+          <div class="kv"><b>Connect sold</b><span>${l.ConnectSold ? 'Yes' : 'No'}</span></div>` : ''}
+        ${l.Outcome ? `<div class="kv"><b>Notes</b><span>${esc(l.Outcome)}</span></div>` : ''}
+        ${l.LastUpdatedBy ? `<div class="kv"><b>Last updated by</b><span>${esc(l.LastUpdatedBy)}</span></div>` : ''}
+
+        ${editable ? `
+        <div class="upd">
+          <div class="grid">
+            <div class="fld">
+              <label for="st-${l.id}">Where is it now?</label>
+              <select id="st-${l.id}" data-stat="${l.id}">
+                ${STATUSES.map(s => `<option${s === st ? ' selected' : ''}>${s}</option>`).join('')}
+              </select>
+            </div>
+            <div class="fld showif" id="wq-${l.id}">
+              <label for="q-${l.id}">Quote total</label>
+              <input id="q-${l.id}" type="number" inputmode="decimal" step="0.01" value="${l.QuoteTotal ?? ''}" placeholder="What you quoted">
+            </div>
+            <div class="fld showif wide" id="ww-${l.id}">
+              <label for="p-${l.id}">Product on the invoice</label>
+              <input id="p-${l.id}" type="number" inputmode="decimal" step="0.01" value="${l.ProductTotal ?? ''}" placeholder="Control4 + everything else">
+              <div class="hint">Product only, not labour. This is what the 4% pays on.</div>
+              <label style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--text-mid);display:flex;gap:8px;align-items:center;margin-top:8px">
+                <input type="checkbox" id="c-${l.id}" ${l.ConnectSold ? 'checked' : ''} style="width:auto"> Connect sold on this job
+              </label>
+            </div>
+            <div class="fld wide">
+              <label for="o-${l.id}">Notes</label>
+              <textarea id="o-${l.id}" placeholder="What happened — or why it didn't.">${esc(l.Outcome || '')}</textarea>
+            </div>
+            <div class="fld"><button class="btn" data-save="${l.id}">Save update</button></div>
+          </div>
+        </div>` : `
+        <div class="readonly-note">Sales updates the status on this one. You'll see it change here.</div>`}
+      </div>
+    </div>`;
+  }).join('');
+
+  if (canEdit()) rows.forEach(l => syncFields(l.id));
+}
+
+function syncFields(id) {
+  const sel = $('st-' + id);
+  if (!sel) return;
+  const v = sel.value;
+  $('wq-' + id).classList.toggle('on', v === 'Quoted' || v === 'Won' || v === 'Lost');
+  $('ww-' + id).classList.toggle('on', v === 'Won');
+}
+
+// ── EVENTS ────────────────────────────────────────────────────────────────────
+document.addEventListener('change', e => {
+  if (e.target.dataset && e.target.dataset.stat) syncFields(e.target.dataset.stat);
+});
+
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-f],[data-open],[data-save]');
+  if (!t) return;
+
+  if (t.dataset.f) { filter = t.dataset.f; render(); return; }
+  if (t.dataset.open) { $('d-' + t.dataset.open).classList.toggle('open'); return; }
+
+  if (t.dataset.save) {
+    const id = t.dataset.save;
+    const prev = allItems.find(l => l.id === id) || {};
+    const status = $('st-' + id).value;
+    const f = { Status: status, Outcome: $('o-' + id).value.trim(), LastUpdatedBy: currentUser };
+
+    if (!prev.AssignedTo && status !== 'New') f.AssignedTo = currentUser;
+    if (status !== 'New' && !prev.ContactedDate) f.ContactedDate = new Date().toISOString();
+
+    if (status === 'Quoted' || status === 'Won' || status === 'Lost') {
+      const q = Number($('q-' + id).value);
+      if (q) f.QuoteTotal = q;
+      if (!prev.QuotedDate && status !== 'Lost') f.QuotedDate = new Date().toISOString();
+    }
+    if (status === 'Won') {
+      const p = Number($('p-' + id).value);
+      if (!p) { toast('Enter the product total on the invoice', 'error'); $('p-' + id).focus(); return; }
+      f.ProductTotal = p;
+      f.ConnectSold = $('c-' + id).checked;
+      if (!prev.QuotedDate) f.QuotedDate = new Date().toISOString();
+    }
+    if (status === 'Won' || status === 'Lost' || status === 'No response') f.ClosedDate = new Date().toISOString();
+
+    t.disabled = true; t.textContent = 'Saving…';
+    try {
+      await updateItem(id, f);
+      allItems = await getItems();
+      render();
+      toast(status === 'Won'
+        ? `Won — ${prev.FoundBy || 'finder'} earns ${money(f.ProductTotal * COMMISSION_RATE)}`
+        : 'Updated');
+    } catch(err) {
+      console.error(err);
+      toast('Update failed', 'error');
+      t.disabled = false; t.textContent = 'Save update';
+    }
+  }
+});
+
+function switchTab(toAdd) {
+  $('tab-add').setAttribute('aria-selected', toAdd);
+  $('tab-queue').setAttribute('aria-selected', !toAdd);
+  $('view-add').style.display = toAdd ? 'block' : 'none';
+  $('view-queue').style.display = toAdd ? 'none' : 'block';
+}
+$('tab-add').onclick = () => switchTab(true);
+$('tab-queue').onclick = () => switchTab(false);
+
+$('save').onclick = async () => {
+  const name = $('f-name').value.trim();
+  if (!name) { toast('Client name is needed', 'error'); $('f-name').focus(); return; }
+
+  const rec = {
+    Title: name,
+    Address: $('f-addr').value.trim(),
+    Phone: $('f-phone').value.trim(),
+    ControllerModel: $('f-model').value,
+    OSVersion: $('f-os').value.trim(),
+    SystemNotes: $('f-notes').value.trim(),
+    FoundBy: currentUser,
+    FoundDate: new Date().toISOString(),
+    Status: 'New'
+  };
+
+  $('save').disabled = true; $('save').textContent = 'Sending…';
+  try {
+    await createItem(rec);
+    try {
+      await sendMail(NOTIFY_EMAILS, `Upgrade lead — ${rec.Title}`, `
+        <p><strong>${esc(currentUser)}</strong> flagged an upgrade opportunity.</p>
+        <table cellpadding="4" style="font-family:sans-serif;font-size:14px">
+          <tr><td><b>Client</b></td><td>${esc(rec.Title)}</td></tr>
+          <tr><td><b>Address</b></td><td>${esc(rec.Address || '—')}</td></tr>
+          <tr><td><b>Phone</b></td><td>${esc(rec.Phone || '—')}</td></tr>
+          <tr><td><b>Controller</b></td><td>${esc(rec.ControllerModel || '—')} (OS ${esc(rec.OSVersion || '?')})</td></tr>
+        </table>
+        <p><b>Notes:</b><br>${esc(rec.SystemNotes || '—').replace(/\n/g, '<br>')}</p>
+        <p style="color:#666">Target: quote out within ${SLA_DAYS} business days.</p>`);
+    } catch(e) { console.warn('Lead saved, email failed:', e); }
+
+    ['f-name','f-addr','f-phone','f-os','f-notes'].forEach(i => $(i).value = '');
+    $('f-model').value = '';
+    allItems = await getItems();
+    render();
+    toast('Sent to sales');
+  } catch(err) {
+    console.error(err);
+    toast('Could not save the lead', 'error');
+  }
+  $('save').disabled = false; $('save').textContent = 'Send to sales';
+};
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const auth = await getToken();
+    accessToken = auth.token;
+    currentUser = auth.name;
+    setSyncStatus(true, `Signed in as ${currentUser}`);
+  } catch(e) {
+    setSyncStatus(false, 'Sign-in failed');
+    const msg = e.errorCode || e.message || JSON.stringify(e);
+    $('loading').innerHTML = `<div style="color:var(--red);text-align:center;padding:40px">Sign-in failed.<br><br><code style="font-size:11px;color:#f87171;background:#1a1d27;padding:8px 12px;border-radius:6px;display:inline-block;max-width:500px;word-break:break-all">${esc(msg)}</code><br><br>Please reload and try again.</div>`;
+    return;
+  }
+
+  try {
+    await getSiteAndList();
+    allItems = await getItems();
+    setSyncStatus(true, `Signed in as ${currentUser}`);
+  } catch(e) {
+    setSyncStatus(false, 'SharePoint error');
+    console.error(e);
+  }
+
+  $('loading').style.display = 'none';
+  $('app').style.display = 'block';
+  render();
+}
+
+// Auto-refresh every 2 minutes
+setInterval(async () => {
+  if (!siteId || !listId) return;
+  try {
+    allItems = await getItems();
+    render();
+    setSyncStatus(true, `Signed in as ${currentUser} · Updated ${new Date().toLocaleTimeString('en-CA', {hour:'2-digit',minute:'2-digit'})}`);
+  } catch(e) {}
+}, 120000);
+</script>
+
+<!-- MSAL -->
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script>init();</script>
+
+</body>
+</html>
