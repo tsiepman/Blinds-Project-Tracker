@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#14161c">
+<title>ART Electrical Commission</title>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  #sync-status { font-size: 12px; color: var(--text-mid); display: flex; align-items: center; gap: 7px; }
+  #sync-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); }
+  #sync-status.ok .dot  { background: var(--green); }
+  #sync-status.err .dot { background: var(--red); }
+
+  /* ── summary ─────────────────────────────────────────────────────────── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .stat .n { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .stat .l { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-mid); margin-top: 4px; font-weight: 600; }
+  .stat.owed { border-color: var(--accent); }
+  .stat.owed .n { color: var(--accent); }
+
+  /* ── cards & tabs ────────────────────────────────────────────────────── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 18px; }
+  .card h2 { font-family: var(--disp); font-size: 17px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin: 0 0 14px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 18px; flex-wrap: wrap; }
+  .tabs button {
+    background: transparent; border: 1px solid var(--border); color: var(--text-mid);
+    padding: 8px 15px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+  .form-row { display: grid; gap: 10px; align-items: end; }
+  .r-outlet { grid-template-columns: 150px 1fr 1fr 110px auto; }
+  .r-light1 { grid-template-columns: 150px 1fr 1fr; }
+  .r-light2 { grid-template-columns: 150px 130px 130px 180px auto; }
+  .form-row + .form-row { margin-top: 12px; }
+  .field label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-mid); margin-bottom: 5px; font-weight: 600; }
+  .field input, .field select { width: 100%; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; padding-bottom: 9px; }
+  .check input { width: auto; }
+
+  .btn {
+    background: var(--accent); color: var(--on-accent); border: none;
+    border-radius: var(--radius); padding: 10px 20px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-mid); font-weight: 600; }
+
+  .preview { font-size: 12.5px; color: var(--text-mid); margin-top: 12px; }
+  .preview b { color: var(--accent); font-size: 15px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-mid); padding: 9px; border-bottom: 1px solid var(--border); font-weight: 700; white-space: nowrap; }
+  td { padding: 11px 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr.paid td { opacity: .5; }
+  .amt { text-align: right; font-weight: 700; white-space: nowrap; }
+  .dim { color: var(--text-mid); }
+  .pill { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; text-transform: uppercase; letter-spacing: .04em; }
+  .p-outlet { background: var(--co-dim); color: var(--co); }
+  .p-light  { background: var(--accent-dim); color: var(--accent); }
+  .p-orig   { background: var(--green-dim); color: var(--green); }
+  .empty { text-align: center; padding: 40px 20px; color: var(--text-dim); font-size: 13px; }
+  .empty strong { display: block; color: var(--text-mid); margin-bottom: 5px; }
+
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 11px 20px; border-radius: var(--radius); font-size: 13px;
+    opacity: 0; transition: all .25s; pointer-events: none; z-index: 999;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.success { border-color: var(--green); }
+  #toast.error   { border-color: var(--red); }
+
+  .gate { max-width: 520px; margin: 80px auto; text-align: center; padding: 0 20px; }
+  .gate .banner {
+    background: var(--yellow-dim); border: 1px solid rgba(232,163,61,.4);
+    border-radius: var(--radius); padding: 18px; text-align: left; font-size: 13.5px; line-height: 1.5; margin-bottom: 18px;
+  }
+  .gate .banner b { display: block; margin-bottom: 5px; }
+
+  @media (max-width: 700px) {
+    .r-outlet, .r-light1, .r-light2 { grid-template-columns: 1fr 1fr; }
+    .r-outlet .btn, .r-light2 .btn { grid-column: span 2; width: 100%; }
+    table { font-size: 12px; }
+    th, td { padding: 8px 6px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="art-mark">
+    <div class="art-mark-row">
+      <span class="art-mark-box">ART</span>
+      <span class="art-mark-name">Electrical Commission</span>
+    </div>
+  </div>
+  <div id="sync-status"><span class="dot"></span><span id="sync-text">Connecting…</span></div>
+  <a class="art-back" href="index.html">← All tools</a>
+</header>
+
+<div id="loading" style="text-align:center;padding:60px;color:var(--text-dim)">Loading…</div>
+<div id="gate" style="display:none"></div>
+
+<main id="app" style="display:none">
+  <div class="stats" id="stats"></div>
+  <div id="entry"></div>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="card">
+    <table>
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const SITE_HOST = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const LIST_NAME = 'ARTElectricalCommission';
+
+/* ── WHO CAN OPEN THIS ─────────────────────────────────────────────────────
+   ⚠ This hides the PAGE, not the DATA. Anyone who can reach the
+   ARTElectricalCommission list in SharePoint can read every row, including
+   the margin figures. If that matters, set permissions on the list itself —
+   this check is a sign on a door, not a lock. */
+const ALLOWED = [
+  'tsiepman@advance.mb.ca',     // Trevor
+  'bdeleau@advance.mb.ca',      // Bruno
+  'lkrahn@advance.mb.ca',       // Lyall
+  'bbenson@advance.mb.ca',      // Brian
+  'cmacdearmid@advance.mb.ca'   // Chris
+];
+
+/* Chris sees his own payout but NOT ART's margin or product sell figures. */
+const RESTRICTED_VIEW = ['cmacdearmid@advance.mb.ca'];
+
+// ── DEAL TERMS ────────────────────────────────────────────────────────────────
+const OUTLET_RATE     = 50;    // $ per electrical outlet service call
+const ORIGINATION_FEE = 150;   // $ flat when Chris found the lighting job himself
+const CHRIS_SHARE     = 0.10;  // 10% of PRODUCT profit
+const BASE_RATE       = 35;    // $/hr — used for the equivalent-rate figure
+const STIPEND_MONTHLY = 250;   // licence stipend
+const HOURS_PER_YEAR  = 2000;  // for the $/hr equivalent only
+
+const REQUIRED_COLUMNS = [
+  { name: 'EntryType',    text: {} },   // 'Outlet' | 'Lighting'
+  { name: 'JobDate',      dateTime: { displayAs: 'default' } },
+  { name: 'Client',       text: {} },
+  { name: 'Address',      text: {} },
+  { name: 'DToolsNum',    text: {} },
+  { name: 'ProductSell',  number: {} }, // lighting only
+  { name: 'MarginPct',    number: {} }, // lighting only, from D-Tools
+  { name: 'Originated',   boolean: {} },
+  { name: 'Payout',       number: {} }, // computed at entry, stored
+  { name: 'Notes',        text: { allowMultipleLines: true, appendChangesToExistingText: false, linesForEditing: 3 } },
+  { name: 'EnteredBy',    text: {} },
+  { name: 'Paid',         boolean: {} },
+  { name: 'PaidDate',     dateTime: { displayAs: 'default' } }
+];
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+let accessToken = null, currentUser = null, currentEmail = '', msalInstance = null;
+
+function getMsalInstance() {
+  if (msalInstance) return msalInstance;
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: CLIENT_ID,
+      authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+      redirectUri: window.location.href.split('?')[0]
+    },
+    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: true }
+  });
+  return msalInstance;
+}
+
+async function getToken() {
+  const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+  const instance = getMsalInstance();
+  await instance.handleRedirectPromise();
+  const accounts = instance.getAllAccounts();
+  if (accounts.length > 0) {
+    try {
+      const r = await instance.acquireTokenSilent({ scopes, account: accounts[0] });
+      return { token: r.accessToken, name: accounts[0].name, email: accounts[0].username };
+    } catch(e) {}
+  }
+  await instance.acquireTokenRedirect({ scopes });
+  return new Promise(() => {});
+}
+
+function isAllowed(email) {
+  return ALLOWED.map(x => x.toLowerCase()).includes((email||'').trim().toLowerCase());
+}
+function isRestricted(email) {
+  return RESTRICTED_VIEW.map(x => x.toLowerCase()).includes((email||'').trim().toLowerCase());
+}
+
+// ── GRAPH ─────────────────────────────────────────────────────────────────────
+let siteId = null, listId = null, allItems = [];
+
+async function graph(path, opts = {}) {
+  const r = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    ...opts,
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...(opts.headers||{}) }
+  });
+  if (!r.ok) throw new Error(`Graph ${r.status}: ${await r.text()}`);
+  if (r.status === 204 || r.status === 202) return null;
+  return r.json();
+}
+
+async function getSiteAndList() {
+  const site = await graph(`/sites/${SITE_HOST}:${SITE_PATH}`);
+  siteId = site.id;
+  try {
+    const lists = await graph(`/sites/${siteId}/lists?$filter=displayName eq '${LIST_NAME}'`);
+    if (lists.value.length > 0) { listId = lists.value[0].id; await ensureColumns(); return; }
+  } catch(e) {}
+  const newList = await graph(`/sites/${siteId}/lists`, {
+    method: 'POST',
+    body: JSON.stringify({ displayName: LIST_NAME, columns: REQUIRED_COLUMNS, list: { template: 'genericList' } })
+  });
+  listId = newList.id;
+}
+
+async function ensureColumns() {
+  let existing;
+  try {
+    const res = await graph(`/sites/${siteId}/lists/${listId}/columns`);
+    existing = new Set(res.value.map(c => c.name));
+  } catch(e) { console.warn('Could not read columns:', e); return; }
+  for (const col of REQUIRED_COLUMNS.filter(c => !existing.has(c.name))) {
+    try {
+      await graph(`/sites/${siteId}/lists/${listId}/columns`, { method: 'POST', body: JSON.stringify(col) });
+      console.log('Added column:', col.name);
+    } catch(e) {
+      console.error(`Couldn't add column "${col.name}":`, e);
+      toast(`Column ${col.name} missing and couldn't be added. Ask a site owner to open this page once.`, 'error');
+    }
+  }
+}
+
+async function getItems() {
+  const res = await graph(`/sites/${siteId}/lists/${listId}/items?expand=fields&$top=999`);
+  allItems = res.value.map(i => ({ id: i.id, ...i.fields }));
+  allItems.sort((a,b) => new Date(b.JobDate||0) - new Date(a.JobDate||0));
+}
+
+async function addItem(fields) {
+  const res = await graph(`/sites/${siteId}/lists/${listId}/items`, {
+    method: 'POST', body: JSON.stringify({ fields })
+  });
+  return res;
+}
+
+async function updateItem(id, fields) {
+  return graph(`/sites/${siteId}/lists/${listId}/items/${id}/fields`, {
+    method: 'PATCH', body: JSON.stringify(fields)
+  });
+}
+
+async function deleteItem(id) {
+  return graph(`/sites/${siteId}/lists/${listId}/items/${id}`, { method: 'DELETE' });
+}
+
+// ── MATH ──────────────────────────────────────────────────────────────────────
+// Product profit = product sell x margin %. Chris gets 10% of that,
+// plus a flat origination fee when he found the job himself.
+function lightingPayout(productSell, marginPct, originated) {
+  const profit = (Number(productSell)||0) * ((Number(marginPct)||0) / 100);
+  return profit * CHRIS_SHARE + (originated ? ORIGINATION_FEE : 0);
+}
+
+const money = n => '$' + (Number(n)||0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money0 = n => '$' + Math.round(Number(n)||0).toLocaleString('en-CA');
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-CA', { month:'short', day:'numeric', year:'numeric' }) : '—';
+const todayISO = () => new Date().toISOString().slice(0,10);
+
+// ── VIEW STATE ────────────────────────────────────────────────────────────────
+let tab = 'unpaid';
+
+function toast(msg, kind='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + kind;
+  setTimeout(() => { t.className = ''; }, 3200);
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render() {
+  renderStats();
+  renderEntry();
+  renderTabs();
+  renderTable();
+}
+
+function renderStats() {
+  const restricted = isRestricted(currentEmail);
+  const unpaid  = allItems.filter(i => !i.Paid);
+  const owed    = unpaid.reduce((s,i) => s + (Number(i.Payout)||0), 0);
+
+  const yr = new Date().getFullYear();
+  const thisYear = allItems.filter(i => new Date(i.JobDate||0).getFullYear() === yr);
+  const ytdPay   = thisYear.reduce((s,i) => s + (Number(i.Payout)||0), 0);
+  const outlets  = thisYear.filter(i => i.EntryType === 'Outlet').length;
+
+  // $/hr equivalent: base + stipend + everything earned this year
+  const equiv = BASE_RATE + ((STIPEND_MONTHLY*12) + ytdPay) / HOURS_PER_YEAR;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat owed"><div class="n">${money0(owed)}</div><div class="l">Owed — unpaid</div></div>
+    <div class="stat"><div class="n">${money0(ytdPay)}</div><div class="l">Earned ${yr}</div></div>
+    <div class="stat"><div class="n">${outlets}</div><div class="l">Outlet calls ${yr}</div></div>
+    <div class="stat"><div class="n">$${equiv.toFixed(2)}</div><div class="l">Equivalent rate /hr</div></div>
+  `;
+}
+
+function renderEntry() {
+  const restricted = isRestricted(currentEmail);
+  // Chris logs his own outlet calls. Lighting jobs are entered by whoever sold them.
+  const lighting = restricted ? '' : `
+    <div class="card">
+      <h2>Log a lighting job</h2>
+      <div class="form-row r-light1">
+        <div class="field"><label>Date</label><input id="l-date" type="date" value="${todayISO()}"></div>
+        <div class="field"><label>Client</label><input id="l-client" type="text" placeholder="e.g. Goldman"></div>
+        <div class="field"><label>D-Tools #</label><input id="l-dt" type="text" placeholder="e.g. ADVAN-3716"></div>
+      </div>
+      <div class="form-row r-light2">
+        <div class="field"><label>Product sell ($)</label><input id="l-sell" type="number" min="0" step="0.01" placeholder="0.00" oninput="previewLighting()"></div>
+        <div class="field"><label>Margin % (D-Tools)</label><input id="l-margin" type="number" min="0" max="100" step="0.1" placeholder="40" oninput="previewLighting()"></div>
+        <div class="field"><label>Notes</label><input id="l-notes" type="text" placeholder="optional"></div>
+        <div class="field"><label>&nbsp;</label>
+          <div class="check"><input id="l-orig" type="checkbox" onchange="previewLighting()"><label for="l-orig" style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Chris found it</label></div>
+        </div>
+        <div class="field"><button class="btn" id="l-btn" onclick="submitLighting()">Log job →</button></div>
+      </div>
+      <div class="preview" id="l-preview">Enter product sell and margin to see the payout.</div>
+    </div>`;
+
+  document.getElementById('entry').innerHTML = `
+    <div class="card">
+      <h2>Log an outlet call</h2>
+      <div class="form-row r-outlet">
+        <div class="field"><label>Date</label><input id="o-date" type="date" value="${todayISO()}"></div>
+        <div class="field"><label>Client</label><input id="o-client" type="text" placeholder="e.g. Goldman"></div>
+        <div class="field"><label>Address / notes</label><input id="o-notes" type="text" placeholder="e.g. 732 South Drive — TV outlet"></div>
+        <div class="field"><label>Outlets</label><input id="o-count" type="number" min="1" step="1" value="1" oninput="previewOutlet()"></div>
+        <div class="field"><button class="btn" onclick="submitOutlet()">Log call →</button></div>
+      </div>
+      <div class="preview" id="o-preview">Pays <b>${money(OUTLET_RATE)}</b> — on top of hourly.</div>
+    </div>
+    ${lighting}`;
+}
+
+function previewOutlet() {
+  const n = Math.max(1, parseInt(document.getElementById('o-count').value)||1);
+  document.getElementById('o-preview').innerHTML =
+    `Pays <b>${money(n*OUTLET_RATE)}</b>${n>1?` (${n} × ${money(OUTLET_RATE)})`:''} — on top of hourly.`;
+}
+
+function previewLighting() {
+  const sell = parseFloat(document.getElementById('l-sell').value)||0;
+  const marg = parseFloat(document.getElementById('l-margin').value)||0;
+  const orig = document.getElementById('l-orig').checked;
+  const el = document.getElementById('l-preview');
+  if (!sell || !marg) { el.innerHTML = 'Enter product sell and margin to see the payout.'; return; }
+  const profit = sell * (marg/100);
+  const pay = lightingPayout(sell, marg, orig);
+  el.innerHTML = `Product profit ${money(profit)} → Chris gets <b>${money(pay)}</b>`
+    + (orig ? ` (10% + ${money(ORIGINATION_FEE)} origination)` : ` (10% of product profit)`);
+}
+
+async function submitOutlet() {
+  const date  = document.getElementById('o-date').value;
+  const client= document.getElementById('o-client').value.trim();
+  const notes = document.getElementById('o-notes').value.trim();
+  const count = Math.max(1, parseInt(document.getElementById('o-count').value)||1);
+  if (!date || !client) { toast('Date and client are required.', 'error'); return; }
+  try {
+    await addItem({
+      EntryType: 'Outlet', JobDate: new Date(date).toISOString(), Client: client,
+      Address: notes, Payout: count * OUTLET_RATE, Notes: count>1 ? `${count} outlets` : '',
+      Originated: false, EnteredBy: currentUser, Paid: false
+    });
+    toast(`Outlet call logged — ${money(count*OUTLET_RATE)}.`, 'success');
+    await getItems(); render();
+  } catch(e) { console.error(e); toast('Could not save. Check connection.', 'error'); }
+}
+
+async function submitLighting() {
+  const date  = document.getElementById('l-date').value;
+  const client= document.getElementById('l-client').value.trim();
+  const dt    = document.getElementById('l-dt').value.trim();
+  const sell  = parseFloat(document.getElementById('l-sell').value)||0;
+  const marg  = parseFloat(document.getElementById('l-margin').value)||0;
+  const orig  = document.getElementById('l-orig').checked;
+  const notes = document.getElementById('l-notes').value.trim();
+  if (!date || !client) { toast('Date and client are required.', 'error'); return; }
+  if (!sell || !marg)   { toast('Product sell and margin % are required.', 'error'); return; }
+  if (marg > 100)       { toast('Margin % looks wrong — should be under 100.', 'error'); return; }
+  try {
+    await addItem({
+      EntryType: 'Lighting', JobDate: new Date(date).toISOString(), Client: client,
+      DToolsNum: dt, ProductSell: sell, MarginPct: marg, Originated: orig,
+      Payout: lightingPayout(sell, marg, orig), Notes: notes,
+      EnteredBy: currentUser, Paid: false
+    });
+    toast(`Lighting job logged — ${money(lightingPayout(sell,marg,orig))} to Chris.`, 'success');
+    await getItems(); render();
+  } catch(e) { console.error(e); toast('Could not save. Check connection.', 'error'); }
+}
+
+function renderTabs() {
+  const unpaid = allItems.filter(i => !i.Paid).length;
+  const paid   = allItems.filter(i => i.Paid).length;
+  document.getElementById('tabs').innerHTML = `
+    <button class="${tab==='unpaid'?'on':''}" onclick="setTab('unpaid')">Unpaid (${unpaid})</button>
+    <button class="${tab==='paid'?'on':''}"   onclick="setTab('paid')">Paid (${paid})</button>
+    <button class="${tab==='all'?'on':''}"    onclick="setTab('all')">All (${allItems.length})</button>`;
+}
+function setTab(t) { tab = t; renderTabs(); renderTable(); }
+
+function renderTable() {
+  const restricted = isRestricted(currentEmail);
+  const rows = allItems.filter(i => tab==='all' ? true : (tab==='paid' ? i.Paid : !i.Paid));
+
+  document.getElementById('thead').innerHTML = `<tr>
+    <th>Type</th><th>Date</th><th>Client</th>
+    ${restricted ? '' : '<th>D-Tools #</th><th class="amt">Product sell</th><th class="amt">Margin</th>'}
+    <th class="amt">Payout</th><th>Notes</th>
+    ${restricted ? '' : '<th></th>'}
+  </tr>`;
+
+  const cols = restricted ? 5 : 9;
+  if (rows.length === 0) {
+    document.getElementById('tbody').innerHTML =
+      `<tr><td colspan="${cols}"><div class="empty"><strong>Nothing here</strong>${tab==='unpaid'?'Everything is settled up.':'No entries yet.'}</div></td></tr>`;
+    return;
+  }
+
+  document.getElementById('tbody').innerHTML = rows.map(i => {
+    const isOutlet = i.EntryType === 'Outlet';
+    return `<tr class="${i.Paid?'paid':''}">
+      <td><span class="pill ${isOutlet?'p-outlet':'p-light'}">${isOutlet?'Outlet':'Lighting'}</span>
+          ${i.Originated?' <span class="pill p-orig">Found it</span>':''}</td>
+      <td class="dim">${fmtDate(i.JobDate)}</td>
+      <td>${esc(i.Client)}</td>
+      ${restricted ? '' : `
+        <td class="dim">${esc(i.DToolsNum)||'—'}</td>
+        <td class="amt dim">${i.ProductSell?money0(i.ProductSell):'—'}</td>
+        <td class="amt dim">${i.MarginPct?Number(i.MarginPct).toFixed(1)+'%':'—'}</td>`}
+      <td class="amt">${money(i.Payout)}</td>
+      <td class="dim">${esc(i.Address||i.Notes)||'—'}</td>
+      ${restricted ? '' : `<td style="white-space:nowrap">
+        <button class="btn btn-ghost" style="padding:5px 10px;font-size:11px" onclick="togglePaid('${i.id}')">${i.Paid?'Unpay':'Mark paid'}</button>
+        <button class="btn btn-ghost" style="padding:5px 9px;font-size:11px" onclick="removeRow('${i.id}')" title="Delete">✕</button>
+      </td>`}
+    </tr>`;
+  }).join('');
+}
+
+async function togglePaid(id) {
+  const item = allItems.find(i => i.id === id);
+  if (!item) return;
+  const now = !item.Paid;
+  try {
+    await updateItem(id, { Paid: now, PaidDate: now ? new Date().toISOString() : null });
+    item.Paid = now;
+    toast(now ? 'Marked paid.' : 'Moved back to unpaid.', 'success');
+    render();
+  } catch(e) { console.error(e); toast('Could not update.', 'error'); }
+}
+
+async function removeRow(id) {
+  const item = allItems.find(i => i.id === id);
+  if (!item) return;
+  if (!confirm(`Delete this ${item.EntryType==='Outlet'?'outlet call':'lighting job'} for ${item.Client}? This can't be undone.`)) return;
+  try {
+    await deleteItem(id);
+    allItems = allItems.filter(i => i.id !== id);
+    toast('Deleted.', 'success');
+    render();
+  } catch(e) { console.error(e); toast('Could not delete.', 'error'); }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+function setSync(text, kind='') {
+  document.getElementById('sync-text').textContent = text;
+  document.getElementById('sync-status').className = kind;
+}
+
+function showGate() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('gate').style.display = 'block';
+  document.getElementById('gate').innerHTML = `
+    <div class="gate">
+      <div class="banner">
+        <b>Not available to you</b>
+        This page holds compensation details and is limited to a few people.
+        If you think you should have access, talk to Trevor.
+      </div>
+      <a class="btn" href="index.html" style="display:inline-block;text-decoration:none">← Back to ART Tools</a>
+    </div>`;
+}
+
+async function init() {
+  try {
+    setSync('Signing in…');
+    const auth = await getToken();
+    accessToken = auth.token;
+    currentUser = auth.name;
+    currentEmail = auth.email || '';
+
+    if (!isAllowed(currentEmail)) { setSync('No access', 'err'); showGate(); return; }
+
+    setSync('Loading…');
+    await getSiteAndList();
+    await getItems();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    setSync(currentUser || 'Connected', 'ok');
+    render();
+  } catch(e) {
+    console.error(e);
+    setSync('Connection failed', 'err');
+    document.getElementById('loading').innerHTML =
+      `<div style="color:var(--red)">Couldn't connect. Check the console (F12) and reload.</div>`;
+  }
+}
+</script>
+<script>init();</script>
+
+</body>
+</html>
