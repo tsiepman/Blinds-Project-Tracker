@@ -38,70 +38,6 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ---------- shell ---------- */
-/* ---------- positions ---------- */
-.posstats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-.posds{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
-  padding:10px 13px;margin-bottom:14px;font-size:13px;color:var(--muted)}
-.posds b{color:var(--ink)}
-.postabs{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;
-  width:max-content;margin-bottom:6px}
-.postabs button{background:none;border:0;color:var(--muted);font-family:var(--disp);
-  text-transform:uppercase;letter-spacing:.1em;font-size:11.5px;font-weight:600;
-  padding:7px 15px;cursor:pointer}
-.postabs button+button{border-left:1px solid var(--line)}
-.postabs button.on{background:var(--red);color:#fff}
-.posdiv{display:flex;align-items:baseline;gap:10px;margin:22px 0 2px;padding-bottom:6px;
-  border-bottom:1px solid var(--line)}
-.posdiv h4{font-family:var(--disp);text-transform:uppercase;letter-spacing:.12em;font-size:13px;
-  font-weight:600;margin:0;color:var(--ink)}
-.posdiv span{font-size:11px;color:var(--faint)}
-.posrow{border-bottom:1px solid var(--line2)}
-.posbtn{width:100%;display:grid;grid-template-columns:74px 1fr auto;gap:12px;align-items:baseline;
-  background:none;border:0;color:inherit;text-align:left;padding:11px 4px;cursor:pointer}
-.posbtn:hover{background:var(--panel)}
-.poscode{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--faint)}
-.posrow.on .poscode{color:var(--red)}
-.posname{font-size:14px;font-weight:600}
-.poswho{font-size:11.5px;color:var(--muted);white-space:nowrap}
-.posflag{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--red);
-  margin-left:7px;vertical-align:middle}
-.pospanel{padding:2px 4px 22px 86px}
-.pospurpose{font-size:14.5px;margin:0 0 16px;padding-left:12px;border-left:2px solid var(--red)}
-.posmeta{font-size:11.5px;color:var(--faint);margin-bottom:12px}
-.possec{font-family:var(--disp);text-transform:uppercase;letter-spacing:.14em;font-size:11px;
-  color:var(--red);margin:16px 0 6px;font-weight:600}
-.poslist{margin:0;padding:0;list-style:none}
-.poslist li{position:relative;padding-left:14px;margin-bottom:5px;color:var(--muted);font-size:13px}
-.poslist li:before{content:"";position:absolute;left:0;top:9px;width:6px;height:1px;background:var(--faint)}
-.postab{width:100%;border-collapse:collapse}
-.postab th{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);
-  text-align:left;font-weight:400;padding:5px 8px 5px 0;border-bottom:1px solid var(--line)}
-.postab td{padding:6px 8px 6px 0;border-bottom:1px solid var(--line2);font-size:13px;color:var(--muted)}
-.postab td:last-child{width:130px;font-family:var(--disp);letter-spacing:.03em;color:var(--ink)}
-.postab td.blank{color:var(--red)}
-.posnote{margin-top:16px;padding:10px 13px;background:var(--redwash);border-left:2px solid var(--red);
-  font-size:12.5px;color:var(--muted);border-radius:0 4px 4px 0}
-.posnote b{color:var(--ink)}
-.possig{margin-top:18px;padding-top:14px;border-top:1px solid var(--line2);
-  display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-.posperson{border-bottom:1px solid var(--line2);padding:14px 4px}
-.pphead{display:flex;align-items:center;gap:11px;margin-bottom:9px}
-.pphead h4{margin:0;font-size:15px;font-weight:600}
-.ppload{display:flex;gap:3px;align-items:center;margin-left:auto}
-.ppload i{width:8px;height:8px;background:var(--red);border-radius:1px;display:block}
-.ppload b{font-size:11px;color:var(--faint);font-weight:400;margin-left:5px}
-.ppchips{display:flex;flex-wrap:wrap;gap:6px}
-.ppchip{background:var(--lockwash);border:1px solid var(--line);border-radius:5px;padding:5px 9px;
-  font-size:12.5px;color:var(--muted);cursor:pointer;display:flex;gap:7px;align-items:baseline}
-.ppchip:hover{border-color:var(--red);color:var(--ink)}
-.ppchip code{font-family:var(--disp);font-size:10.5px;color:var(--faint)}
-.ppacts{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
-@media(max-width:700px){
-  .posbtn{grid-template-columns:60px 1fr}
-  .poswho{grid-column:2;font-size:10.5px}
-  .pospanel{padding-left:6px}
-}
-
 .app{display:grid;grid-template-columns:206px 1fr;min-height:100vh}
 .side{background:var(--surface);color:var(--text);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
 .brand{padding:16px 16px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
@@ -385,7 +321,7 @@ async function getToken(){
    ========================================================================= */
 const LIST={employees:"HR_Employees",timeOff:"HR_TimeOff",training:"HR_Training",tools:"HR_Tools",
   toolLog:"HR_ToolLog",vehicles:"HR_Vehicles",service:"HR_Service",incidents:"HR_Incidents",
-  acks:"HR_Acks",posAcks:"HR_PositionContracts",settings:"HR_Settings"};
+  acks:"HR_Acks",settings:"HR_Settings"};
 
 let siteId=null, listIds={};
 
@@ -453,12 +389,6 @@ async function deleteItem(listName,itemId){
 const b2t=v=>!!v, t2b=v=>v===true||v==="Yes"||v===1;
 
 const M={
-  posAcks:{
-    from:f=>({id:f.AppKey||uid(),empId:f.EmpId||"",code:f.PosCode||"",status:f.Status||"",
-      sent:f.SentDate||"",signed:f.SignedDate||"",envId:f.EnvelopeId||""}),
-    to:r=>({Title:(r.code||"")+" — "+(r.empId||""),AppKey:r.id,EmpId:r.empId,PosCode:r.code,
-      Status:r.status,SentDate:r.sent,SignedDate:r.signed,EnvelopeId:r.envId})
-  },
   employees:{
     from:f=>({id:f.AppKey||uid(),name:f.Title||"",role:f.Role||"",hired:f.Hired||"",
       keyTech:t2b(f.KeyTech),email:f.Email||"",phone:f.Phone||"",ec:f.EC||"",ecPhone:f.ECPhone||"",
@@ -550,16 +480,9 @@ async function saveSettings(settings){
 const Store={
   async load(){
     await getSiteId();
-    const OPTIONAL=["posAcks"];
-    for(const key of Object.keys(LIST)){
-      try{ await getListId(LIST[key]); }
-      catch(e){ if(!OPTIONAL.includes(key)) throw e; }
-    }
+    for(const key of Object.keys(LIST)) await getListId(LIST[key]);
     const raw={};
-    await Promise.all(Object.keys(LIST).map(async key=>{
-      try{ raw[key]=await getItems(LIST[key]); }
-      catch(e){ if(OPTIONAL.includes(key)){ raw[key]=[]; } else { throw e; } }
-    }));
+    await Promise.all(Object.keys(LIST).map(async key=>{ raw[key]=await getItems(LIST[key]); }));
     synced={};
     const db={};
     for(const key of COLLECTIONS){
@@ -776,226 +699,6 @@ function seed(){
   };
 }
 
-
-/* =========================================================================
-   POSITION CONTRACTS
-   -------------------------------------------------------------------------
-   The 28 positions and the result each is accountable for. This array is the
-   single source of truth: edit a contract here and both the Positions view
-   and the printed contract pack follow.
-
-   Targets containing "___" have not been agreed yet and show in red.
-
-   SIGNING — no e-signature account needed. Each position is signed on its own,
-   because a contract belongs to the position, not to the person holding it.
-   When a position moves to someone else, only that one contract is reissued.
-   "Contract pack" prints everything one person holds as a single document with
-   a separate signature block per position; "Contract" inside a position prints
-   just that one. Save as PDF from the print dialog, send it however you like,
-   then mark it here so the hub stays the record of who accepted what.
-   ========================================================================= */
-const POSITIONS=[{"code":"EXE-01","title":"President & CEO","owner":"Trevor","reports":"Shareholders & Directors","purpose":"The business produces its planned financial result, moves in a deliberate direction, and stays a place people want to work.","acc":["The overall financial result of the business against the annual plan.","Strategic direction — which markets we enter, which we don't, and what we invest in.","The culture: the standard of care clients experience, and the standard we hold each other to.","The performance of the people holding the division-head positions.","The annual plan itself — written, communicated, and reviewed."],"measures":[["Revenue against plan","___"],["Net profit against plan","___"],["Gross margin, blended","___"],["Staff retention","___"]],"std":["The weekly production meeting is chaired without exception — it is where priority gets set.","The weekly sales meeting is chaired without exception.","The Monday visibility check on the service queue is done personally, not delegated.","Every position has a signed contract and a named owner."],"esc":["Anything requiring shareholder approval — major capital commitment, change in structure, or a decision outside the annual plan."],"note":null,"div":"Executive"},{"code":"SLS-01","title":"VP Sales","owner":"Bruno","reports":"President & CEO","purpose":"Total revenue lands on plan, at the margin we intended, with no lead falling between salespeople.","acc":["Total revenue against plan across all salespeople.","Pricing discipline — discounts and exceptions are approved, not improvised.","Gross margin on sold work.","The accuracy of the sales forecast.","Account allocation: which builder belongs to whom, and an owner for any lead that arrives without one."],"measures":[["Total revenue against plan","___"],["Blended gross margin","___"],["Forecast accuracy (quarter)","___"],["Unassigned leads outstanding","0"]],"std":["Every lead has a named owner within one business day of arriving.","Pricing exceptions beyond the standard schedule are approved by this position, not decided individually.","Account assignments are written down, and a builder deals with the same person every time.","The forecast is updated weekly, not reconstructed at quarter end."],"esc":["A discount request beyond the agreed threshold.","A builder relationship at risk.","Forecast diverging from plan by more than the agreed variance."],"note":null,"div":"Sales"},{"code":"SLS-02","title":"Sales — Builder Accounts","owner":"Bruno & Lyall","reports":"VP Sales","purpose":"Named builders keep coming back to us, and the work we sell them is work we can actually deliver at the margin quoted.","acc":["Revenue from assigned builder accounts.","The health of those relationships, measured by repeat work rather than by any one job.","Quotes that reflect what the job will genuinely take in labour and material.","A complete handoff to Operations on every sold job."],"measures":[["Revenue by assigned account","___"],["Repeat work rate","___"],["Quote turnaround time","___"],["Estimate-to-actual labour variance","___"]],"std":["Accounts are assigned by builder, not by territory — consistency for the builder is the point.","No job is released to Operations without a complete design and scope document.","No scope change is agreed verbally. Change order or it did not happen.","Deposits and payment terms are agreed before work is scheduled."],"esc":["Scope creeping without a change order.","A builder expressing dissatisfaction of any kind.","A job where the quoted margin is no longer achievable."],"note":null,"div":"Sales"},{"code":"SLS-03","title":"Business Development — New Markets","owner":"Bruno","reports":"President & CEO","purpose":"ART has revenue lines in five years that do not exist today.","acc":["Opening light commercial as a repeatable revenue line.","Opening residential electrical beyond the work attached to existing AV jobs.","Developing the Lake of the Woods cottage market.","Bringing each segment to its first sale, then to repeat customers."],"measures":[["Revenue from new segments","___"],["Qualified prospects per segment","___"],["First sale in each segment by","___"]],"std":["Segments are developed deliberately, one or two at a time — not all four at once.","A segment is real when it has repeat customers, not when it has one job.","Capability gaps are identified before selling, not after."],"esc":["A segment requiring capability, licensing, or certification ART does not hold.","An opportunity larger than current delivery capacity."],"note":null,"div":"Sales"},{"code":"SLS-04","title":"System Design & Engineering","owner":"Bruno, Lyall & Trevor","reports":"VP Sales","purpose":"Every system we sell is technically correct, buildable by our crews, and does what the client was told it would do.","acc":["Schematics, equipment selection, load calculations and network design on sold systems.","The design and scope document Project Management works from.","Systems being within the proven capability of our team."],"measures":[["Rework hours traced to design error","___"],["Commissioning issues traced to design","___"],["Jobs released with complete documents","100%"]],"std":["No job is released to Operations without a complete design document.","Unfamiliar technology or an unproven product is reviewed with the CEO before it is quoted.","Design decisions that affect cost are reflected in the quote before it goes out."],"esc":["A system beyond the team's proven capability.","A client requirement that cannot be met with our current lines."],"note":null,"div":"Sales"},{"code":"SLS-05","title":"Estimating","owner":"Bruno","reports":"VP Sales","purpose":"Quoted hours and material match what the job actually consumes, so margin is real rather than assumed.","acc":["Accuracy of quoted labour against actual hours.","Accuracy of quoted material against actual material.","Reviewing variance after jobs close, and feeding it back into future quotes."],"measures":[["Labour variance, quoted vs actual","___"],["Material variance, quoted vs actual","___"],["Closed jobs reviewed within 2 weeks","100%"]],"std":["Every closed job has its actual hours compared to quoted hours within two weeks.","Variance beyond the agreed threshold is reviewed, not absorbed.","Estimating assumptions are written down so a variance can be explained."],"esc":["Repeated variance in a particular job type — that is a pricing problem, not a job problem."],"note":"This position depends on labour hours being captured against each job. If that is not happening today, it is a system to build before the accountability can be held.","div":"Sales"},{"code":"SLS-06","title":"Upgrade Sales — Existing Install Base","owner":"Lyall","reports":"VP Sales","purpose":"Clients running systems we installed years ago get brought current, rather than being left until they call someone else.","acc":["Revenue from upgrading the existing install base.","The upgrade pipeline — who is on old equipment, and where each of them sits.","Converting upgrade opportunities identified by Service into sold work.","The rate at which the install base is worked through."],"measures":[["Upgrade revenue","___"],["Upgrade leads received from Service","___"],["Conversion rate on those leads","___"],["Leads contacted within 3 business days","100%"]],"std":["Every upgrade opportunity flagged by Service is contacted within three business days.","All opportunities are logged in the Upgrade Queue — not carried in someone's head.","The install base is worked through systematically, oldest systems first, rather than opportunistically."],"esc":["A client wanting something outside our current lines.","A system where upgrade is not economic and replacement should be quoted."],"note":"Handoff with Service Delivery (SVC-03): Service identifies and logs the opportunity, this position contacts and closes. Both halves need to be in both contracts.","div":"Sales"},{"code":"SLS-07","title":"Showroom","owner":"Lyall","reports":"VP Sales","purpose":"A client walking into our showroom sees the best version of what we sell, working — first time, every time.","acc":["Every demo functioning on demand, without a warm-up or an apology.","Firmware, software and drivers current across all demonstration systems.","Displayed product reflecting the lines we actually sell today, not what we sold three years ago.","The space itself presenting well — clean, current, and worth bringing a builder into."],"measures":[["Failed or degraded demos","0"],["Demo systems tested","Monthly"],["Displayed product matching current lines","___"],["Client-facing visits hosted","___"]],"std":["Every demo system is tested monthly, whether or not anyone has booked a visit.","A failed demo in front of a client is treated as a serious incident, not an inconvenience — a showroom that fails does more damage than no showroom.","When a line changes, the showroom is updated within the agreed window.","Anything broken is fixed or removed. Nothing is left in place not working."],"esc":["A demo failure witnessed by a client.","Product needing replacement beyond the agreed spend threshold.","A line change requiring significant showroom investment."],"note":null,"div":"Sales"},{"code":"OPS-01","title":"General Manager","owner":"Trevor","reports":"President & CEO","purpose":"Work that has been sold gets delivered on time, on budget, and to standard.","acc":["On-time completion across all active work.","Job margin against quoted margin.","The weekly production plan and the priority ranking that Scheduling works against.","The performance of Project Management, Purchasing, Scheduling, Inventory, Field Operations and Service."],"measures":[["Jobs completed on schedule","___"],["Job margin vs quoted","___"],["Monday exception counts","0"],["Crew utilisation","___"]],"std":["The priority ranking is published before the scheduling week begins — Scheduling consumes it, never invents it.","The weekly production meeting happens at the same time every week.","The Monday exception check is reviewed and anything non-zero goes on the agenda."],"esc":["Capacity shortfall against committed work.","A job where margin cannot be recovered."],"note":null,"div":"Operations"},{"code":"OPS-02","title":"Project Management","owner":"Trevor & Brian","reports":"General Manager","purpose":"Projects finish on schedule and on margin, and no client or builder is ever left wondering where things stand.","acc":["Each project reaching completion on schedule and on its quoted margin.","Proactive contact — the builder and client hear from us before they have to ask.","Change orders being raised when scope moves.","The project record being current enough that someone else could pick it up."],"measures":[["On-time completion","___"],["Margin vs quoted","___"],["Active projects contacted in last 7 days","100%"],["Scope changes without a change order","0"]],"std":["Active projects are contacted weekly; dormant projects every two weeks. Every contact is logged with date, person, and what changed.","Contact happens on the calendar, not when something goes wrong.","No scope change proceeds without a written change order."],"esc":["Schedule slipping by more than a week.","Margin eroding beyond the agreed threshold.","A builder or client raising a concern of any size."],"note":null,"div":"Operations"},{"code":"OPS-03","title":"Purchasing & Vendor Management","owner":"Terry","reports":"General Manager","purpose":"Product is on site before it is needed — every time, without anyone having to chase it.","acc":["Order-by dates being calculated and met.","Purchase orders issued, acknowledged, received and allocated to jobs.","Vendor pricing, terms and relationships.","Expediting anything at risk of missing an install date."],"measures":[["Jobs delayed by late product","0"],["POs past promised date, nothing received","0"],["Price variance against quoted","___"],["Order-by dates met","___"]],"std":["Order-by date = install date, minus lead time, minus one week buffer. It is never the date somebody notices a shortage.","A purchase order is not finished when it is sent. It is finished when it is acknowledged, received, and allocated to the job.","Purchasing is worked in a protected daily block, not between phone calls."],"esc":["A lead time change that threatens a committed install date.","A vendor unable to supply a specified product.","Pricing moving materially against a quoted job."],"note":null,"div":"Operations"},{"code":"OPS-04","title":"Scheduling & Dispatch","owner":"Terry","reports":"General Manager","purpose":"Crews have a full, correctly sequenced week, and everyone affected knows the dates.","acc":["The crew schedule across all active work.","Clients and builders being notified of dates and of any change to them.","A two-week look-ahead that is current.","Jobs only being scheduled when they are genuinely ready."],"measures":[["Crew utilisation","___"],["Jobs scheduled without product on hand","0"],["Date changes communicated same day","100%"],["Two-week look-ahead current","Yes"]],"std":["The schedule is built against the published priority ranking. This position consumes the ranking — it does not invent it.","A job is not scheduled until product is in-house or confirmed arriving, and the site is ready.","Any date change is communicated to the client and builder the same day."],"esc":["The ranking cannot be met with available crew.","A job repeatedly rescheduled for the same reason."],"note":null,"div":"Operations"},{"code":"OPS-05","title":"Inventory & Warehouse","owner":"Brian","reports":"General Manager","purpose":"We know what we have, it is where it should be, and it is not quietly turning into dead money.","acc":["Inventory accuracy against the system.","Receiving, and allocation of received product to jobs.","The value of stock on hand, and the aged portion of it.","Reorder points that reflect what actually moves."],"measures":[["Count accuracy","___"],["Total stock value","___"],["Aged stock (>12 months)","___"],["Items committed beyond on-hand","0"]],"std":["Product is received into the system the day it arrives.","Received product is allocated to its job on receipt, not later.","Reorder points are reviewed quarterly against actual movement.","Aged and obsolete stock is identified and dealt with, not carried indefinitely."],"esc":["Shrinkage or an unexplained count variance.","Aged stock beyond the agreed threshold."],"note":null,"div":"Operations"},{"code":"OPS-06","title":"Field Operations Manager","owner":"Kevin","reports":"General Manager","purpose":"Work goes in right the first time, efficiently, on every crew.","acc":["Installation quality across all crews.","Crew productivity against estimated hours.","Technician skills development and certification currency.","Standards being the same regardless of which crew is on site."],"measures":[["Rework hours","___"],["Callbacks within 30 days of handover","___"],["Certifications current","100%"],["Actual vs estimated hours","___"]],"std":["A skills matrix is maintained for every technician.","Every technician has a development plan and knows what is next for them.","Installation standards are written down, not carried by whoever trained whom."],"esc":["A crew consistently working below standard.","A certification lapsing that affects what we can sell."],"note":null,"div":"Operations"},{"code":"OPS-07","title":"Installation Crews","owner":"Kevin","reports":"Field Operations Manager","purpose":"Work is installed to standard, on schedule, and the site is left the way we would want it left in our own home.","acc":["Work performed to the installation standard.","Hours logged against the job, daily.","The site left clean and secure.","Problems on site being reported the day they are found."],"measures":[["Rework","___"],["Hours vs estimate","___"],["Hours logged daily","100%"]],"std":["Hours are logged against the job every day, not reconstructed at week end.","No scope change is performed on site without calling it in first.","The site is left clean at the end of every day, not just at the end of the job."],"esc":["Site not ready for the scheduled work.","Scope on site differing from the paperwork.","Product missing, damaged, or incorrect."],"note":null,"div":"Operations"},{"code":"OPS-08","title":"Programming & Commissioning","owner":"Kevin","reports":"General Manager","purpose":"The system works completely on the day we hand it over — not after two more visits.","acc":["Programming of control, lighting and shading systems.","The commissioning checklist being completed before handover.","The client walkthrough, so the client can actually use what they bought.","Configuration files and documentation being stored where someone else can find them."],"measures":[["Outstanding issues at handover","0"],["Callbacks in first 30 days","___"],["Walkthrough completed before handover","100%"],["Config files backed up to project folder","100%"]],"std":["No handover happens without a completed commissioning checklist and a client walkthrough.","Configuration files are backed up to the project folder on completion — never left only on a laptop or only on the processor.","The client is shown how to use the system, not handed a manual."],"esc":["A system that cannot be commissioned because of a design or product issue.","A client not confident using the system at walkthrough."],"note":null,"div":"Operations"},{"code":"OPS-09","title":"Electrical","owner":"Chris MacDearmid","reports":"Field Operations Manager","purpose":"Electrical work passes inspection the first time and is safe for the life of the building.","acc":["Electrical work performed to code.","Permits pulled and inspections booked.","Deficiencies corrected and closed out."],"measures":[["First-time inspection pass rate","___"],["Deficiencies per inspection","___"],["Permits pulled before work starts","100%"]],"std":["Permits are pulled before work begins — no exceptions, regardless of schedule pressure.","Nothing is energised without required inspection.","Deficiencies are closed out and documented, not left for the next visit."],"esc":["A code conflict with the system design.","A schedule that would require starting before permits are in place."],"note":null,"div":"Operations"},{"code":"SVC-01","title":"Service Manager","owner":"Adrian","reports":"General Manager","purpose":"Service clients feel looked after, and service makes money rather than being a cost of doing business.","acc":["The service experience end to end — from the first call to the invoice.","Service revenue and service margin.","The performance of Service Coordination and Service Delivery.","The service queue being clean and current."],"measures":[["Requests acknowledged within 4 business hours","100%"],["First-time fix rate","___"],["Service revenue and margin","___"],["Items open beyond 2 weeks","0"]],"std":["The queue is reviewed at the start and end of every day.","Nothing sits in Waiting without a note saying what it is waiting on and since when.","A client is never left wondering whether we heard them."],"esc":["Repeat failures at the same client.","A client expressing that they are considering going elsewhere.","Service work consistently unprofitable in a category."],"note":null,"div":"Service"},{"code":"SVC-02","title":"Service Coordination","owner":"Terry","reports":"Service Manager","purpose":"No service request is ever lost, and no client is left wondering whether we heard them.","acc":["Every inbound request being acknowledged within four business hours.","Triage, scheduling and closure of every request.","The service queue being accurate — every item in exactly one place.","Requests that arrive by phone or text being logged into the queue."],"measures":[["Acknowledged within 4 business hours","100%"],["Items in Inbox older than 1 business day","0"],["Items in Done older than 3 days","0"],["Items in Waiting without a note","0"]],"std":["The acknowledgement does not have to be a solution. “Got it, I'll have a date for you tomorrow” satisfies the standard.","Every request lives in exactly one folder. Inbox means untouched.","Replies go out from service@, never from a personal address.","Calls and texts are logged into the queue the same day — two lines is enough.","Coordination is worked in protected daily blocks so it does not collide with Purchasing."],"esc":["A request that cannot be scheduled inside the window promised to the client.","A client who has had to follow up more than once."],"note":null,"div":"Service"},{"code":"SVC-03","title":"Service Delivery","owner":"Adrian","reports":"Service Manager","purpose":"Fixed on the first visit, and the client is left better informed than when we arrived.","acc":["Service work performed correctly on the first visit.","Work being written up the same day so it can be invoiced.","Upgrade opportunities being identified and passed to Upgrade Sales."],"measures":[["First-time fix rate","___"],["Return visits for the same issue","___"],["Work written up same day","100%"],["Upgrade opportunities logged","___"]],"std":["Parts and likely spares are checked before travelling, particularly for out-of-town calls.","Work is written up the same day — not at the end of the week.","Clients found to be on ageing systems are logged to the Upgrade Queue for Upgrade Sales to follow up."],"esc":["A system beyond economic repair.","A client issue that is really a design or installation problem."],"note":null,"div":"Service"},{"code":"ADM-01","title":"Finance & Administration Manager","owner":"Brian","reports":"President & CEO","purpose":"We always know where we stand financially, early enough to do something about it.","acc":["The accuracy and timeliness of the financial picture.","Month-end close and management reporting.","Cash position and forecast.","The administrative systems the business runs on."],"measures":[["Month-end close completed by","___"],["Days sales outstanding","___"],["Management reporting delivered on time","100%"]],"std":["Month-end close happens on a fixed date, not when there is time.","Management reporting goes to the CEO monthly whether or not it was requested.","Cash forecast looks forward at least 90 days."],"esc":["Cash position falling below the agreed threshold.","A material variance to plan."],"note":null,"div":"Finance & Admin"},{"code":"ADM-02","title":"Bookkeeping / AR / AP","owner":"Brian","reports":"Finance & Administration Manager","purpose":"The books are accurate, the money we are owed comes in, and the money we owe goes out on terms.","acc":["Accurate and current books.","Collection of receivables.","Payables paid within terms.","Reconciliations completed on schedule."],"measures":[["Days sales outstanding","___"],["AR over 60 days","___"],["Payables paid within terms","___"]],"std":["Receivables are reviewed weekly, not monthly.","Anything over 60 days is actively pursued, not simply reported.","Bookkeeping is worked in a protected block — it is the quietest work on this desk and therefore the easiest to postpone."],"esc":["An account reaching 90 days.","A client disputing an invoice."],"note":"Performed in-house by this position, not outsourced. The function currently sits with Advance and vacates at close, so the transition needs to be planned before Dec 31 — opening balances, software, and the handover of history.","div":"Finance & Admin"},{"code":"ADM-03","title":"Invoicing & Billing","owner":"Brian","reports":"Finance & Administration Manager","purpose":"We bill what we have earned, promptly, without anyone having to remember to.","acc":["All completed work invoiced within three business days.","Deposits and milestones billed when they fall due.","Service work invoiced after completion.","Nothing complete sitting unbilled."],"measures":[["Days from completion to invoice","≤ 3"],["Completed work unbilled","0"],["Deposits billed when due","100%"]],"std":["Invoicing is worked in a protected daily block — it does not compete with a ringing phone.","The Done folder in the service queue is emptied every day.","Work sitting in Done for a week is money we have earned and have not asked for."],"esc":["Work complete but scope disputed.","A client refusing an invoice."],"note":null,"div":"Finance & Admin"},{"code":"ADM-04","title":"Payroll","owner":"Brian","reports":"Finance & Administration Manager","purpose":"People are paid correctly and on time, every time.","acc":["Accurate and on-time payroll.","Source deductions and remittances filed on time.","Records of hours, vacation and time off."],"measures":[["Payroll on time","100%"],["Payroll errors","0"],["Remittances on time","100%"]],"std":["Hours are approved by the Field Operations Manager before processing.","Vacation and time-off balances are current and visible to staff.","If processing is outsourced, this position still owns accuracy and timeliness — the provider does the work, not the accountability."],"esc":["A pay discrepancy of any size — these are fixed immediately, not next cycle.","A remittance deadline at risk."],"note":"Open: whether payroll processing is handled in-house or by an external payroll company. At twelve staff, outsourcing remittances, T4s and CRA filings is usually worth the cost — these are cheap to buy and expensive to get wrong.","div":"Finance & Admin"},{"code":"ADM-05","title":"Human Resources","owner":"Trevor","reports":"President & CEO","purpose":"We have the right people, they know what is expected of them, and they are developing.","acc":["Hiring and onboarding.","Employment documentation — contracts, policies, acknowledgements.","Scheduled performance reviews actually happening.","Policy being current and applied consistently."],"measures":[["Employees with a signed contract","100%"],["Employees with a signed position contract","100%"],["Reviews completed on schedule","100%"],["Time to hire","___"]],"std":["Reviews happen on a schedule, not when there is a problem.","Every employee has a current position contract they have signed.","The handbook is current and everyone has acknowledged it."],"esc":["A conduct or performance issue requiring formal action.","A resignation in a position with no backup named."],"note":null,"div":"Finance & Admin"},{"code":"ADM-06","title":"IT & Systems","owner":"Trevor","reports":"President & CEO","purpose":"The tools the business runs on work — and they do not depend on one person to keep working.","acc":["Microsoft 365, SharePoint, and the ART tool suite.","Phone system and network.","Backups, and verification that they restore.","Documentation sufficient for someone else to maintain what we have built."],"measures":[["Tools documented for handover","___"],["Backups verified","___"],["Single-person dependencies","0"]],"std":["Every tool is documented well enough that someone else could maintain it.","Backups are tested, not assumed.","New tools are documented as they are built, not afterwards."],"esc":["Anything creating a single-person dependency.","A system change with a deadline outside our control."],"note":"This position exists partly to work itself out of a job. The measure that matters most is the last one.","div":"Finance & Admin"},{"code":"ADM-07","title":"Facilities & Office","owner":"Lyall","reports":"Finance & Administration Manager","purpose":"The place works, and nobody else has to think about it.","acc":["The office, shop and warehouse being clean, safe and functional.","Snow removal, cleaning, waste and grounds — contracted and performed.","Office and kitchen supplies being stocked before anyone notices they are out.","Building repairs and the vendors behind them."],"measures":[["Work interrupted by a facilities issue","0"],["Seasonal contracts in place before season","100%"],["Supply stock-outs","0"]],"std":["This position manages the vendors — it does not personally shovel the walk. The result is that it is done, not that it is done by this person.","Snow removal is contracted before the first snowfall, not after it.","Small annoyances are fixed rather than tolerated — the standard inside our building is the standard clients assume we work to in theirs."],"esc":["A repair beyond the agreed spend threshold.","A safety issue of any kind.","A vendor not performing to contract."],"note":"This position grows substantially with the move to our own building, where snow, cleaning and maintenance become our contracts rather than inherited ones.","div":"Finance & Admin"},{"code":"ADM-08","title":"Vehicles & Fleet","owner":"Brian","reports":"Finance & Administration Manager","purpose":"Our vehicles are reliable, legal, and look like a company you would trust inside a client's home.","acc":["Scheduled maintenance and safety inspections.","Registration and insurance current on every vehicle.","Vehicle condition — inside and out.","Replacement planning as vehicles age."],"measures":[["Vehicles with current registration and insurance","100%"],["Scheduled maintenance completed on time","___"],["Days lost to vehicle breakdown","0"]],"std":["Maintenance is scheduled, not triggered by a breakdown.","A van arriving at a $2M home is as much a part of the impression as the technician in it.","Replacement is planned against age and mileage, not deferred until failure."],"esc":["A vehicle unsafe or unroadworthy.","An accident or insurance claim.","A replacement decision beyond the agreed threshold."],"note":null,"div":"Finance & Admin"}];
-const POSDIVS=["Executive","Sales","Operations","Service","Finance & Admin"];
-const POSBY={};
-POSITIONS.forEach(p=>p.owner.split(/,| & /).map(s=>s.trim()).filter(Boolean)
-  .forEach(n=>(POSBY[n]=POSBY[n]||[]).push(p.code)));
-const POSBYCODE=Object.fromEntries(POSITIONS.map(p=>[p.code,p]));
-let posTab="div", posOpen={};
-
-const posOwnersOf=p=>p.owner.split(/,| & /).map(s=>s.trim()).filter(Boolean);
-function empByFirst(n){
-  const t=(n||"").trim().toLowerCase();
-  return db.employees.find(e=>e.active&&((e.name||"").toLowerCase()===t
-    ||(e.name||"").toLowerCase().split(" ")[0]===t))||null;
-}
-const posRec=(code,empId)=>db.posAcks.find(x=>x.code===code&&x.empId===empId)||null;
-
-function posMark(code,empId,status){
-  if(!isManager) return;
-  let r=posRec(code,empId);
-  if(!r){ r={id:uid(),empId,code,status:"",sent:"",signed:"",envId:""}; db.posAcks.push(r); }
-  if(status==="sent"){ r.status="sent"; r.sent=iso(today()); r.signed=""; }
-  else if(status==="completed"){ r.status="completed"; r.signed=iso(today()); if(!r.sent) r.sent=iso(today()); }
-  else { r.status=""; r.sent=""; r.signed=""; }
-  commit(status==="completed"?"Marked signed":status==="sent"?"Marked sent":"Cleared");
-}
-function posMarkAll(name,status){
-  if(!isManager) return;
-  const e=empByFirst(name); if(!e){ toast("No Team record for "+name); return; }
-  (POSBY[name]||[]).forEach(code=>{
-    let r=posRec(code,e.id);
-    if(!r){ r={id:uid(),empId:e.id,code,status:"",sent:"",signed:"",envId:""}; db.posAcks.push(r); }
-    if(status==="sent"){ r.status="sent"; r.sent=iso(today()); r.signed=""; }
-    else { r.status="completed"; r.signed=iso(today()); if(!r.sent) r.sent=iso(today()); }
-  });
-  commit(name+" — all marked "+(status==="sent"?"sent":"signed"));
-}
-
-/* ---- printable contract pack: one person, all their positions ---- */
-function posPackHtml(name,only){
-  const codes=only?[only]:(POSBY[name]||[]);
-  const pages=codes.map(c=>{
-    const p=POSBYCODE[c];
-    const li=a=>a.map(x=>"<li>"+esc(x)+"</li>").join("");
-    const rows=p.measures.map(([m,t])=>
-      '<tr><td>'+esc(m)+'</td><td class="'+(t.includes("___")?"blank":"")+'">'+esc(t)+'</td></tr>').join("");
-    return `<section>
-      <div class="c">${esc(p.code)}</div><h1>${esc(p.title)}</h1>
-      <div class="m">Owner <b>${esc(name)}</b> &nbsp;·&nbsp; Reports to <b>${esc(p.reports)}</b></div>
-      <h2>Purpose</h2><p class="pp">${esc(p.purpose)}</p>
-      <h2>Accountable for</h2><ul>${li(p.acc)}</ul>
-      <h2>Key measures</h2><table><tr><th>Measure</th><th>Target</th></tr>${rows}</table>
-      <h2>Standards — how the work gets done</h2><ul>${li(p.std)}</ul>
-      <h2>Escalate when</h2><ul>${li(p.esc)}</ul>
-      ${p.note?'<p class="n"><b>Open.</b> '+esc(p.note)+'</p>':""}
-      <div class="accept">
-        <p class="ac">I accept the <b>${esc(p.title)}</b> position (${esc(p.code)}) and the result
-        it is accountable for.</p>
-        <div class="row">
-          <div><div class="line"></div><div class="lbl">Signature — ${esc(name)}</div></div>
-          <div><div class="line"></div><div class="lbl">Date</div></div>
-        </div>
-        <div class="row">
-          <div><div class="line"></div><div class="lbl">For the company</div></div>
-          <div><div class="line"></div><div class="lbl">Date</div></div>
-        </div>
-      </div>
-    </section>`;
-  }).join("");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>Position contracts — ${esc(name)}</title><style>
-    @page{size:letter;margin:0.8in}
-    body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.5;color:#17191C;margin:0}
-    section{page-break-after:always}
-    section:last-of-type{page-break-after:auto}
-    .c{font-family:Consolas,monospace;font-size:9pt;letter-spacing:1px;color:#6B6F76}
-    h1{font-size:21pt;margin:2px 0 6px;font-weight:600}
-    .m{font-size:9.5pt;color:#6B6F76;border-bottom:1.5px solid #17191C;padding-bottom:8px;margin-bottom:14px}
-    h2{font-size:8.5pt;letter-spacing:2.2px;text-transform:uppercase;color:#8A6318;
-       margin:16px 0 5px;font-weight:600}
-    .pp{margin:0 0 4px;padding-left:11px;border-left:2px solid #C8202E;font-size:11.5pt}
-    ul{margin:0;padding-left:16px} li{margin-bottom:4px;color:#3A3E45}
-    table{border-collapse:collapse;width:100%;margin-top:2px}
-    th{font-size:8pt;text-transform:uppercase;letter-spacing:1.2px;color:#6B6F76;
-       text-align:left;font-weight:400;border-bottom:1px solid #17191C;padding:4px 8px 4px 0}
-    td{padding:5px 8px 5px 0;border-bottom:1px solid #E2E0DB;font-size:10.5pt;color:#3A3E45}
-    td:last-child{width:130px;font-family:Consolas,monospace;font-size:9.5pt;color:#17191C}
-    td.blank{color:#C8202E}
-    .n{background:#FAF3E4;border-left:2px solid #8A6318;padding:8px 11px;font-size:10pt;
-       color:#5A5E65;margin-top:14px}
-    .accept{margin-top:26px;padding-top:14px;border-top:1.5px solid #17191C;
-       page-break-inside:avoid}
-    .ac{font-size:10.5pt;margin:0 0 22px}
-    .line{border-bottom:1px solid #17191C;height:30px;margin-bottom:3px}
-    .lbl{font-size:8pt;text-transform:uppercase;letter-spacing:1.4px;color:#6B6F76;
-       margin-bottom:16px}
-    .row{display:flex;gap:36px} .row>div{flex:1}
-    @media print{.noprint{display:none}}
-    .noprint{position:fixed;top:12px;right:12px;background:#C8202E;color:#fff;border:0;
-      padding:9px 16px;font-size:13px;border-radius:4px;cursor:pointer;font-family:inherit}
-  </style></head><body>
-  <button class="noprint" onclick="window.print()">Print / Save as PDF</button>
-  ${pages}
-  <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
-  </body></html>`;
-}
-
-function posPack(name,only){
-  const w=window.open("","_blank");
-  if(!w){ toast("Allow pop-ups for this site to open the contract"); return; }
-  w.document.write(posPackHtml(name,only));
-  w.document.close();
-}
-
-/* ---- views ---- */
-function posStatusTag(code,name){
-  const e=empByFirst(name);
-  if(!e) return '<span class="tag">'+esc(name)+' — no Team record</span>';
-  const r=posRec(code,e.id);
-  const label = r&&r.status==="completed" ? '<span class="tag t-ok">'+esc(name)+' signed '+esc(r.signed)+'</span>'
-              : r&&r.status==="sent"      ? '<span class="tag t-warn">'+esc(name)+' — sent '+esc(r.sent)+'</span>'
-              :                             '<span class="tag">'+esc(name)+' — not sent</span>';
-  if(!isManager) return label;
-  const done = r&&r.status==="completed";
-  const one = '<button class="btn sm" onclick="posPack(\''+name.replace(/'/g,"\\'")+'\',\''+code+'\')">Contract</button>';
-  return label + one
-    + (done ? '<button class="btn sm" onclick="posMark(\''+code+'\',\''+e.id+'\',\'\')">Undo</button>'
-            : '<button class="btn sm" onclick="posMark(\''+code+'\',\''+e.id+'\',\'sent\')">Mark sent</button>'
-              +'<button class="btn sm pri" onclick="posMark(\''+code+'\',\''+e.id+'\',\'completed\')">Mark signed</button>');
-}
-
-function posPanel(p){
-  const meas=p.measures.map(([m,t])=>`<tr><td>${esc(m)}</td>
-    <td class="${t.includes("___")?"blank":""}">${esc(t)}</td></tr>`).join("");
-  return `<div class="pospanel">
-    <div class="posmeta">Owner <b>${esc(p.owner)}</b> · Reports to <b>${esc(p.reports)}</b></div>
-    <p class="pospurpose">${esc(p.purpose)}</p>
-    <div class="possec">Accountable for</div><ul class="poslist">${p.acc.map(x=>"<li>"+esc(x)+"</li>").join("")}</ul>
-    <div class="possec">Key measures</div>
-    <table class="postab"><thead><tr><th>Measure</th><th>Target</th></tr></thead><tbody>${meas}</tbody></table>
-    <div class="possec">Standards</div><ul class="poslist">${p.std.map(x=>"<li>"+esc(x)+"</li>").join("")}</ul>
-    <div class="possec">Escalate when</div><ul class="poslist">${p.esc.map(x=>"<li>"+esc(x)+"</li>").join("")}</ul>
-    ${p.note?`<div class="posnote"><b>Open.</b> ${esc(p.note)}</div>`:""}
-    <div class="possig">${posOwnersOf(p).map(n=>posStatusTag(p.code,n)).join(" ")}</div></div>`;
-}
-
-function posRow(p){
-  const open=!!posOpen[p.code];
-  return `<div class="posrow ${open?"on":""}">
-    <button class="posbtn" onclick="posToggle('${p.code}')" aria-expanded="${open}">
-      <span class="poscode">${p.code}</span>
-      <span class="posname">${esc(p.title)}${p.note?'<i class="posflag" title="Open item"></i>':""}</span>
-      <span class="poswho">${esc(p.owner)}</span></button>
-    ${open?posPanel(p):""}</div>`;
-}
-function posToggle(c){ posOpen[c]=!posOpen[c]; render(); }
-function posSetTab(t){ posTab=t; render(); }
-
-function vPositions(){
-  const signed=db.posAcks.filter(a=>a.status==="completed").length;
-  const out=db.posAcks.filter(a=>a.status==="sent").length;
-  const body = posTab==="div"
-    ? POSDIVS.map(d=>{
-        const g=POSITIONS.filter(p=>p.div===d);
-        return `<div class="posdiv"><h4>${d}</h4><span>${g.length}</span></div>`+g.map(posRow).join("");
-      }).join("")
-    : Object.keys(POSBY).sort((a,b)=>POSBY[b].length-POSBY[a].length||a.localeCompare(b)).map(n=>{
-        const e=empByFirst(n);
-        const codes=POSBY[n];
-        const done=codes.filter(c=>e&&(posRec(c,e.id)||{}).status==="completed").length;
-        const all=done===codes.length;
-        return `<div class="posperson"><div class="pphead"><h4>${esc(n)}</h4>
-          ${e?`<span class="tag ${all?"t-ok":done?"t-warn":""}">${done}/${codes.length} signed</span>`
-             :'<span class="tag t-warn">No Team record</span>'}
-          <span class="ppload">${codes.map(()=>'<i></i>').join("")}<b>${codes.length}</b></span></div>
-          <div class="ppchips">${codes.map(c=>`<button class="ppchip" onclick="posSetTab('div');posToggle('${c}')">
-            <code>${c}</code>${esc(POSBYCODE[c].title)}</button>`).join("")}</div>
-          ${isManager?`<div class="ppacts">
-            <button class="btn sm pri" onclick="posPack('${n.replace(/'/g,"\\'")}')">Contract pack</button>
-            <button class="btn sm" onclick="posMarkAll('${n.replace(/'/g,"\\'")}','sent')">All sent</button>
-            <button class="btn sm" onclick="posMarkAll('${n.replace(/'/g,"\\'")}','completed')">All signed</button>
-          </div>`:""}</div>`;
-      }).join("");
-
-  return `
-  <p class="lede">What every position is accountable for — the result, not the task list. One person
-  holding several positions is normal at our size; the count beside each name is the load.
-  Targets shown in red have not been agreed yet.</p>
-  <div class="posstats">
-    <div class="stat"><div class="n">${POSITIONS.length}</div><div class="l">Positions</div></div>
-    <div class="stat"><div class="n">${Object.keys(POSBY).length}</div><div class="l">People</div></div>
-    <div class="stat"><div class="n">${signed}</div><div class="l">Signed</div></div>
-    <div class="stat"><div class="n">${out}</div><div class="l">Out for signature</div></div>
-  </div>
-  ${isManager?`<div class="posds"><b>Contract pack</b> prints every position a person holds, each one
-  signed separately — so when a position later moves to someone else, only that contract is reissued.
-  <b>Contract</b> inside a position prints just that one.</div>`:""}
-  <div class="postabs">
-    <button class="${posTab==="div"?"on":""}" onclick="posSetTab('div')">By division</button>
-    <button class="${posTab==="ppl"?"on":""}" onclick="posSetTab('ppl')">By person</button>
-  </div>
-  ${body}`;
-}
 /* =========================================================================
    APP STATE
    ========================================================================= */
@@ -1843,13 +1546,12 @@ function clearDemo(){
 const NAV=[
   ["dash","Dashboard","▣"],["timeoff","Time off","◷"],["team","Team","☰"],
   ["training","Training","✦"],["tools","Tools","⚒"],["vehicles","Vehicles","▤"],
-  ["safety","Safety","⚠"],["policies","Policies","§"],["positions","Positions","◆"],["settings","Settings","⚙"]
+  ["safety","Safety","⚠"],["policies","Policies","§"],["settings","Settings","⚙"]
 ];
 const TITLES={dash:["Dashboard","What needs you today"],timeoff:["Time off","Requests, coverage, and the summer schedule"],
   team:["Team","Roster, seniority, and emergency contacts"],training:["Training","Tickets, certifications, and expiries"],
   tools:["Tools","Sign-out register and inspections"],vehicles:["Vehicles","Service, odometers, and renewals"],
   safety:["Safety","Incident and near-miss log"],policies:["Policies","The handbook and who's signed it"],
-  positions:["Positions","What each position is accountable for"],
   settings:["Settings","Rules, intervals, and your data"]};
 
 function renderGate(){
@@ -1896,8 +1598,7 @@ function render(){
   const pips={timeoff:(isManager?A.pending.length+(phase()==="toAllocate"?db.timeOff.filter(r=>r.status==="bid").length:0):0),
               training:A.certExp.length,vehicles:A.vehDue.length,policies:A.ackMissing.length};
   const body={dash:vDash,timeoff:vTimeOff,team:vTeam,training:vTraining,tools:vTools,
-              vehicles:vVehicles,safety:vSafety,policies:vPolicies,positions:vPositions,
-              settings:vSettings}[view]();
+              vehicles:vVehicles,safety:vSafety,policies:vPolicies,settings:vSettings}[view]();
   const [t1,t2]=TITLES[view];
   document.getElementById("root").innerHTML=`
   <div class="app">
