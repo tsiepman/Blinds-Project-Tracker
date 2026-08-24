@@ -260,7 +260,8 @@ const LIST_NAME   = 'ARTUpgradeQueue';
 
 const SLA_DAYS        = 3;    // days to get a quote out before the row goes red
 const WINDOW_DAYS     = 90;   // finder's commission window
-const COMMISSION_RATE = 0.04; // 4% of product on the invoice
+const COMMISSION_RATE = 0.10; // 10% of the product profit — same basis as sales and electrical
+const COMMISSION_LABEL = '10%';
 const DROP_WEEKS      = 12;   // weeks a closed lead stays in the "All" view
 
 const STATUSES = ['New', 'Contacted', 'Quoted', 'Won', 'Lost', 'No response'];
@@ -282,7 +283,8 @@ const REQUIRED_COLUMNS = [
   { name: 'ContactedDate', dateTime: { displayAs: 'default' } },
   { name: 'QuoteTotal',    number: {} },
   { name: 'ConnectSold',   boolean: {} },
-  { name: 'LastUpdatedBy', text: {} }
+  { name: 'LastUpdatedBy', text: {} },
+  { name: 'ProductProfit', number: {} }
 ];
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
@@ -374,7 +376,7 @@ async function getSiteAndList() {
         { name: 'QuotedDate',      dateTime: { displayAs: 'default' } },
         { name: 'QuoteTotal',      number: {} },
         { name: 'ClosedDate',      dateTime: { displayAs: 'default' } },
-        { name: 'ProductTotal',    number: {} },
+        { name: 'ProductProfit',   number: {} },
         { name: 'ConnectSold',     boolean: {} },
         { name: 'Outcome',         text: { allowMultipleLines: true, appendChangesToExistingText: false, linesForEditing: 4 } },
         { name: 'LastUpdatedBy',   text: {} }
@@ -490,7 +492,7 @@ function render() {
   const open = allItems.filter(l => OPEN.includes(l.Status || 'New')).length;
   const outQ = allItems.filter(l => l.Status === 'Quoted').length;
   const won  = allItems.filter(l => l.Status === 'Won');
-  const owed = won.reduce((s, l) => s + (Number(l.ProductTotal) || 0) * COMMISSION_RATE, 0);
+  const owed = won.reduce((s, l) => s + (Number(l.ProductProfit) || 0) * COMMISSION_RATE, 0);
 
   $('stats').innerHTML = `
     <div class="stat"><div class="stat-val">${open}</div><div class="stat-label">Open leads</div></div>
@@ -539,8 +541,8 @@ function render() {
         ${l.ContactedDate ? `<div class="kv"><b>Reached out</b><span>${shortDate(l.ContactedDate)}</span></div>` : ''}
         ${l.QuotedDate ? `<div class="kv"><b>Quoted</b><span>${shortDate(l.QuotedDate)} · ${money(l.QuoteTotal)}</span></div>` : ''}
         ${st === 'Won' ? `
-          <div class="kv"><b>Product on invoice</b><span>${money(l.ProductTotal)}</span></div>
-          <div class="kv"><b>${esc(l.FoundBy || 'Finder')} earns (4%)</b><span>${money((Number(l.ProductTotal) || 0) * COMMISSION_RATE)}</span></div>
+          <div class="kv"><b>Product profit</b><span>${money(l.ProductProfit)}</span></div>
+          <div class="kv"><b>${esc(l.FoundBy || 'Finder')} earns (${COMMISSION_LABEL})</b><span>${money((Number(l.ProductProfit) || 0) * COMMISSION_RATE)}</span></div>
           <div class="kv"><b>Connect sold</b><span>${l.ConnectSold ? 'Yes' : 'No'}</span></div>` : ''}
         ${l.Outcome ? `<div class="kv"><b>Notes</b><span>${esc(l.Outcome)}</span></div>` : ''}
         ${l.LastUpdatedBy ? `<div class="kv"><b>Last updated by</b><span>${esc(l.LastUpdatedBy)}</span></div>` : ''}
@@ -559,9 +561,9 @@ function render() {
               <input id="q-${l.id}" type="number" inputmode="decimal" step="0.01" value="${l.QuoteTotal ?? ''}" placeholder="What you quoted">
             </div>
             <div class="fld showif wide" id="ww-${l.id}">
-              <label for="p-${l.id}">Product on the invoice</label>
-              <input id="p-${l.id}" type="number" inputmode="decimal" step="0.01" value="${l.ProductTotal ?? ''}" placeholder="Control4 + everything else">
-              <div class="hint">Product only, not labour. This is what the 4% pays on.</div>
+              <label for="p-${l.id}">Product profit on the job</label>
+              <input id="p-${l.id}" type="number" inputmode="decimal" step="0.01" value="${l.ProductProfit ?? ''}" placeholder="From D-Tools">
+              <div class="hint">Profit on product only, not labour. Same figure you\'d pull for a lighting job.</div>
               <label style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--text-mid);display:flex;gap:8px;align-items:center;margin-top:8px">
                 <input type="checkbox" id="c-${l.id}" ${l.ConnectSold ? 'checked' : ''} style="width:auto"> Connect sold on this job
               </label>
@@ -617,8 +619,8 @@ document.addEventListener('click', async e => {
     }
     if (status === 'Won') {
       const p = Number($('p-' + id).value);
-      if (!p) { toast('Enter the product total on the invoice', 'error'); $('p-' + id).focus(); return; }
-      f.ProductTotal = p;
+      if (!p) { toast('Enter the product profit from D-Tools', 'error'); $('p-' + id).focus(); return; }
+      f.ProductProfit = p;
       f.ConnectSold = $('c-' + id).checked;
       if (!prev.QuotedDate) f.QuotedDate = new Date().toISOString();
     }
@@ -630,7 +632,7 @@ document.addEventListener('click', async e => {
       allItems = await getItems();
       render();
       toast(status === 'Won'
-        ? `Won — ${prev.FoundBy || 'finder'} earns ${money(f.ProductTotal * COMMISSION_RATE)}`
+        ? `Won — ${prev.FoundBy || 'finder'} earns ${money(f.ProductProfit * COMMISSION_RATE)}`
         : 'Updated');
     } catch(err) {
       console.error(err);
