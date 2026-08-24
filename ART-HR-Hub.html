@@ -703,6 +703,42 @@ function seed(){
    APP STATE
    ========================================================================= */
 let db=null, view="dash", modal=null, toastT=null, filters={};
+
+/* ── POSITIONS ────────────────────────────────────────────────────────────
+   From the org design pass — every box in the new company, who holds it,
+   and how many boxes each person carries. Reference content, not a live
+   SharePoint list — edit this array directly when assignments change. */
+const POSITIONS = [
+  { code:'',        name:'President & CEO',                      holder:'Trevor Siepman' },
+  { code:'',        name:'General Manager',                      holder:'Trevor Siepman' },
+  { code:'',        name:'VP Sales',                              holder:'Bruno Deleau' },
+  { code:'',        name:'Sales, builder accounts',               holder:'Bruno Deleau & Lyall Krahn' },
+  { code:'',        name:'Business Development, new markets',     holder:'Bruno Deleau' },
+  { code:'',        name:'System Design & Engineering',           holder:'Bruno Deleau, Lyall Krahn & Trevor Siepman' },
+  { code:'',        name:'Estimating',                            holder:'Bruno Deleau' },
+  { code:'',        name:'Project Management',                    holder:'Trevor Siepman & Brian Benson' },
+  { code:'',        name:'Purchasing & Vendor Management',        holder:'Terry Young' },
+  { code:'',        name:'Scheduling & Dispatch',                 holder:'Terry Young' },
+  { code:'',        name:'Inventory & Warehouse',                 holder:'Brian Benson' },
+  { code:'',        name:'Field Operations Manager',               holder:'Kevin Muir' },
+  { code:'',        name:'Installation Crews',                    holder:'Kevin Muir' },
+  { code:'',        name:'Electrical',                            holder:'Chris MacDearmid' },
+  { code:'',        name:'Service Manager',                       holder:'Adrian Luciw' },
+  { code:'',        name:'Service Coordination',                  holder:'Terry Young' },
+  { code:'',        name:'Service Delivery',                      holder:'Adrian Luciw' },
+  { code:'ADM-01',  name:'Finance & Admin Manager',                holder:'Brian Benson' },
+  { code:'ADM-02',  name:'Bookkeeping / AR / AP',                  holder:'Brian Benson', note:'Performed in-house rather than owned and outsourced.' },
+  { code:'',        name:'Invoicing & Billing',                   holder:'Brian Benson' },
+  { code:'ADM-04',  name:'Payroll',                                holder:'Brian Benson', note:'May move to an external payroll company.' },
+  { code:'ADM-08',  name:'Vehicles / Fleet',                       holder:'Brian Benson', note:'Holding this for now.' },
+  { code:'ADM-07',  name:'Facilities & Office',                    holder:'Lyall Krahn' },
+  { code:'SLS-06',  name:'Upgrade Sales, existing install base',   holder:'Lyall Krahn' },
+  { code:'SLS-07',  name:'Showroom',                               holder:'Lyall Krahn' },
+  { code:'OPS-08',  name:'Programming & Commissioning',            holder:'Kevin Muir' },
+  { code:'',        name:'Human Resources',                       holder:'Trevor Siepman' },
+  { code:'',        name:'IT & Systems',                          holder:'Trevor Siepman' }
+];
+
 /* ── ACCESS WINDOW ─────────────────────────────────────────────────────────
    Until OPEN_TO_ALL_FROM, only the emails in EARLY_ACCESS can open this tool.
    On that date the restriction lifts on its own and everyone with an employee
@@ -1075,6 +1111,26 @@ function vTeam(){
       ||`<tr><td colspan="7"><div class="empty"><div class="big">No one on the roster</div>Add your crew to get started.</div></td></tr>`}
     </tbody></table></div></div>
   <p class="mini" style="margin-top:11px">Hire date drives seniority in the vacation allocation and sets each annual review date. Lead techs are the people you can't have off at the same time.</p>`;
+}
+
+function vPositions(){
+  const byHolder = {};
+  POSITIONS.forEach(p => { byHolder[p.holder] = (byHolder[p.holder]||0) + 1; });
+  const counts = Object.entries(byHolder).sort((a,b)=>b[1]-a[1])
+    .map(([name,n])=>`<span class="tag t-grey" style="margin:0 5px 5px 0;display:inline-block">${esc(name)} — ${n}</span>`).join("");
+  return `
+  <div class="card"><div class="bd tight"><table>
+    <thead><tr><th>Position</th><th>Holder</th><th></th></tr></thead>
+    <tbody>${POSITIONS.map(p=>`<tr>
+      <td><span class="nm">${esc(p.name)}</span>${p.code?` <span class="sm2">${esc(p.code)}</span>`:""}${p.note?`<div class="sm2">${esc(p.note)}</div>`:""}</td>
+      <td>${esc(p.holder)}</td>
+      <td></td></tr>`).join("")}
+    </tbody></table></div></div>
+  <div class="card" style="margin-top:13px"><div class="bd">
+    <div class="sm2" style="margin-bottom:8px;font-weight:600">Boxes per person</div>
+    ${counts}
+  </div></div>
+  <p class="mini" style="margin-top:11px">Every task and responsibility in the company has one named owner — no overlap, nothing unassigned. Update this list here when a role changes hands; it isn't tied to the employee roster.</p>`;
 }
 
 function vTraining(){
@@ -1545,11 +1601,14 @@ function clearDemo(){
    ========================================================================= */
 const NAV=[
   ["dash","Dashboard","▣"],["timeoff","Time off","◷"],["team","Team","☰"],
+  ["positions","Positions","▥"],
   ["training","Training","✦"],["tools","Tools","⚒"],["vehicles","Vehicles","▤"],
   ["safety","Safety","⚠"],["policies","Policies","§"],["settings","Settings","⚙"]
 ];
 const TITLES={dash:["Dashboard","What needs you today"],timeoff:["Time off","Requests, coverage, and the summer schedule"],
-  team:["Team","Roster, seniority, and emergency contacts"],training:["Training","Tickets, certifications, and expiries"],
+  team:["Team","Roster, seniority, and emergency contacts"],
+  positions:["Positions","Every role in the new company and who holds it"],
+  training:["Training","Tickets, certifications, and expiries"],
   tools:["Tools","Sign-out register and inspections"],vehicles:["Vehicles","Service, odometers, and renewals"],
   safety:["Safety","Incident and near-miss log"],policies:["Policies","The handbook and who's signed it"],
   settings:["Settings","Rules, intervals, and your data"]};
@@ -1593,11 +1652,11 @@ function renderGate(){
 function render(){
   if(phaseAuth!=="ready"){ renderGate(); return; }
   const A=alerts();
-  const nav=NAV.filter(([k])=>isManager||(k!=="team"&&k!=="settings"));
-  if(!isManager&&(view==="team"||view==="settings")) view="dash";
+  const nav=NAV.filter(([k])=>isManager||(k!=="team"&&k!=="settings"&&k!=="positions"));
+  if(!isManager&&(view==="team"||view==="settings"||view==="positions")) view="dash";
   const pips={timeoff:(isManager?A.pending.length+(phase()==="toAllocate"?db.timeOff.filter(r=>r.status==="bid").length:0):0),
               training:A.certExp.length,vehicles:A.vehDue.length,policies:A.ackMissing.length};
-  const body={dash:vDash,timeoff:vTimeOff,team:vTeam,training:vTraining,tools:vTools,
+  const body={dash:vDash,timeoff:vTimeOff,team:vTeam,positions:vPositions,training:vTraining,tools:vTools,
               vehicles:vVehicles,safety:vSafety,policies:vPolicies,settings:vSettings}[view]();
   const [t1,t2]=TITLES[view];
   document.getElementById("root").innerHTML=`
