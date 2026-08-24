@@ -32,7 +32,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14
 .art-btn-primary{background:var(--blue);color:var(--on-accent);border-color:var(--blue)}
 .art-btn-primary:hover{opacity:.88}
 .art-btn-sm{font-size:12px;padding:5px 10px}
-.art-summarybar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.art-summarybar{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px}
 .art-sc{background:var(--surface);border-radius:var(--rl);box-shadow:var(--sh);padding:14px 16px;text-align:center}
 .art-sn{font-size:26px;font-weight:600}
 .art-sl{font-size:11px;color:var(--t2);margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
@@ -59,6 +59,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14
 .art-badge-ready{background:var(--gbg);color:var(--green)}
 .art-badge-info{background:var(--abg);color:var(--amber)}
 .art-badge-ordered{background:var(--bbg);color:var(--blue)}
+.art-badge-overdue{background:var(--rbg);color:var(--red);border:.5px solid var(--red)}
+.art-fubox{background:var(--s2);border-radius:var(--r);padding:12px;margin-bottom:14px;border:.5px solid var(--border)}
+.art-fubox.overdue{border-color:var(--red)}
+.art-fubox h4{font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.art-fucurrent{font-size:14px;font-weight:600}
+.art-fubox.overdue .art-fucurrent{color:var(--red)}
+.art-fucurrent.empty{font-weight:400;color:var(--t3);font-style:italic}
+.art-fusrc{font-size:11px;color:var(--t3);margin-top:3px}
+.art-remwarn{background:var(--abg);color:var(--amber);border:.5px solid var(--amber);border-radius:var(--r);padding:10px 14px;font-size:12px;margin-bottom:16px;line-height:1.6}
 .art-progressbar{height:3px;background:var(--s2)}
 .art-progressfill{height:100%;background:var(--blue);transition:width .4s}
 .art-detailpanel{display:none;padding:0 16px 16px;border-top:.5px solid var(--border)}
@@ -191,13 +200,20 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-of
       <span class="art-userbadge" id="userBadge">—</span>
       <a class="art-btn" href="index.html">← All tools</a>
       <button class="art-btn" onclick="openDigest()">📧 Weekly digest</button>
+      <button class="art-btn" onclick="runReminderSweep(true)" title="Email me about anything with no activity for a week">🔔 Check follow-ups</button>
       <button class="art-btn art-btn-primary" onclick="openNewProject()">+ New project</button>
       <button class="art-btn art-btn-sm" onclick="doSignOut()">Sign out</button>
     </div>
   </div>
+  <div class="art-remwarn" id="remWarning" style="display:none">
+    <strong>Follow-up reminders are off.</strong> Add three <em>Single line of text</em> columns to the
+    <em>ART Blinds Tracker</em> SharePoint list, named exactly <code>FollowUpDue</code>,
+    <code>LastReminded</code> and <code>FollowUpNote</code>, then reload this page. Everything else works as normal in the meantime.
+  </div>
   <div class="art-summarybar" id="summaryBar"></div>
   <div class="art-tabs">
     <button class="art-tab active" id="tab-all" onclick="setTab('all')">All projects</button>
+    <button class="art-tab" id="tab-followup" onclick="setTab('followup')">Follow up</button>
     <button class="art-tab" id="tab-needs-info" onclick="setTab('needs-info')">Needs information</button>
     <button class="art-tab" id="tab-ready" onclick="setTab('ready')">Ready to order</button>
     <button class="art-tab" id="tab-ordered" onclick="setTab('ordered')">Ordered</button>
@@ -279,13 +295,30 @@ const SP_HOST   = 'advanceelectronics.sharepoint.com';
 const SP_PATH   = '/sites/ART43';
 const LIST_NAME = 'ART Blinds Tracker';
 const GRAPH     = 'https://graph.microsoft.com/v1.0';
-const SCOPES    = ['Sites.ReadWrite.All','User.Read'];
+const SCOPES    = ['Sites.ReadWrite.All','User.Read','Mail.Send'];
 const PHOTO_FOLDER = 'Blinds Measurement Photos';
 const QUOTE_FOLDER = 'Blinds Quotes';
+
+/* ── FOLLOW-UP REMINDERS ─────────────────────────────────────────────
+   Any activity on a project (note, stage change, fabric, PO, edit)
+   restarts a FOLLOWUP_DAYS clock. Once that clock runs out the project
+   is flagged overdue in the UI and an email goes out on the next time
+   anyone opens the tracker. It re-nags every FOLLOWUP_DAYS until
+   somebody touches the project or clears the follow-up.
+   ── SET YOUR EMAIL ADDRESS BELOW ─────────────────────────────────── */
+const FOLLOWUP_DAYS   = 7;                          // length of the clock
+const REMIND_TO       = ['tsiepman@advance.mb.ca'];  // reminder goes to Trevor
+const REMIND_CC       = ['Bdeleau@advance.mb.ca'];   // Bruno copied
+const SWEEP_ANY_USER  = true;   // true = reminder fires from whoever opens the tracker
+                                // false = only fires when a REMIND_TO person is signed in
+const REM_FIELDS      = ['FollowUpDue','LastReminded','FollowUpNote'];
+let   remFieldsOk     = true;   // set false if those columns aren't in the list yet
+let   sweepRunning    = false;
 
 const STAGES = [
   {id:'meeting',        label:'Initial meeting',              pct:5  },
   {id:'waiting-info',   label:'Waiting on information',       pct:15 },
+  {id:'quote-to-bruno', label:'Quote given to Bruno',         pct:20 },
   {id:'budgetary-sent', label:'Budgetary quote sent',         pct:25 },
   {id:'quote-approved', label:'Quote approved',               pct:35 },
   {id:'waiting-fabric', label:'Waiting on fabric',            pct:45 },
@@ -297,7 +330,7 @@ const STAGES = [
   {id:'ordered',        label:'Ordered',                      pct:95 },
   {id:'received',       label:'Received / install scheduled', pct:100},
 ];
-const SC = {archived:'#888780',meeting:'#888780','waiting-info':'#c47c00','budgetary-sent':'#1a6bbf','quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf','measure-1':'#2a7a35','measure-2':'#2a7a35',ready:'#2d7a3a','partial-order':'#1a6bbf',ordered:'#2d7a3a',received:'#2d7a3a'};
+const SC = {archived:'#888780',meeting:'#888780','waiting-info':'#c47c00','quote-to-bruno':'#1a6bbf','budgetary-sent':'#1a6bbf','quote-approved':'#1a6bbf','waiting-fabric':'#c47c00','final-quote':'#1a6bbf','measure-1':'#2a7a35','measure-2':'#2a7a35',ready:'#2d7a3a','partial-order':'#1a6bbf',ordered:'#2d7a3a',received:'#2d7a3a'};
 
 let msalClient=null,projects=[],expandedId=null,activeTab='all',activeFilter='all';
 let editingId=null,roomEditId=null,roomEditTemp=[];
@@ -309,6 +342,21 @@ const isReady   = p  => p.stage==='ready'||p.stage==='ordered'||p.stage==='recei
   (!needsInfo(p)&&!!p.fabric&&!!p.mount&&!!p.power&&p.rooms.length>0&&p.rooms.every(r=>r.m1&&r.m2));
 const isOrdered = p  => p.stage==='ordered'||p.stage==='received'||p.stage==='partial-order';
 const nowStr    = () => new Date().toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'});
+const isoNow    = () => new Date().toISOString();
+const addDays   = (d,n) => {const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+const fmtDay    = iso => {const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'});};
+const DAY_MS    = 86400000;
+// Overdue = the clock ran out and nobody has touched the project since.
+const isOverdue = p => p.stage!=='archived' && !!p.followUpDue && new Date(p.followUpDue)<=new Date();
+const daysOver  = p => p.followUpDue?Math.max(0,Math.floor((Date.now()-new Date(p.followUpDue))/DAY_MS)):0;
+// Email this one? Overdue, and we haven't already nagged within the last cycle.
+const needsEmail= p => isOverdue(p) && (!p.lastReminded || (Date.now()-new Date(p.lastReminded))>=FOLLOWUP_DAYS*DAY_MS);
+// Called by every action that counts as activity — restarts the clock.
+function touchFollowUp(p,reason){
+  p.followUpDue=addDays(new Date(),FOLLOWUP_DAYS).toISOString();
+  p.followUpNote=reason||'';
+  p.lastReminded='';
+}
 const h = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const safeJSON  = (s,f) => {try{return s?JSON.parse(s):f;}catch(e){return f;}};
 
@@ -359,6 +407,15 @@ async function getIds(){
   const ld=await gGet(`/sites/${spSiteId}/lists?$filter=displayName eq '${encodeURIComponent(LIST_NAME)}'`);
   if(!ld.value.length)throw new Error(`SharePoint list "${LIST_NAME}" not found.`);
   spListId=ld.value[0].id;
+  // Check the reminder columns exist. If they don't, we keep working exactly
+  // as before rather than failing every save on an unknown field.
+  try{
+    const cols=await gGet(`/sites/${spSiteId}/lists/${spListId}/columns?$select=name`);
+    const names=(cols.value||[]).map(c=>c.name);
+    remFieldsOk=REM_FIELDS.every(f=>names.includes(f));
+  }catch(e){remFieldsOk=false;}
+  const warn=document.getElementById('remWarning');
+  if(warn)warn.style.display=remFieldsOk?'none':'';
 }
 
 function spToP(item){
@@ -372,11 +429,17 @@ function spToP(item){
     fabricBy:f.FabricBy||'',fabricDate:f.FabricDate||'',
     blockers:safeJSON(f.Blockers,[]),rooms:safeJSON(f.Rooms,[]),
     log:safeJSON(f.Log,[]),poNumber:f.PONumber||'',
-    lutronQuotes:safeJSON(f.LutronQuotes,[]),hdQuotes:safeJSON(f.HDQuotes,[])
+    lutronQuotes:safeJSON(f.LutronQuotes,[]),hdQuotes:safeJSON(f.HDQuotes,[]),
+    followUpDue:f.FollowUpDue||'',lastReminded:f.LastReminded||'',followUpNote:f.FollowUpNote||''
   };
 }
 function pToSp(p){
-  return {
+  const rem = remFieldsOk?{
+    FollowUpDue:p.followUpDue||'',
+    LastReminded:p.lastReminded||'',
+    FollowUpNote:p.followUpNote||''
+  }:{};
+  return Object.assign(rem,{
     Client:p.client,Project:p.project,Lead:p.lead,QuoteType:p.type,
     Stage:STAGES.find(s=>s.id===p.stage)?.label||p.stage,Mount:p.mount,Power:p.power,
     Fabric:p.fabric,Fabric2:p.fabric2||'',FabricBy:p.fabricBy,FabricDate:p.fabricDate,
@@ -386,7 +449,7 @@ function pToSp(p){
     PONumber:p.poNumber||'',
     LutronQuotes:JSON.stringify(p.lutronQuotes||[]),
     HDQuotes:JSON.stringify(p.hdQuotes||[])
-  };
+  });
 }
 
 async function loadProjects(){
@@ -405,7 +468,11 @@ async function initApp(){
   document.getElementById('signinScreen').style.display='none';
   document.getElementById('mainApp').style.display='';
   document.getElementById('userBadge').textContent=currentUser.name||currentUser.username;
-  try{await loadProjects();}
+  try{
+    await loadProjects();
+    setTimeout(()=>runReminderSweep(false),2000);          // check once on open
+    setInterval(()=>runReminderSweep(false),3*60*60*1000); // and every 3h if left open
+  }
   catch(e){console.error(e);setSS('Sync error','err');toast('Could not load data: '+e.message,5000);render();}
 }
 
@@ -415,8 +482,10 @@ function renderSummary(){
   const ni=active.filter(needsInfo).length;
   const rd=active.filter(p=>isReady(p)&&!isOrdered(p)).length;
   const or=active.filter(isOrdered).length;
+  const fu=active.filter(isOverdue).length;
   document.getElementById('summaryBar').innerHTML=
     `<div class="art-sc"><div class="art-sn">${active.length}</div><div class="art-sl">Active</div></div>
+     <div class="art-sc" style="cursor:pointer" onclick="setTab('followup')"><div class="art-sn" style="color:${fu?'var(--red)':'var(--t3)'}">${fu}</div><div class="art-sl">Follow up</div></div>
      <div class="art-sc"><div class="art-sn" style="color:var(--amber)">${ni}</div><div class="art-sl">Needs info</div></div>
      <div class="art-sc"><div class="art-sn" style="color:var(--green)">${rd}</div><div class="art-sl">Ready to order</div></div>
      <div class="art-sc"><div class="art-sn" style="color:var(--blue)">${or}</div><div class="art-sl">Ordered</div></div>`;
@@ -432,7 +501,8 @@ function getFiltered(){
   if(activeTab==='archived') l=l.filter(p=>p.stage==='archived');
   else{
     l=l.filter(p=>p.stage!=='archived');
-    if(activeTab==='needs-info')l=l.filter(needsInfo);
+    if(activeTab==='followup')l=l.filter(isOverdue);
+    else if(activeTab==='needs-info')l=l.filter(needsInfo);
     else if(activeTab==='ready')l=l.filter(p=>isReady(p)&&!isOrdered(p));
     else if(activeTab==='ordered')l=l.filter(isOrdered);
   }
@@ -457,10 +527,12 @@ function buildCard(p,idx){
   const m2=p.rooms.filter(r=>r.m2).length;
   const tot=p.rooms.length;
 
-  const badge=p.stage==='partial-order'?'<span class="art-badge art-badge-ordered">Partially ordered</span>':ord?'<span class="art-badge art-badge-ordered">Ordered</span>'
+  const od=isOverdue(p);
+  const fuBadge=od?`<span class="art-badge art-badge-overdue">⏰ Follow up${daysOver(p)>0?' · '+daysOver(p)+'d':''}</span>`:'';
+  const badge=fuBadge+(p.stage==='partial-order'?'<span class="art-badge art-badge-ordered">Partially ordered</span>':ord?'<span class="art-badge art-badge-ordered">Ordered</span>'
     :rdy?'<span class="art-badge art-badge-ready">✓ Ready to order</span>'
     :ni?'<span class="art-badge art-badge-info">⚠ Needs information</span>'
-    :`<span class="art-badge art-badge-stage" style="color:${SC[p.stage]}">${st.label}</span>`;
+    :`<span class="art-badge art-badge-stage" style="color:${SC[p.stage]}">${st.label}</span>`);
 
   const itags=ni?(p.blockers.map(b=>`<span class="art-infotag">⏳ ${h(b)}</span>`).join('')+(!p.fabric?'<span class="art-infotag">⏳ Fabric not confirmed</span>':'')):'';
 
@@ -583,6 +655,19 @@ function buildCard(p,idx){
         <div class="art-roomsgrid">${roomsHtml}</div>
         <button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="openRoomModal(this)">Update room measurements</button>
       </div>
+      <div class="art-fubox${od?' overdue':''}">
+        <h4>Follow-up reminder</h4>
+        ${p.followUpDue
+          ?`<div class="art-fucurrent">${od?`⏰ Due ${fmtDay(p.followUpDue)}${daysOver(p)>0?` — ${daysOver(p)} day${daysOver(p)===1?'':'s'} overdue`:' — today'}`:`Next check ${fmtDay(p.followUpDue)}`}</div>
+            <div class="art-fusrc">${p.followUpNote?'Last activity: '+h(p.followUpNote):''}${p.lastReminded?` &nbsp;·&nbsp; Emailed ${fmtDay(p.lastReminded)}`:''}</div>`
+          :`<div class="art-fucurrent empty">No reminder set — this project won't be chased.</div><div class="art-fusrc"></div>`}
+        <div class="art-actionsrow" style="margin-top:10px;margin-bottom:0">
+          ${p.followUpDue
+            ?`<button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="snoozeFollowUp(this)">Snooze ${FOLLOWUP_DAYS} days</button>
+              <button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="clearFollowUp(this)">Done — stop reminding</button>`
+            :`<button class="art-btn art-btn-sm" data-pidx="${idx}" onclick="startFollowUp(this)">Remind me in ${FOLLOWUP_DAYS} days</button>`}
+        </div>
+      </div>
       <div class="art-timeline">
         <h4>Activity log</h4>
         <div class="art-tlentries">${logHtml}</div>
@@ -616,18 +701,22 @@ async function updateField(el){
   p[field]=el.value;
   p.log=p.log||[];
   p.log.unshift({text:`${field.charAt(0).toUpperCase()+field.slice(1)} updated: ${el.value||'Unknown'}`,time:nowStr(),type:'normal',by:currentUser?.name||''});
+  touchFollowUp(p,`${field} changed to "${el.value||'Unknown'}" by ${currentUser?.name||'someone'}`);
   render();try{await saveToSp(p);toast(field+' updated ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 async function updateStage(el){
   const p=pFromEl(el);if(!p)return;
   const old=stageObj(p.stage).label;p.stage=el.value;
   p.log=p.log||[];p.log.unshift({text:`Stage: ${old} → ${stageObj(p.stage).label}`,time:nowStr(),type:'normal',by:currentUser?.name||''});
+  touchFollowUp(p,`Stage moved to "${stageObj(p.stage).label}" by ${currentUser?.name||'someone'}`);
   render();try{await saveToSp(p);toast('Stage updated ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 async function addNote(el){
   const p=pFromEl(el);const inp=document.getElementById('note-'+p.id);
   if(!p||!inp||!inp.value.trim())return;
-  p.log=p.log||[];p.log.unshift({text:inp.value.trim(),time:nowStr(),type:'normal',by:currentUser?.name||''});
+  p.log=p.log||[];const noteTxt=inp.value.trim();
+  p.log.unshift({text:noteTxt,time:nowStr(),type:'normal',by:currentUser?.name||''});
+  touchFollowUp(p,`Note from ${currentUser?.name||'someone'}: ${noteTxt}`);
   inp.value='';render();try{await saveToSp(p);toast('Note saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 async function saveFabric(el){
@@ -640,6 +729,7 @@ async function saveFabric(el){
   p.fabricBy=who.value;p.fabricDate=nowStr();
   p.blockers=(p.blockers||[]).filter(b=>b!=='Fabric selection');
   p.log=p.log||[];p.log.unshift({text:`Fabric updated: ${p.fabric}${p.fabric2?' / '+p.fabric2:''}`,time:nowStr(),by:who.value,type:'fabric'});
+  touchFollowUp(p,`Fabric confirmed: ${p.fabric} (entered by ${who.value})`);
   render();try{await saveToSp(p);toast('Fabric saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 async function savePO(el){
@@ -648,7 +738,91 @@ async function savePO(el){
   p.poNumber=inp.value.trim();
   p.log=p.log||[];p.log.unshift({text:`PO entered: ${p.poNumber}`,time:nowStr(),by:currentUser?.name||'',type:'po'});
   if(!isOrdered(p))p.stage='ordered';
+  touchFollowUp(p,`PO ${p.poNumber} entered by ${currentUser?.name||'someone'}`);
   render();try{await saveToSp(p);toast('PO saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
+}
+
+/* ── FOLLOW-UP REMINDER ENGINE ────────────────────────────────────── */
+
+// Manual controls on each card
+async function snoozeFollowUp(el){
+  const p=pFromEl(el);if(!p)return;
+  p.followUpDue=addDays(new Date(),FOLLOWUP_DAYS).toISOString();p.lastReminded='';
+  p.log=p.log||[];p.log.unshift({text:`Follow-up snoozed to ${fmtDay(p.followUpDue)}`,time:nowStr(),type:'normal',by:currentUser?.name||''});
+  render();try{await saveToSp(p);toast(`Snoozed to ${fmtDay(p.followUpDue)} ✓`);}catch(e){toast('Save failed: '+e.message,4000);}
+}
+async function clearFollowUp(el){
+  const p=pFromEl(el);if(!p)return;
+  p.followUpDue='';p.followUpNote='';p.lastReminded='';
+  p.log=p.log||[];p.log.unshift({text:'Follow-up cleared — no more reminders.',time:nowStr(),type:'normal',by:currentUser?.name||''});
+  render();try{await saveToSp(p);toast('Follow-up cleared ✓');}catch(e){toast('Save failed: '+e.message,4000);}
+}
+async function startFollowUp(el){
+  const p=pFromEl(el);if(!p)return;
+  touchFollowUp(p,`Follow-up set manually by ${currentUser?.name||'someone'}`);
+  render();try{await saveToSp(p);toast(`Reminder set for ${fmtDay(p.followUpDue)} ✓`);}catch(e){toast('Save failed: '+e.message,4000);}
+}
+
+function reminderHtml(list){
+  const link=REDIRECT;
+  const rows=list.map(p=>{
+    const waiting=(p.blockers||[]).length?p.blockers.join(', '):(p.fabric?'—':'Fabric not confirmed');
+    return `<tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #ddd"><strong>${h(p.client)}</strong>${p.project&&p.project!=='—'?' — '+h(p.project):''}<br>
+        <span style="color:#666;font-size:12px">Lead: ${h(p.lead)} · ${h(stageObj(p.stage).label)}</span></td>
+      <td style="padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px">${daysOver(p)===0?'due today':daysOver(p)+' day'+(daysOver(p)===1?'':'s')+' overdue'}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px;color:#555">${h(p.followUpNote||'—')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px;color:#555">${h(waiting)}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">
+    <p>No movement on ${list.length===1?'this project':'these projects'} for ${FOLLOWUP_DAYS} days — worth a follow-up.</p>
+    <table style="border-collapse:collapse;width:100%;max-width:760px">
+      <tr style="background:#f2f2f2;text-align:left">
+        <th style="padding:8px 10px;font-size:12px">Project</th>
+        <th style="padding:8px 10px;font-size:12px">Status</th>
+        <th style="padding:8px 10px;font-size:12px">Last activity</th>
+        <th style="padding:8px 10px;font-size:12px">Waiting on</th>
+      </tr>${rows}
+    </table>
+    <p style="margin-top:16px"><a href="${link}">Open the ART Blinds Tracker</a></p>
+    <p style="color:#888;font-size:12px">Automatic reminder from the ART Blinds Tracker. The clock restarts on any note, stage change, or update. Clear the follow-up on a project to stop these.</p>
+  </div>`;
+}
+
+async function sendReminderEmail(list){
+  const tok=await getToken();
+  const to=(REMIND_TO.length?REMIND_TO:[currentUser?.username]).filter(Boolean);
+  if(!to.length)throw new Error('No reminder recipient configured');
+  const msg={message:{
+    subject:`Blinds follow-up — ${list.length} project${list.length>1?'s':''} with no activity for ${FOLLOWUP_DAYS} days`,
+    body:{contentType:'HTML',content:reminderHtml(list)},
+    toRecipients:to.map(a=>({emailAddress:{address:a}})),
+    ccRecipients:REMIND_CC.map(a=>({emailAddress:{address:a}}))
+  },saveToSentItems:true};
+  const r=await fetch(GRAPH+'/me/sendMail',{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(msg)});
+  if(!r.ok){const t=await r.text();throw new Error('sendMail failed '+r.status+' '+t);}
+}
+
+async function runReminderSweep(manual=false){
+  if(sweepRunning)return;
+  if(!remFieldsOk){if(manual)toast('Reminders are off — add the FollowUpDue / LastReminded / FollowUpNote columns to the SharePoint list.',6000);return;}
+  const mine=(REMIND_TO||[]).map(a=>a.toLowerCase());
+  const me=(currentUser?.username||'').toLowerCase();
+  if(!SWEEP_ANY_USER && mine.length && !mine.includes(me)){if(manual)toast('Reminder emails only send from your own sign-in.',4000);return;}
+  const due=projects.filter(needsEmail);
+  if(!due.length){if(manual)toast('Nothing overdue — all caught up 👍');return;}
+  sweepRunning=true;
+  try{
+    await sendReminderEmail(due);
+    for(const p of due){p.lastReminded=isoNow();try{await saveToSp(p);}catch(e){console.error(e);}}
+    toast(`Follow-up reminder emailed — ${due.length} project${due.length>1?'s':''} ✓`,4000);
+    render();
+  }catch(e){
+    console.error(e);
+    if(manual)toast('Reminder email failed: '+e.message,6000);
+    setSS('Reminder email failed','err');
+  }finally{sweepRunning=false;}
 }
 
 async function ensureFolder(name){
@@ -743,6 +917,7 @@ async function saveRoomMeasures(){
   const allM1=p.rooms.every(r=>r.m1),allM2=p.rooms.every(r=>r.m2);
   if(allM1&&!(p.log||[]).some(e=>e.text.startsWith('All M1')))p.log.unshift({text:'All M1 measurements confirmed (Adrian)',time:nowStr(),type:'normal'});
   if(allM2&&!(p.log||[]).some(e=>e.text.startsWith('All M2')))p.log.unshift({text:'All M2 measurements confirmed (Chris)',time:nowStr(),type:'normal'});
+  touchFollowUp(p,`Measurements updated by ${currentUser?.name||'someone'}`);
   closeModal('roomModal');render();
   try{await saveToSp(p);toast('Measurements saved ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
@@ -807,6 +982,7 @@ async function saveProject(){
     p.fabric2=fabric2;p.blockers=blockers;
     if(note)p.log.unshift({text:note,time:nowStr(),type:'normal',by:currentUser?.name||''});
     p.log.unshift({text:'Project updated.',time:nowStr(),type:'normal',by:currentUser?.name||''});
+    touchFollowUp(p,note?`Note from ${currentUser?.name||'someone'}: ${note}`:`Project details edited by ${currentUser?.name||'someone'}`);
     closeModal('projectModal');render();
     try{await saveToSp(p);toast('Project updated ✓');}catch(e){toast('Save failed: '+e.message,4000);}
   }else{
@@ -814,6 +990,7 @@ async function saveProject(){
     if(note)log.push({text:note,time:nowStr(),type:'normal',by:currentUser?.name||''});
     log.push({text:'Project created.',time:nowStr(),type:'normal',by:currentUser?.name||''});
     const p={id:'new-'+Date.now(),spId:null,client,project:(document.getElementById('pm-project').value||'').trim()||'—',lead:document.getElementById('pm-lead').value,type:document.getElementById('pm-type').value,stage:blockers.length?'waiting-info':'meeting',mount:document.getElementById('pm-mount').value,power:document.getElementById('pm-power').value,fabric,fabric2,fabricBy:fabric?'Trevor':'',fabricDate:fabric?nowStr():'',blockers,rooms:roomNames.map(name=>({name,m1:false,m2:false})),log,poNumber:'',lutronQuotes:[],hdQuotes:[]};
+    touchFollowUp(p,`Project created by ${currentUser?.name||'someone'}`);
     projects.unshift(p);closeModal('projectModal');render();
     try{await saveToSp(p);toast('Project created ✓');}catch(e){toast('Save failed: '+e.message,4000);}
   }
@@ -825,6 +1002,7 @@ async function archiveProject(el){
   p.stage='archived';
   p.log=p.log||[];
   p.log.unshift({text:'Project archived.',time:nowStr(),type:'normal',by:currentUser?.name||''});
+  p.followUpDue='';p.followUpNote='';p.lastReminded='';
   render();try{await saveToSp(p);toast('Project archived ✓');}catch(e){toast('Save failed: '+e.message,4000);}
 }
 async function deleteProject(el){
@@ -856,7 +1034,9 @@ function openDigest(){
   const ni=projects.filter(needsInfo),rdy=projects.filter(p=>isReady(p)&&!isOrdered(p));
   const inp=projects.filter(p=>!needsInfo(p)&&!isReady(p)&&!isOrdered(p)),ord=projects.filter(isOrdered);
   const today=new Date().toLocaleDateString('en-CA',{year:'numeric',month:'long',day:'numeric'});
+  const fu=projects.filter(isOverdue);
   let html=`<div style="font-size:13px;color:var(--t2);margin-bottom:12px">To: Trevor, Bruno, Terry &nbsp;·&nbsp; ${today}</div><div class="art-digestbody">`;
+  if(fu.length){html+=`<div class="art-digestsection"><div class="art-digesttitle" style="color:var(--red)">⏰ Needs follow-up (${fu.length})</div>`;fu.forEach(x=>{html+=`<div class="art-digestitem"><strong>${h(x.client)} — ${h(x.project)}</strong>${daysOver(x)>0?` <span style="color:var(--t3)">(${daysOver(x)}d overdue)</span>`:''}</div>`;if(x.followUpNote)html+=`<div class="art-digestsub">→ Last: ${h(x.followUpNote)}</div>`});html+=`</div>`;}
   if(rdy.length){html+=`<div class="art-digestsection"><div class="art-digesttitle" style="color:var(--green)">✅ Ready to order (${rdy.length})</div>`;rdy.forEach(x=>{html+=`<div class="art-digestitem">· ${h(x.client)} — ${h(x.project)}</div>`});html+=`</div>`;}
   if(ni.length){html+=`<div class="art-digestsection"><div class="art-digesttitle" style="color:var(--amber)">⚠️ Needs information (${ni.length})</div>`;ni.forEach(x=>{html+=`<div class="art-digestitem"><strong>${h(x.client)} — ${h(x.project)}</strong></div>`;x.blockers.forEach(b=>{html+=`<div class="art-digestsub">→ ${h(b)}</div>`});if(!x.fabric)html+=`<div class="art-digestsub">→ Fabric not confirmed</div>`});html+=`</div>`;}
   if(inp.length){html+=`<div class="art-digestsection"><div class="art-digesttitle">🔄 In progress (${inp.length})</div>`;inp.forEach(x=>{html+=`<div class="art-digestitem">· ${h(x.client)} — ${h(x.project)} <span style="color:var(--t3)">(${stageObj(x.stage).label})</span></div>`});html+=`</div>`;}
