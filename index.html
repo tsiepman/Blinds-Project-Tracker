@@ -208,27 +208,10 @@ function render() {
 }
 
 render();
-
-// Flags any tile whose file isn't actually in the repo, so a wrong filename
-// shows up here instead of as a 404 for someone in the field.
-async function checkLinks() {
-  const links = document.querySelectorAll('.tool');
-  for (const a of links) {
-    try {
-      const res = await fetch(a.getAttribute('href'), { method: 'HEAD' });
-      if (!res.ok) markMissing(a);
-    } catch(e) {
-      markMissing(a);
-    }
-  }
-}
-
-function markMissing(a) {
-  a.classList.add('tool-missing');
-  a.querySelector('.tool-desc').textContent = 'File not found — check the filename in this page\'s TOOL_GROUPS list.';
-}
-
-checkLinks();
+// The old link-checker that lived here (a HEAD request per tile) was removed —
+// GitHub Pages doesn't reliably answer HEAD, so it was intermittently
+// overwriting real descriptions with "File not found" on tiles that worked
+// fine. Filenames are now all confirmed correct, so there's nothing to check.
 </script>
 
 </body>
