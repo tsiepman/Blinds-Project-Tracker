@@ -184,7 +184,7 @@
     </div>
 
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Picking list</span><span class="spacer"></span><span id="pickSummary" style="font-size:12px;color:var(--text3)"></span></div>
+      <div class="panel-head"><span class="panel-title">Picking list</span><span class="spacer"></span><span id="pickSummary" style="font-size:12px;color:var(--text3)"></span><button class="btn btn-ghost btn-sm" onclick="openAddLines()">Add lines</button></div>
       <div id="linesList"></div>
     </div>
 
@@ -256,6 +256,19 @@
   </div>
 </div></div>
 
+<!-- ADD LINES MODAL -->
+<div id="modalLines" class="modal-bg"><div class="modal">
+  <h3>Add estimate lines</h3>
+  <p>One product per line: model, then quantity. Paste straight from a spreadsheet, or type a few.
+     From October these arrive automatically with the estimate.</p>
+  <textarea id="alText" rows="8" placeholder="AN-520-AP-I-1, 4&#10;LUM-820-IP-TFHB, 2&#10;CW-1-WH  6" style="font-family:var(--mono);font-size:12.5px"></textarea>
+  <div id="alPreview" style="margin-top:10px;font-size:12px;color:var(--text3)"></div>
+  <div class="row" style="margin-top:12px">
+    <button class="btn btn-ghost" onclick="closeAddLines()">Cancel</button>
+    <button class="btn" onclick="saveAddLines()">Add to job</button>
+  </div>
+</div></div>
+
 <div id="toast" class="toast"></div>
 
 <script>
@@ -316,7 +329,15 @@ async function spFetch(method, path, body) {
   if (!token) return null;
   const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
     method,
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+      // SharePoint refuses $filter on a column that has no index. This header opts in.
+      // It is only safe below the 5,000-item list threshold, so JobKey should also be
+      // indexed on FulfillLines and FulfillPulls -- see SETUP. FulfillPulls will cross
+      // that threshold eventually.
+      'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly'
+    },
     body: body ? JSON.stringify(body) : undefined
   });
   if (!res.ok) throw new Error(method + ' ' + path + ' -> ' + res.status + ' ' + (await res.text()).slice(0, 300));
@@ -706,6 +727,77 @@ function showProdStats() {
     '<tr><td>Missing a model</td><td class="mono">' + (all.length - withModel) + '</td></tr>' +
     '</tbody></table>' +
     '<p style="color:var(--text3);font-size:12px;margin-top:10px">Rows without a model cannot be matched to QuickBooks. They get filled in as unknown barcodes are resolved at scan time.</p>';
+}
+
+/* ---------- manual estimate lines ----------
+   Stand-in until QuickBooks feeds estimates in October. Without lines there is no
+   picking list, and every scan would record as an extra. */
+
+function openAddLines() {
+  if (!activeJob) return;
+  document.getElementById('alText').value = '';
+  document.getElementById('alPreview').textContent = '';
+  document.getElementById('modalLines').classList.add('show');
+  setTimeout(() => document.getElementById('alText').focus(), 60);
+}
+function closeAddLines() { document.getElementById('modalLines').classList.remove('show'); }
+
+// "MODEL, 4" / "MODEL<tab>4" / "MODEL 4" / bare "MODEL" (qty 1).
+// Model names contain spaces and dashes, so split on the LAST separator only.
+function parseLineInput(text) {
+  const out = [];
+  for (let raw of text.split('\n')) {
+    raw = raw.trim();
+    if (!raw) continue;
+    let model = raw, qty = 1;
+    const m = raw.match(/^(.*?)[\s,;\t]+(\d+(?:\.\d+)?)$/);
+    if (m) { model = m[1].trim().replace(/[,;]$/, ''); qty = parseFloat(m[2]); }
+    if (model) out.push({ model, qty });
+  }
+  return out;
+}
+
+document.getElementById('alText').addEventListener('input', e => {
+  const rows = parseLineInput(e.target.value);
+  const known = rows.filter(r => productByModel(r.model)).length;
+  document.getElementById('alPreview').textContent = rows.length
+    ? rows.length + ' line' + (rows.length === 1 ? '' : 's') + ' — ' + known + ' matched to a known product'
+    : '';
+});
+
+function productByModel(model) {
+  const k = String(model).trim().toLowerCase();
+  return Object.values(products).find(p => p.model && p.model.toLowerCase() === k) || null;
+}
+
+async function saveAddLines() {
+  if (!activeJob) return;
+  const rows = parseLineInput(document.getElementById('alText').value);
+  if (!rows.length) { toast('Nothing to add', true); return; }
+  const key = activeJob.estimateId || activeJob.number;
+  let ok = 0, fail = 0;
+
+  for (const r of rows) {
+    const p = productByModel(r.model);
+    try {
+      const item = await createItem(LIST.lines, {
+        Title: r.model,
+        JobKey: key,
+        Model: r.model,
+        ProductName: p ? p.name : '',
+        QtyQuoted: String(r.qty),
+        QtyPulled: '0',
+        UnitPrice: '0',
+        LineStatus: 'outstanding'
+      });
+      jobLines.push({ spId: item.id, model: r.model, name: p ? p.name : '', quoted: r.qty, pulled: 0, price: 0 });
+      ok++;
+    } catch (e) { fail++; }
+  }
+
+  closeAddLines();
+  renderScan();
+  toast(fail ? (ok + ' added, ' + fail + ' failed') : ('✓ ' + ok + ' lines added'), !!fail);
 }
 
 /* ---------- bulk model fill ----------
