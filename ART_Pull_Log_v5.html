@@ -259,6 +259,17 @@
   </div>
 </div></div>
 
+<!-- LINK MODEL MODAL -->
+<div id="modalLink" class="modal-bg"><div class="modal">
+  <h3>Same product?</h3>
+  <p id="linkText"></p>
+  <div class="row">
+    <button class="btn btn-ghost" onclick="linkNo()">No — it's an extra</button>
+    <button class="btn" onclick="linkYes()">Yes, same product</button>
+  </div>
+  <p style="font-size:12px;color:var(--text3);margin:12px 0 0">Saying yes corrects the product's model so this barcode matches from now on.</p>
+</div></div>
+
 <!-- ADD LINES MODAL -->
 <div id="modalLines" class="modal-bg"><div class="modal">
   <h3>Add estimate lines</h3>
@@ -579,8 +590,23 @@ async function handleScan(barcode) {
 async function recordPull(prod, qty, type) {
   // Match against the estimate. Anything not on it is an extra -- detected, never
   // asked. The tech does not have to judge whether something was quoted.
+  // The user was offered a near-match and said no. Record against the job as an extra
+  // without asking again.
+  const forcedExtra = type === 'extraForced';
+  if (forcedExtra) type = 'job';
+
   let line = null;
-  if (type === 'job' && activeJob) line = jobLines.find(l => sameModel(l.model, prod.model));
+  if (type === 'job' && activeJob && !forcedExtra) {
+    line = jobLines.find(l => sameModel(l.model, prod.model));
+
+    // No exact match. Punctuation drift is common -- "AN220RT" against "AN-220-RT" --
+    // but stripping punctuation automatically would also merge "AC-BT-10KUHD .3M" with
+    // "...3M", a 0.3m and a 3m cable. So offer it as a question, never a guess.
+    if (!line) {
+      const loose = jobLines.find(l => looseModel(l.model) === looseModel(prod.model));
+      if (loose) { askLink(prod, qty, type, loose); return; }
+    }
+  }
   const pullType = (type === 'job' && activeJob && !line) ? 'extra' : type;
 
   const fields = {
@@ -619,6 +645,43 @@ async function recordPull(prod, qty, type) {
     renderScan();
   } catch (e) { toast(e.message, true); }
 }
+
+/* ---------- link a drifted model ---------- */
+
+let pendingLink = null;
+
+function askLink(prod, qty, type, line) {
+  pendingLink = { prod, qty, type, line };
+  document.getElementById('linkText').innerHTML =
+    'This barcode is saved as <b>' + esc(prod.model) + '</b>, which is not on the estimate. ' +
+    'The estimate has <b>' + esc(line.model) + '</b>' + (line.name ? ' — ' + esc(line.name) : '') + '.<br><br>' +
+    'Same product, written differently?';
+  document.getElementById('modalLink').classList.add('show');
+}
+
+function closeLink() { document.getElementById('modalLink').classList.remove('show'); pendingLink = null; document.getElementById('scanBox').focus(); }
+
+async function linkYes() {
+  if (!pendingLink) return;
+  const { prod, qty, type, line } = pendingLink;
+  try {
+    if (prod.spId) await updateItem(LIST.products, prod.spId, { Model: line.model });
+    prod.model = line.model;
+    for (const k in products) if (products[k].spId === prod.spId) products[k].model = line.model;
+    closeLink();
+    await recordPull(prod, qty, type);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function linkNo() {
+  if (!pendingLink) return;
+  const { prod, qty } = pendingLink;
+  closeLink();
+  await recordPull(prod, qty, 'extraForced');
+}
+
+// Loose comparison, used ONLY to offer a suggestion a human then confirms.
+function looseModel(s) { return String(s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); }
 
 /* ---------- unknown barcode ---------- */
 
