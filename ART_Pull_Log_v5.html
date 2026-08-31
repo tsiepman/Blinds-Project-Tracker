@@ -232,10 +232,13 @@
 
 <!-- UNKNOWN BARCODE MODAL -->
 <div id="modalUnknown" class="modal-bg"><div class="modal">
-  <h3>Barcode not recognised</h3>
-  <p>This barcode isn't in the product list yet. Add it now so it works for everyone next time.</p>
-  <div class="fldwrap"><label class="fld">Barcode</label><input id="ukBarcode" class="mono" readonly></div>
-  <div class="fldwrap"><label class="fld">D-Tools model <span style="color:var(--accent)">*</span></label><input id="ukModel" placeholder="e.g. AN-520-AP-I-1"></div>
+  <h3>Which product is this?</h3>
+  <p>This barcode isn't linked to a D-Tools model yet. Pick it below, or type the model.
+     Once saved it works for everyone, in v4 as well.</p>
+  <div class="fldwrap"><label class="fld">Barcode scanned</label><input id="ukBarcode" class="mono" readonly></div>
+  <div id="ukQuick" style="margin-bottom:12px"></div>
+  <div class="fldwrap"><label class="fld">D-Tools model <span style="color:var(--accent)">*</span></label><input id="ukModel" placeholder="Type it — e.g. AN-520-AP-I-1"></div>
+  <p style="font-size:12px;color:var(--yellow);margin:-6px 0 12px">Type or tap — don't scan the barcode again here.</p>
   <div class="fldwrap"><label class="fld">Description</label><input id="ukName" placeholder="What is it?"></div>
   <div class="fldwrap"><label class="fld">Unit cost</label><input id="ukCost" type="number" step="0.01" placeholder="0.00"></div>
   <div class="row">
@@ -567,7 +570,8 @@ async function handleScan(barcode) {
   const p = lookup(barcode);
 
   if (!p) { promptUnknown(barcode, qty, type); return; }
-  if (!p.model) { promptUnknown(barcode, qty, type, p); return; }
+  // Re-prompt on rows where a barcode was saved into Model by mistake.
+  if (!p.model || looksLikeBarcode(p.model)) { promptUnknown(barcode, qty, type, p); return; }
 
   await recordPull(p, qty, type);
 }
@@ -576,7 +580,7 @@ async function recordPull(prod, qty, type) {
   // Match against the estimate. Anything not on it is an extra -- detected, never
   // asked. The tech does not have to judge whether something was quoted.
   let line = null;
-  if (type === 'job' && activeJob) line = jobLines.find(l => l.model && l.model === prod.model);
+  if (type === 'job' && activeJob) line = jobLines.find(l => sameModel(l.model, prod.model));
   const pullType = (type === 'job' && activeJob && !line) ? 'extra' : type;
 
   const fields = {
@@ -608,7 +612,7 @@ async function recordPull(prod, qty, type) {
       const over = line.pulled > line.quoted;
       toast((over ? '⚠ over quoted — ' : '✓ ') + prod.model + ' ×' + qty, over);
     } else if (pullType === 'extra') {
-      toast('⚠ Not on this estimate — recorded as an extra', true);
+      toast('⚠ "' + (prod.model || prod.barcode) + '" is not on this estimate — recorded as an extra', true);
     } else {
       toast('✓ ' + (prod.model || prod.barcode) + ' ×' + qty + ' — ' + pullType);
     }
@@ -618,14 +622,36 @@ async function recordPull(prod, qty, type) {
 
 /* ---------- unknown barcode ---------- */
 
+// A model that is nothing but a long run of digits is almost certainly a barcode that
+// was scanned into the model field. Treat it as unresolved so the row self-heals.
+function looksLikeBarcode(s) { return /^\d{8,}$/.test(String(s || '').trim()); }
+
 function promptUnknown(barcode, qty, type, existing) {
   pendingScan = { barcode, qty, type, existing: existing || null };
   document.getElementById('ukBarcode').value = barcode;
-  document.getElementById('ukModel').value = existing ? (existing.mfrSku || '') : '';
+  const prior = existing ? existing.model : '';
+  document.getElementById('ukModel').value = (prior && !looksLikeBarcode(prior)) ? prior : '';
   document.getElementById('ukName').value = existing ? existing.name : '';
   document.getElementById('ukCost').value = existing ? (existing.cost || '') : '';
+
+  // The likeliest answer is a line on the job in front of them. Offer those as taps
+  // so nobody has to type a model with a scanner in their hand.
+  const q = document.getElementById('ukQuick');
+  const outstanding = jobLines.filter(l => l.pulled < l.quoted);
+  q.innerHTML = outstanding.length
+    ? '<label class="fld">On this estimate</label>' + outstanding.map(l =>
+        '<button class="btn btn-ghost btn-sm" style="margin:0 6px 6px 0" onclick="ukPick(' +
+        JSON.stringify(l.model).replace(/"/g, '&quot;') + ')">' + esc(l.model) + '</button>').join('')
+    : '';
+
   document.getElementById('modalUnknown').classList.add('show');
   setTimeout(() => document.getElementById('ukModel').focus(), 60);
+}
+
+function ukPick(model) {
+  document.getElementById('ukModel').value = model;
+  const l = jobLines.find(x => sameModel(x.model, model));
+  if (l && l.name && !document.getElementById('ukName').value) document.getElementById('ukName').value = l.name;
 }
 
 function closeUnknown() {
@@ -638,6 +664,10 @@ async function saveUnknown() {
   if (!pendingScan) return;
   const model = document.getElementById('ukModel').value.trim();
   if (!model) { toast('A D-Tools model is required', true); return; }
+  if (model === pendingScan.barcode || looksLikeBarcode(model)) {
+    toast('That is the barcode, not the model — type or tap the D-Tools model', true);
+    return;
+  }
   const name = document.getElementById('ukName').value.trim();
   const cost = parseFloat(document.getElementById('ukCost').value) || 0;
   const { barcode, qty, type, existing } = pendingScan;
@@ -766,8 +796,7 @@ document.getElementById('alText').addEventListener('input', e => {
 });
 
 function productByModel(model) {
-  const k = String(model).trim().toLowerCase();
-  return Object.values(products).find(p => p.model && p.model.toLowerCase() === k) || null;
+  return Object.values(products).find(p => sameModel(p.model, model)) || null;
 }
 
 async function saveAddLines() {
@@ -807,8 +836,12 @@ async function saveAddLines() {
 
 let modelPlan = [];
 
-// Minimal CSV parser -- handles quoted fields, because Barcode columns contain commas.
+// Minimal delimited-text parser. Handles quoted fields, because Barcode columns can
+// contain commas. Delimiter is sniffed from the header line: pasting straight out of
+// Excel gives tabs, out of Notepad gives commas, and both should just work.
 function parseCsv(text) {
+  const firstLine = text.slice(0, text.indexOf('\n') + 1 || text.length);
+  const delim = firstLine.includes('\t') ? '\t' : ',';
   const rows = []; let row = [], cell = '', q = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -816,7 +849,7 @@ function parseCsv(text) {
       if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
       else cell += c;
     } else if (c === '"') q = true;
-    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === delim) { row.push(cell); cell = ''; }
     else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
     else if (c !== '\r') cell += c;
   }
@@ -891,6 +924,14 @@ async function applyModels() {
 /* ---------- util ---------- */
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// Model comparison. Case and surrounding whitespace are ignored; internal punctuation
+// is NOT -- "AC-BT-10KUHD .3M" and "AC-BT-10KUHD 3M" are a 0.3m and a 3m cable and must
+// never match each other.
+function sameModel(a, b) {
+  if (!a || !b) return false;
+  return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+}
 
 let toastTimer = null;
 function toast(msg, bad) {
