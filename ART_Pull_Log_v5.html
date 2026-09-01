@@ -118,6 +118,7 @@
     <button data-view="setup">Setup</button>
   </div>
   <span id="whoBadge" class="header-installer" style="display:none" onclick="changeInstaller()"></span>
+  <a class="art-back" href="index.html" style="margin-left:0">← All tools</a>
 </div>
 
 <!-- AUTH -->
@@ -155,7 +156,17 @@
 
 <!-- SCAN -->
 <div id="view-scan" class="view"><div class="wrap">
-  <div id="scanNoJob" class="panel"><div class="empty">No job selected. Choose one from <b>Jobs</b> first.</div></div>
+  <div id="scanNoJob" class="panel">
+    <div class="panel-head"><span class="panel-title">No quote yet?</span></div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:12px">
+      Service call or short-notice job with no estimate. Give it a name — a client or an
+      address — and scan. It gets attached to the right customer later; nothing is lost.
+    </p>
+    <label class="fld">Job name</label>
+    <input id="nqLabel" placeholder="e.g. Kilfoyle service call, or 42 Bridgewater show home">
+    <div style="margin-top:10px"><button class="btn" onclick="startNoQuote()">Start scanning</button></div>
+    <p style="color:var(--text3);font-size:12px;margin-top:14px">Or pick a quoted job from <b>Jobs</b>.</p>
+  </div>
 
   <div id="scanBody" style="display:none">
     <div class="panel">
@@ -168,13 +179,21 @@
         <span id="scanJobStatus"></span>
         <button class="btn btn-ghost btn-sm" onclick="markPicked()" id="btnPicked">Mark staged</button>
       </div>
-      <label class="fld">Scan barcode</label>
-      <input id="scanBox" class="scan-input mono" placeholder="Scan or type a barcode, then Enter" autocomplete="off">
+      <div id="dirBar" style="display:flex;gap:8px;margin-bottom:12px">
+        <button id="dirOut" class="btn" style="flex:1" onclick="setDir('out')">↓ Taking out</button>
+        <button id="dirIn" class="btn btn-ghost" style="flex:1" onclick="setDir('in')">↑ Bringing back</button>
+      </div>
+      <label class="fld" id="scanLbl">Scan barcode</label>
+      <div style="display:flex;gap:8px">
+        <input id="scanBox" class="scan-input mono" placeholder="Scan or type a barcode, then Enter" autocomplete="off" style="flex:1">
+        <button class="btn btn-ghost" onclick="openCamera()" title="Scan with the phone camera" style="flex:0 0 auto;padding:0 16px;font-size:20px">📷</button>
+      </div>
       <div class="row" style="margin-top:10px">
         <div style="max-width:110px"><label class="fld">Qty</label><input id="scanQty" type="number" value="1" min="1"></div>
         <div><label class="fld">Pull type</label>
           <select id="scanType">
             <option value="job">Against this job</option>
+            <option value="noquote">Job with no quote yet</option>
             <option value="supplies">Shop supplies</option>
             <option value="warranty">Warranty / RMA</option>
             <option value="vanrestock">Van restock</option>
@@ -259,6 +278,13 @@
   </div>
 </div></div>
 
+<!-- PHONE CAMERA SCANNER -->
+<div id="cam-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:95;flex-direction:column;align-items:center;justify-content:center;padding:16px">
+  <div id="cam-reader" style="width:100%;max-width:460px"></div>
+  <div id="cam-status" style="color:#fff;font-size:14px;margin:14px 0;text-align:center;max-width:440px"></div>
+  <button class="btn" onclick="closeCamera()" style="padding:12px 32px">Cancel</button>
+</div>
+
 <!-- LINK MODEL MODAL -->
 <div id="modalLink" class="modal-bg"><div class="modal">
   <h3>Same product?</h3>
@@ -308,6 +334,11 @@ let msalInstance = null, siteId = null, listIds = {};
 let activeInstaller = null, activeJob = null;
 let jobLines = [], jobPulls = [], products = {}, jobs = [];
 let pendingScan = null;
+// 'out' takes stock off the shelf; 'in' brings it back. Returns matter: on a service
+// call a tech takes three things "just in case" and uses one. Without a way to bring
+// the other two back, all three get billed.
+let scanDir = 'out';
+let noQuoteLabel = null;
 
 /* ---------- auth ---------- */
 
@@ -520,7 +551,9 @@ async function openJob(spId) {
     });
     jobPulls = pulls.map(i => {
       const f = i.fields || {};
-      return { spId: i.id, model: f.Model || '', name: f.ProductName || '', qty: parseFloat(f.Qty) || 0, type: f.PullType || 'job', installer: f.Installer || '', at: f.ScannedAt || '' };
+      return { spId: i.id, model: f.Model || '', name: f.ProductName || '', qty: parseFloat(f.Qty) || 0,
+               type: f.PullType || 'job', installer: f.Installer || '', at: f.ScannedAt || '',
+               qboStatus: f.QboStatus || '', qboLineId: f.QboInvoiceLineId || '' };
     });
     setStatus('connected', 'SharePoint');
     renderScan();
@@ -528,14 +561,66 @@ async function openJob(spId) {
   } catch (e) { setStatus('error', 'Error'); toast(e.message, true); }
 }
 
+// No-quote work still needs a key, so returns can find the original pull and so the
+// day's scans group together. Prefixed to keep it clearly distinct from an estimate
+// number that a real job will carry later.
+function noQuoteKey() { return noQuoteLabel ? 'NOQ:' + noQuoteLabel : ''; }
+
+async function startNoQuote() {
+  const label = document.getElementById('nqLabel').value.trim();
+  if (!label) { toast('Give the job a name first', true); return; }
+  noQuoteLabel = label;
+  activeJob = null; jobLines = []; jobPulls = [];
+  // Reload anything already scanned under this label, so a return later in the day
+  // finds what went out this morning.
+  try {
+    const key = noQuoteKey().replace(/'/g, "''");
+    const pulls = await getItems(LIST.pulls, "fields/JobKey eq '" + key + "'");
+    jobPulls = pulls.map(i => {
+      const f = i.fields || {};
+      return { spId: i.id, model: f.Model || '', name: f.ProductName || '', qty: parseFloat(f.Qty) || 0,
+               type: f.PullType || 'noquote', installer: f.Installer || '', at: f.ScannedAt || '',
+               qboStatus: f.QboStatus || '', qboLineId: f.QboInvoiceLineId || '' };
+    });
+  } catch (e) { /* first use of this label -- nothing to load */ }
+  renderScan();
+  setTimeout(() => document.getElementById('scanBox').focus(), 60);
+}
+
+function setDir(d) {
+  scanDir = d;
+  document.getElementById('dirOut').className = d === 'out' ? 'btn' : 'btn btn-ghost';
+  document.getElementById('dirIn').className = d === 'in' ? 'btn' : 'btn btn-ghost';
+  document.getElementById('scanLbl').textContent = d === 'in' ? 'Scan barcode to bring back' : 'Scan barcode';
+  document.getElementById('scanBox').focus();
+}
+
 function renderScan() {
-  document.getElementById('scanNoJob').style.display = activeJob ? 'none' : 'block';
-  document.getElementById('scanBody').style.display = activeJob ? 'block' : 'none';
-  if (!activeJob) return;
-  document.getElementById('scanJobTitle').textContent = 'Estimate ' + activeJob.number;
-  document.getElementById('scanJobSub').textContent = activeJob.customer;
-  document.getElementById('scanJobStatus').innerHTML = statusTag(activeJob.status);
-  document.getElementById('btnPicked').style.display = activeJob.status === 'open' ? '' : 'none';
+  const working = !!activeJob || !!noQuoteLabel;
+  document.getElementById('scanNoJob').style.display = working ? 'none' : 'block';
+  document.getElementById('scanBody').style.display = working ? 'block' : 'none';
+  if (!working) return;
+
+  if (activeJob) {
+    document.getElementById('scanJobTitle').textContent = 'Estimate ' + activeJob.number;
+    document.getElementById('scanJobSub').textContent = activeJob.customer;
+    document.getElementById('scanJobStatus').innerHTML = statusTag(activeJob.status);
+    document.getElementById('btnPicked').style.display = activeJob.status === 'open' ? '' : 'none';
+  } else {
+    document.getElementById('scanJobTitle').textContent = noQuoteLabel;
+    document.getElementById('scanJobSub').textContent = 'No quote yet — will be attached to a customer later';
+    document.getElementById('scanJobStatus').innerHTML = '<span class="tag t-extra">No quote</span>';
+    document.getElementById('btnPicked').style.display = 'none';
+  }
+
+  // Without an estimate there is nothing to pull "against", so hide the option
+  // rather than let it silently record nothing useful.
+  const sel = document.getElementById('scanType');
+  sel.options[0].disabled = !activeJob;
+  sel.options[0].text = activeJob ? 'Against this job' : 'Against this job (no estimate)';
+  if (!activeJob && sel.value === 'job') sel.value = 'noquote';
+
+  setDir(scanDir);
   renderLines();
   renderJobPulls();
 }
@@ -560,9 +645,14 @@ function renderLines() {
 function renderJobPulls() {
   const el = document.getElementById('jobPulls');
   if (!jobPulls.length) { el.innerHTML = '<div class="empty">Nothing pulled yet.</div>'; return; }
+  const badge = p => p.type === 'return' ? '<span class="tag t-done">Returned</span>'
+    : p.type === 'extra' ? '<span class="tag t-extra">Extra</span>'
+    : p.qboStatus === 'cancelled' ? '<span class="tag t-open">Cancelled</span>'
+    : esc(p.type);
   el.innerHTML = '<table><thead><tr><th>Model</th><th>Qty</th><th>Type</th><th>By</th></tr></thead><tbody>' +
-    jobPulls.slice().reverse().map(p => '<tr><td class="mono">' + esc(p.model || '—') + '</td><td>' + p.qty + '</td><td>' +
-      (p.type === 'extra' ? '<span class="tag t-extra">Extra</span>' : esc(p.type)) + '</td><td>' + esc(p.installer) + '</td></tr>').join('') + '</tbody></table>';
+    jobPulls.slice().reverse().map(p => '<tr' + (p.qboStatus === 'cancelled' ? ' style="opacity:.55"' : '') +
+      '><td class="mono">' + esc(p.model || '—') + '</td><td' + (p.qty < 0 ? ' style="color:var(--green)"' : '') + '>' +
+      (p.qty > 0 ? '+' : '') + p.qty + '</td><td>' + badge(p) + '</td><td>' + esc(p.installer) + '</td></tr>').join('') + '</tbody></table>';
 }
 
 /* ---------- scanning ---------- */
@@ -587,7 +677,68 @@ async function handleScan(barcode) {
   await recordPull(p, qty, type);
 }
 
+/* Bringing stock back.
+
+   A return before invoicing should CANCEL, not credit -- if the original pull has not
+   reached QuickBooks yet, the cleanest outcome is that neither row ever posts, so the
+   customer never sees a charge and a credit for the same item. Only a return after
+   invoicing needs a real credit. Nothing posts today, so every return is currently the
+   simple case, but the code has to know the difference before the sync exists. */
+async function recordReturn(prod, qty) {
+  const key = activeJob ? (activeJob.estimateId || activeJob.number) : noQuoteKey();
+  const label = activeJob ? '' : (noQuoteLabel || '');
+
+  // Find outbound pulls of this product on this job that have not been billed.
+  const candidates = jobPulls.filter(p =>
+    sameModel(p.model, prod.model) && p.qty > 0 && !p.qboLineId &&
+    (p.qboStatus === 'pending' || !p.qboStatus));
+
+  const available = candidates.reduce((n, p) => n + p.qty, 0);
+  if (available <= 0) { toast('⚠ "' + (prod.model || prod.barcode) + '" was not taken out on this job', true); return; }
+  if (qty > available) { toast('⚠ Only ' + available + ' of that went out — returning ' + available, true); qty = available; }
+
+  try {
+    // Cancel the unbilled outbound rows this return covers, newest first.
+    let remaining = qty;
+    for (const p of candidates.slice().reverse()) {
+      if (remaining <= 0) break;
+      const take = Math.min(p.qty, remaining);
+      if (take === p.qty) {
+        await updateItem(LIST.pulls, p.spId, { QboStatus: 'cancelled', Notes: 'Returned ' + new Date().toISOString().slice(0, 10) });
+        p.qboStatus = 'cancelled';
+      } else {
+        await updateItem(LIST.pulls, p.spId, { Qty: String(p.qty - take) });
+        p.qty -= take;
+      }
+      remaining -= take;
+    }
+
+    // Record the return itself so the movement is visible, not just netted away.
+    const item = await createItem(LIST.pulls, {
+      Title: (prod.model || prod.barcode) + ' (return)',
+      JobKey: key, PullType: 'return', Barcode: prod.barcode, Model: prod.model,
+      ProductName: prod.name, Qty: String(-qty), UnitCost: String(prod.cost || 0), UnitPrice: '0',
+      Installer: activeInstaller || '', ScannedAt: new Date().toISOString(),
+      FromLocation: 'job', ToLocation: 'warehouse',
+      QboStatus: 'cancelled',
+      Notes: label ? ('No-quote job: ' + label) : ''
+    });
+    jobPulls.push({ spId: item.id, model: prod.model, name: prod.name, qty: -qty, type: 'return', installer: activeInstaller, at: new Date().toISOString(), qboStatus: 'cancelled' });
+
+    // Put it back on the picking list so the job reads correctly.
+    const line = jobLines.find(l => sameModel(l.model, prod.model));
+    if (line) {
+      line.pulled = Math.max(0, line.pulled - qty);
+      await updateItem(LIST.lines, line.spId, { QtyPulled: String(line.pulled), LineStatus: line.pulled >= line.quoted ? 'complete' : (line.pulled > 0 ? 'partial' : 'outstanding') });
+    }
+
+    toast('✓ Returned ' + (prod.model || prod.barcode) + ' ×' + qty);
+    renderScan();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function recordPull(prod, qty, type) {
+  if (scanDir === 'in') return recordReturn(prod, qty);
   // Match against the estimate. Anything not on it is an extra -- detected, never
   // asked. The tech does not have to judge whether something was quoted.
   // The user was offered a near-match and said no. Record against the job as an extra
@@ -611,7 +762,7 @@ async function recordPull(prod, qty, type) {
 
   const fields = {
     Title: prod.model || prod.barcode,
-    JobKey: (type === 'job' || pullType === 'extra') && activeJob ? (activeJob.estimateId || activeJob.number) : '',
+    JobKey: (pullType === 'noquote') ? noQuoteKey() : (((type === 'job' || pullType === 'extra') && activeJob) ? (activeJob.estimateId || activeJob.number) : ''),
     PullType: pullType,
     Barcode: prod.barcode,
     Model: prod.model,
@@ -625,12 +776,15 @@ async function recordPull(prod, qty, type) {
     ToLocation: type === 'vanrestock' ? ('van-' + (activeInstaller || '')) : 'job',
     // Nothing has been sent to QuickBooks yet. The sync sets QboInvoiceLineId once
     // posted, and must never post a row that already has one.
-    QboStatus: (pullType === 'supplies' || pullType === 'vanrestock' || pullType === 'warranty') ? 'skipped' : 'pending'
+    QboStatus: (pullType === 'supplies' || pullType === 'vanrestock' || pullType === 'warranty') ? 'skipped' : 'pending',
+    // No-quote work is billable -- it just has no customer attached yet. The label is
+    // whatever the tech could tell us: a client, or a show-home address.
+    Notes: (pullType === 'noquote' && noQuoteLabel) ? ('No-quote job: ' + noQuoteLabel) : ''
   };
 
   try {
     const item = await createItem(LIST.pulls, fields);
-    jobPulls.push({ spId: item.id, model: prod.model, name: prod.name, qty, type: pullType, installer: activeInstaller, at: fields.ScannedAt });
+    jobPulls.push({ spId: item.id, model: prod.model, name: prod.name, qty, type: pullType, installer: activeInstaller, at: fields.ScannedAt, qboStatus: fields.QboStatus, qboLineId: '' });
 
     if (line) {
       line.pulled += qty;
@@ -644,6 +798,69 @@ async function recordPull(prod, qty, type) {
     }
     renderScan();
   } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- phone camera scanner ----------
+   Same library and formats as v4, so it behaves identically for the crew. Loaded from
+   the CDN on first use rather than inlined -- it is only needed by people without a
+   hardware scanner, and it keeps the file from growing another 300KB. */
+
+let camScanner = null, camLibLoading = null, camHandling = false;
+
+function loadCamLib() {
+  if (window.Html5Qrcode) return Promise.resolve();
+  if (camLibLoading) return camLibLoading;
+  camLibLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js';
+    s.onload = resolve;
+    s.onerror = () => { camLibLoading = null; reject(new Error('Could not load the camera scanner. Check your connection.')); };
+    document.head.appendChild(s);
+  });
+  return camLibLoading;
+}
+
+async function openCamera() {
+  camHandling = false;
+  const modal = document.getElementById('cam-modal');
+  modal.style.display = 'flex';
+  document.getElementById('cam-status').textContent = 'Starting camera…';
+  try {
+    await loadCamLib();
+    const formats = [
+      Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39
+    ];
+    camScanner = new Html5Qrcode('cam-reader', { formatsToSupport: formats, verbose: false });
+    await camScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 140 } },
+      onCamScan,
+      () => {}   // per-frame misses are normal, ignore them
+    );
+    document.getElementById('cam-status').textContent =
+      (scanDir === 'in' ? 'Bringing back — ' : '') + 'point the camera at a barcode';
+  } catch (e) {
+    document.getElementById('cam-status').textContent = 'Camera error: ' + (e && e.message ? e.message : e);
+  }
+}
+
+async function closeCamera() {
+  document.getElementById('cam-modal').style.display = 'none';
+  if (camScanner) {
+    try { await camScanner.stop(); camScanner.clear(); } catch (e) {}
+    camScanner = null;
+  }
+}
+
+async function onCamScan(decodedText) {
+  if (camHandling) return;   // one barcode per open, or a single label fires repeatedly
+  camHandling = true;
+  if (navigator.vibrate) navigator.vibrate(80);
+  await closeCamera();
+  const bc = String(decodedText || '').trim();
+  if (bc) await handleScan(bc);   // same path as the hardware scanner, honours out/in
 }
 
 /* ---------- link a drifted model ---------- */
