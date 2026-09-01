@@ -94,12 +94,22 @@
   .qty-done { color: var(--green); } .qty-part { color: var(--yellow); } .qty-none { color: var(--text3); }
 
   @media (max-width: 640px) {
-    .header { padding: 0 10px; gap: 8px; }
+    /* Let the header wrap onto a second line instead of squeezing controls off-screen. */
+    .header { padding: 6px 10px; gap: 6px; height: auto; min-height: 52px; flex-wrap: wrap; }
     .art-mark-name { display: none; }
-    .header-nav button { padding: 6px 8px; font-size: 12px; }
+    .header-nav { order: 3; width: 100%; margin-left: 0; justify-content: space-between; }
+    .header-nav button { padding: 7px 10px; font-size: 12.5px; flex: 1; }
+    .art-back { margin-left: auto !important; font-size: 12px; padding: 5px 9px; }
+    .scan-input { font-size: 16px; }   /* below 16px iOS zooms the page on focus */
     .wrap { padding: 14px 10px 50px; }
-    th:nth-child(n+4), td:nth-child(n+4) { display: none; }
+    /* Narrow screens: drop trailing columns so wide tables do not overflow.
+       Never applies to a table carrying an action control -- that is how the Open
+       button on the jobs list went missing on phones. */
+    table:not(.keep-cols) th:nth-child(n+4),
+    table:not(.keep-cols) td:nth-child(n+4) { display: none; }
   }
+  tr.tappable { cursor: pointer; }
+  tr.tappable:hover td { background: var(--surface2); }
 </style>
 <script>
 /*! @azure/msal-browser v5.12.0 2026-06-05 */
@@ -523,9 +533,10 @@ async function loadJobs(refresh) {
 function renderJobs() {
   const el = document.getElementById('jobsList');
   if (!jobs.length) { el.innerHTML = '<div class="empty">No open jobs.<br>Once QuickBooks is connected these arrive when a salesperson pushes an estimate.</div>'; return; }
-  el.innerHTML = '<table><thead><tr><th>Estimate</th><th>Customer</th><th>Status</th><th></th></tr></thead><tbody>' +
-    jobs.map(j => '<tr><td class="mono">' + esc(j.number) + '</td><td>' + esc(j.customer) + '</td><td>' + statusTag(j.status) +
-      '</td><td style="text-align:right"><button class="btn btn-sm" onclick="openJob(' + j.spId + ')">Open</button></td></tr>').join('') +
+  // Whole row is tappable, so this works with a thumb as well as a mouse.
+  el.innerHTML = '<table class="keep-cols"><thead><tr><th>Estimate</th><th>Customer</th><th>Status</th><th></th></tr></thead><tbody>' +
+    jobs.map(j => '<tr class="tappable" onclick="openJob(' + j.spId + ')"><td class="mono">' + esc(j.number) + '</td><td>' + esc(j.customer) + '</td><td>' + statusTag(j.status) +
+      '</td><td style="text-align:right"><button class="btn btn-sm" onclick="event.stopPropagation();openJob(' + j.spId + ')">Open</button></td></tr>').join('') +
     '</tbody></table>';
 }
 
@@ -645,9 +656,10 @@ function renderLines() {
 function renderJobPulls() {
   const el = document.getElementById('jobPulls');
   if (!jobPulls.length) { el.innerHTML = '<div class="empty">Nothing pulled yet.</div>'; return; }
-  const badge = p => p.type === 'return' ? '<span class="tag t-done">Returned</span>'
+  // "Returned" on both halves of a return. Warehouse-readable; the underlying
+  // QboStatus stays 'cancelled', which is what stops either row reaching QuickBooks.
+  const badge = p => (p.type === 'return' || p.qboStatus === 'cancelled') ? '<span class="tag t-done">Returned</span>'
     : p.type === 'extra' ? '<span class="tag t-extra">Extra</span>'
-    : p.qboStatus === 'cancelled' ? '<span class="tag t-open">Cancelled</span>'
     : esc(p.type);
   el.innerHTML = '<table><thead><tr><th>Model</th><th>Qty</th><th>Type</th><th>By</th></tr></thead><tbody>' +
     jobPulls.slice().reverse().map(p => '<tr' + (p.qboStatus === 'cancelled' ? ' style="opacity:.55"' : '') +
