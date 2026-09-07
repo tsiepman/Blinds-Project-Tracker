@@ -94,6 +94,26 @@
   .jobline-qty { font-family: var(--mono); font-size: 14px; font-weight: 700; white-space: nowrap; }
   .qty-done { color: var(--green); } .qty-part { color: var(--yellow); } .qty-none { color: var(--text3); }
 
+  /* Job label sheet. Hidden until printed. */
+  #printArea { display: none; }
+  .joblabel { border: 1px dashed var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }
+  .joblabel-num { font-family: var(--disp, sans-serif); font-size: 30px; font-weight: 700; letter-spacing: .02em; line-height: 1.1; }
+  .joblabel-cust { font-size: 15px; margin-bottom: 6px; }
+  .joblabel-meta { font-size: 11px; color: #666; margin-top: 4px; }
+  .picksheet { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
+  .picksheet th { text-align: left; border-bottom: 1px solid #999; padding: 5px 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .picksheet td { padding: 6px; border-bottom: 1px solid #ddd; }
+  .picksheet .tick { font-size: 15px; }
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 12mm; background: #fff; color: #000; }
+    .joblabel { border: 1px solid #999; color: #000; }
+    .joblabel-meta { color: #444; }
+    .picksheet th, .picksheet td { color: #000; }
+    .picksheet tr { page-break-inside: avoid; }
+  }
+
   @media (max-width: 640px) {
     /* Let the header wrap onto a second line instead of squeezing controls off-screen. */
     .header { padding: 6px 10px; gap: 6px; height: auto; min-height: 52px; flex-wrap: wrap; }
@@ -168,6 +188,17 @@
 
 <!-- SCAN -->
 <div id="view-scan" class="view"><div class="wrap">
+  <div class="panel">
+    <div class="panel-head"><span class="panel-title">Scan a job label</span></div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:10px">
+      The label on the staged material opens its job. Quickest way in.
+    </p>
+    <div style="display:flex;gap:8px">
+      <input id="labelBox" class="scan-input mono" placeholder="Scan the job label" autocomplete="off" style="flex:1">
+      <button class="btn btn-ghost" onclick="openCamera()" title="Scan with the phone camera" style="flex:0 0 auto;padding:0 16px;font-size:20px">📷</button>
+    </div>
+  </div>
+
   <div id="scanNoJob" class="panel">
     <div class="panel-head"><span class="panel-title">No quote yet?</span></div>
     <p style="color:var(--text2);font-size:13px;margin-bottom:12px">
@@ -189,6 +220,7 @@
         </div>
         <span class="spacer"></span>
         <span id="scanJobStatus"></span>
+        <button class="btn btn-ghost btn-sm" onclick="printJobLabel()" id="btnLabel">Print pick sheet</button>
         <button class="btn btn-ghost btn-sm" onclick="markPicked()" id="btnPicked">Mark staged</button>
       </div>
       <div id="dirBar" style="display:flex;gap:8px;margin-bottom:12px">
@@ -332,6 +364,8 @@
     <button class="btn" onclick="saveAddLines()">Add to job</button>
   </div>
 </div></div>
+
+<div id="printArea"></div>
 
 <div id="toast" class="toast"></div>
 
@@ -638,6 +672,8 @@ function renderScan() {
     document.getElementById('scanJobStatus').innerHTML = '<span class="tag t-extra">No quote</span>';
     document.getElementById('btnPicked').style.display = 'none';
   }
+  // A no-quote job has no estimate number, so there is nothing to put on a label.
+  document.getElementById('btnLabel').style.display = activeJob ? '' : 'none';
 
   // Without an estimate there is nothing to pull "against", so hide the option
   // rather than let it silently record nothing useful.
@@ -684,6 +720,17 @@ function renderJobPulls() {
 
 /* ---------- scanning ---------- */
 
+// Label box on the no-job panel. Accepts a job label, or a bare estimate number typed
+// by someone whose label has gone missing.
+document.getElementById('labelBox').addEventListener('keydown', async e => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = e.target.value.trim();
+  e.target.value = '';
+  if (!v) return;
+  await handleJobLabel(v.toUpperCase().startsWith(JOB_PREFIX) ? v : JOB_PREFIX + v);
+});
+
 document.getElementById('scanType').addEventListener('change', e => {
   document.getElementById('rmaWrap').style.display = e.target.value === 'warranty' ? 'block' : 'none';
 });
@@ -697,6 +744,9 @@ document.getElementById('scanBox').addEventListener('keydown', e => {
 });
 
 async function handleScan(barcode) {
+  // A job label switches jobs rather than recording a pull.
+  if (barcode.toUpperCase().startsWith(JOB_PREFIX)) return handleJobLabel(barcode);
+
   const qty = Math.max(1, parseInt(document.getElementById('scanQty').value) || 1);
   const type = document.getElementById('scanType').value;
   const p = lookup(barcode);
@@ -836,6 +886,76 @@ async function recordPull(prod, qty, type) {
     }
     renderScan();
   } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- job labels ----------
+   Terry prints one when he stages a job and sticks it on the cart. The installer scans
+   it to open the job, then scans product -- no picking a row out of a list with a
+   scanner in one hand.
+
+   CODE128 rather than QR, matching the Wire Label Printer: every 1D laser scanner in
+   the shop reads CODE128, whereas QR needs a 2D imager or a phone. The JOB- prefix
+   makes a label impossible to confuse with a product barcode. */
+
+const JOB_PREFIX = 'JOB-';
+let barcodeLibLoading = null;
+
+function loadBarcodeLib() {
+  if (window.JsBarcode) return Promise.resolve();
+  if (barcodeLibLoading) return barcodeLibLoading;
+  barcodeLibLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js';
+    s.onload = resolve;
+    s.onerror = () => { barcodeLibLoading = null; reject(new Error('Could not load the barcode library.')); };
+    document.head.appendChild(s);
+  });
+  return barcodeLibLoading;
+}
+
+/* One sheet per job: the scannable header, then the picking list. Terry ticks items as
+   he pulls them, the installer scans the barcode off the same page to open the job, and
+   anyone walking past the staging table can see what the material is for. */
+async function printJobLabel() {
+  if (!activeJob) return;
+  try {
+    await loadBarcodeLib();
+    const code = JOB_PREFIX + activeJob.number;
+    const staged = new Date().toLocaleDateString();
+
+    const rows = jobLines.length
+      ? '<table class="picksheet"><thead><tr><th style="width:26px"></th><th>Model</th><th>Description</th><th style="width:52px;text-align:right">Qty</th></tr></thead><tbody>' +
+        jobLines.map(l =>
+          '<tr><td class="tick">☐</td><td class="mono">' + esc(l.model) + '</td><td>' + esc(l.name || '') +
+          '</td><td style="text-align:right">' + l.quoted + (l.pulled ? ' <span style="color:#777">(' + l.pulled + ' pulled)</span>' : '') +
+          '</td></tr>').join('') + '</tbody></table>'
+      : '<p style="font-size:12px;color:#666">No estimate lines on this job yet.</p>';
+
+    document.getElementById('printArea').innerHTML =
+      '<div class="joblabel">' +
+      '<div class="joblabel-num">' + esc(activeJob.number) + '</div>' +
+      '<div class="joblabel-cust">' + esc(activeJob.customer) + '</div>' +
+      '<svg id="lbl0"></svg>' +
+      '<div class="joblabel-meta">Staged ' + esc(staged) + ' · scan to open this job</div>' +
+      '</div>' + rows +
+      '<p class="joblabel-meta" style="margin-top:14px">' + esc(jobLines.length ? jobLines.length + ' lines' : '') +
+      ' · printed ' + esc(new Date().toLocaleString()) + '</p>';
+
+    JsBarcode('#lbl0', code, { format: 'CODE128', width: 2, height: 46, fontSize: 13, margin: 4 });
+    window.print();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Scanning a job label opens that job instead of looking for a product.
+async function handleJobLabel(code) {
+  const number = code.slice(JOB_PREFIX.length).trim();
+  if (jobs.length === 0) await loadJobs();
+  const j = jobs.find(x => String(x.number).trim().toLowerCase() === number.toLowerCase());
+  if (!j) { toast('⚠ No open job for label ' + number, true); return; }
+  if (activeJob && String(activeJob.spId) === String(j.spId)) { toast('Already on ' + number); return; }
+  noQuoteLabel = null;
+  await openJob(j.spId);
+  toast('✓ ' + number + ' — ' + j.customer);
 }
 
 /* ---------- phone camera scanner ----------
