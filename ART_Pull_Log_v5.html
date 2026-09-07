@@ -460,18 +460,41 @@ async function getListId(name) {
   listIds[name] = d.id; return d.id;
 }
 
-async function getItems(listName, filter, top) {
+/* opts: { filter, top, orderby, pageAll }
+   pageAll defaults true. Pass false to take just the first page -- that is how a
+   "newest 200" query stays one request instead of walking the whole list.
+
+   Why this matters: FulfillPulls grows by roughly 25,000 rows a year. Fetching it all
+   and sorting in the browser is one request today and a hung tab in three years. Filter
+   and sort on the server, and it stays one request forever. */
+async function getItems(listName, filter, opts) {
+  if (typeof opts === 'number') opts = { top: opts };       // old call style
+  const o = opts || {};
   const sid = await getSiteId(), lid = await getListId(listName);
-  let url = '/sites/' + sid + '/lists/' + lid + '/items?expand=fields&$top=' + (top || 999);
+  let url = '/sites/' + sid + '/lists/' + lid + '/items?expand=fields&$top=' + (o.top || 999);
   if (filter) url += '&$filter=' + encodeURIComponent(filter);
+  if (o.orderby) url += '&$orderby=' + encodeURIComponent(o.orderby);
+
   const out = [];
   let d = await spFetch('GET', url);
   while (d) {
     out.push(...(d.value || []));
+    if (o.pageAll === false) break;
     if (!d['@odata.nextLink']) break;
     d = await spFetch('GET', d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', ''));
   }
   return out;
+}
+
+// $orderby and some $filter forms need the column indexed in SharePoint. If that has
+// not been done the request 400s, so fall back to the slow path rather than showing
+// the user an error they cannot act on.
+async function getItemsOrFallback(listName, filter, opts, fallbackFilter) {
+  try { return await getItems(listName, filter, opts); }
+  catch (e) {
+    console.warn('Indexed query failed, falling back to full fetch:', e.message);
+    return getItems(listName, fallbackFilter || null);
+  }
 }
 
 async function createItem(listName, fields) {
@@ -1172,7 +1195,14 @@ async function loadExceptions() {
   const el = document.getElementById('excBody');
   el.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const [pullItems, jobItems] = await Promise.all([getItems(LIST.pulls), getItems(LIST.jobs)]);
+    // Only three pull types can ever be a loose end, and they are a small slice of the
+    // list -- most rows are ordinary job pulls. Filtering server-side keeps this to one
+    // request no matter how big FulfillPulls gets. Needs PullType indexed.
+    const excTypes = "fields/PullType eq 'noquote' or fields/PullType eq 'extra' or fields/PullType eq 'warranty'";
+    const [pullItems, jobItems] = await Promise.all([
+      getItemsOrFallback(LIST.pulls, excTypes),
+      getItems(LIST.jobs)
+    ]);
     const pulls = pullItems.map(i => ({ spId: i.id, ...(i.fields || {}) }));
     const jobRows = jobItems.map(i => ({ spId: i.id, ...(i.fields || {}) }));
 
@@ -1246,8 +1276,13 @@ async function loadRecent() {
   const el = document.getElementById('recentList');
   el.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const items = await getItems(LIST.pulls);
-    const rows = items.map(i => i.fields || {}).sort((a, b) => String(b.ScannedAt || '').localeCompare(String(a.ScannedAt || ''))).slice(0, 200);
+    // Newest 200, sorted by SharePoint rather than by fetching everything and sorting
+    // here. Needs ScannedAt indexed. ISO timestamps sort correctly as text.
+    const items = await getItemsOrFallback(LIST.pulls, null,
+      { top: 200, orderby: 'fields/ScannedAt desc', pageAll: false });
+    const rows = items.map(i => i.fields || {})
+      .sort((a, b) => String(b.ScannedAt || '').localeCompare(String(a.ScannedAt || '')))
+      .slice(0, 200);
     if (!rows.length) { el.innerHTML = '<div class="empty">Nothing scanned yet.</div>'; return; }
     el.innerHTML = '<table><thead><tr><th>Model</th><th>Qty</th><th>Job</th><th>Type</th><th>By</th><th>When</th></tr></thead><tbody>' +
       rows.map(f => '<tr><td class="mono">' + esc(f.Model || f.Barcode || '—') + '</td><td>' + (f.Qty || '') + '</td><td class="mono">' + esc(f.JobKey || '—') +
