@@ -73,6 +73,7 @@
   .t-short { background: var(--accent-dim); color: var(--accent); }
 
   .empty { text-align: center; color: var(--text3); padding: 30px 16px; font-size: 13px; }
+  .exc-count { background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 700; border-radius: 20px; padding: 1px 6px; margin-left: 5px; vertical-align: 1px; }
   .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 22px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 18px; font-size: 13.5px; font-weight: 600; z-index: 90; display: none; max-width: 90vw; }
   .toast.good { border-color: var(--green); color: var(--green); }
   .toast.bad { border-color: var(--accent); color: var(--accent); }
@@ -124,6 +125,7 @@
   <div class="header-nav" id="nav" style="display:none">
     <button data-view="jobs">Jobs</button>
     <button data-view="scan">Scan</button>
+    <button data-view="exceptions">Loose ends <span id="excCount" class="exc-count" style="display:none"></span></button>
     <button data-view="recent">Recent</button>
     <button data-view="setup">Setup</button>
   </div>
@@ -210,6 +212,10 @@
           </select>
         </div>
       </div>
+      <div id="rmaWrap" style="display:none;margin-top:10px">
+        <label class="fld">RMA number <span style="color:var(--text3);text-transform:none;letter-spacing:0">— so the replacement can be chased if it never arrives</span></label>
+        <input id="rmaNum" placeholder="Manufacturer's RMA reference">
+      </div>
     </div>
 
     <div class="panel">
@@ -222,6 +228,14 @@
       <div id="jobPulls"></div>
     </div>
   </div>
+</div></div>
+
+<!-- EXCEPTIONS -->
+<div id="view-exceptions" class="view"><div class="wrap">
+  <h1 class="page">Loose ends</h1>
+  <p class="page-sub">Material that has left the building without being finished off. Everything here is money or stock at risk.</p>
+  <div style="margin-bottom:14px"><button class="btn btn-ghost btn-sm" onclick="loadExceptions()">Refresh</button></div>
+  <div id="excBody"></div>
 </div></div>
 
 <!-- RECENT -->
@@ -465,6 +479,7 @@ function show(v) {
   document.getElementById('view-' + v).classList.add('active');
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   if (v === 'recent') loadRecent();
+  if (v === 'exceptions') loadExceptions();
   if (v === 'setup') { checkLists(); showProdStats(); }
   if (v === 'scan') setTimeout(() => document.getElementById('scanBox')?.focus(), 60);
 }
@@ -669,6 +684,10 @@ function renderJobPulls() {
 
 /* ---------- scanning ---------- */
 
+document.getElementById('scanType').addEventListener('change', e => {
+  document.getElementById('rmaWrap').style.display = e.target.value === 'warranty' ? 'block' : 'none';
+});
+
 document.getElementById('scanBox').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   e.preventDefault();
@@ -793,6 +812,13 @@ async function recordPull(prod, qty, type) {
     // whatever the tech could tell us: a client, or a show-home address.
     Notes: (pullType === 'noquote' && noQuoteLabel) ? ('No-quote job: ' + noQuoteLabel) : ''
   };
+
+  // Warranty stock goes out and a replacement is owed back. Without an RMA on the row
+  // there is nothing to chase when it never turns up.
+  if (pullType === 'warranty') {
+    fields.RmaNumber = (document.getElementById('rmaNum').value || '').trim();
+    fields.RmaStatus = 'open';
+  }
 
   try {
     const item = await createItem(LIST.pulls, fields);
@@ -1005,6 +1031,92 @@ async function saveNewJob() {
     document.getElementById('njNumber').value = ''; document.getElementById('njCustomer').value = '';
     await loadJobs();
     toast('✓ Job created');
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- loose ends ----------
+   Every leak found while designing this is invisible by default: material out on a
+   service call with no customer, an extra nobody raised a change order for, a warranty
+   item the manufacturer still owes you. None of it announces itself. This turns each
+   into a short list somebody can actually work. */
+
+const DAY = 86400000;
+function ageDays(iso) { return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / DAY) : null; }
+function ageTag(d) {
+  if (d === null) return '';
+  const cls = d >= 30 ? 't-short' : d >= 7 ? 't-picked' : 't-open';
+  return '<span class="tag ' + cls + '">' + (d === 0 ? 'today' : d + 'd') + '</span>';
+}
+
+async function loadExceptions() {
+  const el = document.getElementById('excBody');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const [pullItems, jobItems] = await Promise.all([getItems(LIST.pulls), getItems(LIST.jobs)]);
+    const pulls = pullItems.map(i => ({ spId: i.id, ...(i.fields || {}) }));
+    const jobRows = jobItems.map(i => ({ spId: i.id, ...(i.fields || {}) }));
+
+    const live = p => p.QboStatus !== 'cancelled' && p.PullType !== 'return' && !p.Reviewed;
+
+    // Out on a service call with nothing to bill it to.
+    const noQuote = pulls.filter(p => live(p) && p.PullType === 'noquote');
+    // Pulled against a job but never quoted -- a change order nobody raised.
+    const extras = pulls.filter(p => live(p) && p.PullType === 'extra');
+    // Warranty stock the manufacturer still owes back.
+    const rmas = pulls.filter(p => p.PullType === 'warranty' && !p.Reviewed &&
+      (!p.RmaStatus || p.RmaStatus === 'open'));
+    // Staged a fortnight ago and never collected.
+    const stale = jobRows.filter(j => j.JobStatus === 'picked' && ageDays(j.PickedAt) >= 14);
+
+    const total = noQuote.length + extras.length + rmas.length + stale.length;
+    const badge = document.getElementById('excCount');
+    badge.textContent = total; badge.style.display = total ? 'inline-block' : 'none';
+
+    if (!total) { el.innerHTML = '<div class="panel"><div class="empty">Nothing outstanding. Everything that left the building is accounted for.</div></div>'; return; }
+
+    el.innerHTML =
+      section('Out with no customer', noQuote,
+        'Service calls scanned against a name, not a QuickBooks customer. Until one is attached, none of this can be invoiced.',
+        p => (p.Notes || '').replace(/^No-quote job:\s*/, '') || '—') +
+      section('Extras never quoted', extras,
+        'Scanned against a job but not on the estimate. Each needs a change order or it goes out unbilled.',
+        p => 'Job ' + (p.JobKey || '—')) +
+      section('Open RMAs', rmas,
+        'Warranty stock sent out and not yet replaced. The manufacturer owes you this.',
+        p => p.RmaNumber ? ('RMA ' + p.RmaNumber) : 'no RMA number') +
+      staleSection(stale);
+  } catch (e) { el.innerHTML = '<div class="panel"><div class="empty">' + esc(e.message) + '</div></div>'; }
+}
+
+function section(title, rows, blurb, ctx) {
+  if (!rows.length) return '';
+  return '<div class="panel"><div class="panel-head"><span class="panel-title">' + esc(title) +
+    '</span><span class="spacer"></span><span class="tag t-short">' + rows.length + '</span></div>' +
+    '<p style="color:var(--text3);font-size:12.5px;margin-bottom:10px">' + esc(blurb) + '</p>' +
+    '<table class="keep-cols"><tbody>' + rows.map(p =>
+      '<tr><td class="mono">' + esc(p.Model || p.Barcode || '—') + '</td>' +
+      '<td>' + esc(ctx(p)) + '</td>' +
+      '<td>×' + esc(p.Qty || '') + '</td>' +
+      '<td>' + esc(p.Installer || '') + ' ' + ageTag(ageDays(p.ScannedAt)) + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="markHandled(' + p.spId + ')">Handled</button></td></tr>'
+    ).join('') + '</tbody></table></div>';
+}
+
+function staleSection(jobs) {
+  if (!jobs.length) return '';
+  return '<div class="panel"><div class="panel-head"><span class="panel-title">Staged but not collected</span>' +
+    '<span class="spacer"></span><span class="tag t-short">' + jobs.length + '</span></div>' +
+    '<p style="color:var(--text3);font-size:12.5px;margin-bottom:10px">Terry picked this material a fortnight or more ago and nobody has taken it. It is off the shelf and unavailable to anyone else.</p>' +
+    '<table class="keep-cols"><tbody>' + jobs.map(j =>
+      '<tr><td class="mono">' + esc(j.EstimateNumber || '—') + '</td><td>' + esc(j.CustomerName || '') + '</td>' +
+      '<td>' + ageTag(ageDays(j.PickedAt)) + '</td></tr>').join('') + '</tbody></table></div>';
+}
+
+async function markHandled(spId) {
+  try {
+    await updateItem(LIST.pulls, spId, { Reviewed: new Date().toISOString().slice(0, 10) + ' ' + (activeInstaller || '') });
+    toast('✓ Marked handled');
+    loadExceptions();
   } catch (e) { toast(e.message, true); }
 }
 
