@@ -145,6 +145,7 @@
   <div class="header-nav" id="nav" style="display:none">
     <button data-view="jobs">Jobs</button>
     <button data-view="scan">Scan</button>
+    <button data-view="van">Van</button>
     <button data-view="exceptions">Loose ends <span id="excCount" class="exc-count" style="display:none"></span></button>
     <button data-view="recent">Recent</button>
     <button data-view="setup">Setup</button>
@@ -259,6 +260,28 @@
       <div class="panel-head"><span class="panel-title">Pulled on this job</span></div>
       <div id="jobPulls"></div>
     </div>
+  </div>
+</div></div>
+
+<!-- VAN -->
+<div id="view-van" class="view"><div class="wrap">
+  <h1 class="page" id="vanTitle">Van stock</h1>
+  <p class="page-sub">Product you're carrying. Still ours — QuickBooks counts it as stock either way — but it isn't on the shelf, so nobody else can pick it.</p>
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Unload to the shelf</span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost btn-sm" onclick="loadVan()">Refresh</button>
+    </div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:10px">Back at the shop, scan what you're putting back. One at a time or a whole pile.</p>
+    <div style="display:flex;gap:8px">
+      <input id="vanBox" class="scan-input mono" placeholder="Scan to put back on the shelf" autocomplete="off" style="flex:1">
+      <button class="btn btn-ghost" onclick="openCamera('van')" title="Scan with the phone camera" style="flex:0 0 auto;padding:0 16px;font-size:20px">📷</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span class="panel-title">On board</span><span class="spacer"></span><span id="vanSummary" style="font-size:12px;color:var(--text3)"></span></div>
+    <div id="vanList"></div>
   </div>
 </div></div>
 
@@ -385,7 +408,10 @@ const SITE_PATH = '/sites/ART43';
 // offline_access is required or silent token refresh fails. This was the Pull Log v4 fix.
 const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
 
-const LIST = { jobs: 'FulfillJobs', lines: 'FulfillLines', pulls: 'FulfillPulls', products: 'ProductLookup' };
+const LIST = { jobs: 'FulfillJobs', lines: 'FulfillLines', pulls: 'FulfillPulls', products: 'ProductLookup',
+               // Read-only. The Change Order Tracker owns this list and keeps working
+               // exactly as it does today; v5 only reconciles against it.
+               co: 'ChangeOrderLog' };
 const INSTALLERS = ['Kevin', 'Adrian', 'Colin', 'Chris M', 'Chris T', 'Barry', 'Andrew', 'Darwin', 'Yoan', 'Trevor', 'Lyall'];
 
 let msalInstance = null, siteId = null, listIds = {};
@@ -537,6 +563,7 @@ function show(v) {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   if (v === 'recent') loadRecent();
   if (v === 'exceptions') loadExceptions();
+  if (v === 'van') loadVan();
   if (v === 'setup') { checkLists(); showProdStats(); }
   if (v === 'scan') setTimeout(() => document.getElementById('scanBox')?.focus(), 60);
 }
@@ -802,9 +829,21 @@ async function recordReturn(prod, qty) {
   if (qty > available) { toast('⚠ Only ' + available + ' of that went out — returning ' + available, true); qty = available; }
 
   try {
-    // Cancel the unbilled outbound rows this return covers, newest first.
+    /* Cancel the unbilled outbound rows this return covers.
+
+       Order matters. Extras go back first: they are the "just in case" items, and they
+       are what actually comes back. Take three access points for a job quoting two, use
+       one, and the two returned should leave the estimate line reading 1 of 2 with the
+       extra cancelled -- not the line wiped to zero.
+
+       Within each group, newest first. */
+    const ordered = candidates.slice()
+      .sort((a, b) => (a.type === 'extra' ? 0 : 1) - (b.type === 'extra' ? 0 : 1) ||
+                      String(b.at || '').localeCompare(String(a.at || '')));
+
     let remaining = qty;
-    for (const p of candidates.slice().reverse()) {
+    let lineQtyReturned = 0;   // only pulls that counted against the estimate line
+    for (const p of ordered) {
       if (remaining <= 0) break;
       const take = Math.min(p.qty, remaining);
       if (take === p.qty) {
@@ -814,6 +853,7 @@ async function recordReturn(prod, qty) {
         await updateItem(LIST.pulls, p.spId, { Qty: String(p.qty - take) });
         p.qty -= take;
       }
+      if (p.type !== 'extra') lineQtyReturned += take;
       remaining -= take;
     }
 
@@ -823,16 +863,19 @@ async function recordReturn(prod, qty) {
       JobKey: key, PullType: 'return', Barcode: prod.barcode, Model: prod.model,
       ProductName: prod.name, Qty: String(-qty), UnitCost: String(prod.cost || 0), UnitPrice: '0',
       Installer: activeInstaller || '', ScannedAt: new Date().toISOString(),
-      FromLocation: 'job', ToLocation: 'warehouse',
+      // Off the job and into the van, not magically back onto the shelf. It gets to
+      // the shelf when someone unloads, which is a separate scan at the shop.
+      FromLocation: 'job', ToLocation: vanKey(),
       QboStatus: 'cancelled',
       Notes: label ? ('No-quote job: ' + label) : ''
     });
     jobPulls.push({ spId: item.id, model: prod.model, name: prod.name, qty: -qty, type: 'return', installer: activeInstaller, at: new Date().toISOString(), qboStatus: 'cancelled' });
 
-    // Put it back on the picking list so the job reads correctly.
+    // Put it back on the picking list -- but only by however much actually came off the
+    // line. Returning an extra must not make the quoted line look unfulfilled.
     const line = jobLines.find(l => sameModel(l.model, prod.model));
-    if (line) {
-      line.pulled = Math.max(0, line.pulled - qty);
+    if (line && lineQtyReturned > 0) {
+      line.pulled = Math.max(0, line.pulled - lineQtyReturned);
       await updateItem(LIST.lines, line.spId, { QtyPulled: String(line.pulled), LineStatus: line.pulled >= line.quoted ? 'complete' : (line.pulled > 0 ? 'partial' : 'outstanding') });
     }
 
@@ -876,8 +919,11 @@ async function recordPull(prod, qty, type) {
     UnitPrice: String(line ? line.price : 0),
     Installer: activeInstaller || '',
     ScannedAt: new Date().toISOString(),
-    FromLocation: 'warehouse',
-    ToLocation: type === 'vanrestock' ? ('van-' + (activeInstaller || '')) : 'job',
+    // If this installer is already carrying the item, it comes off the van rather than
+    // the shelf. Otherwise van stock would only ever grow: things go on when returned
+    // and never come off when used.
+    FromLocation: (type !== 'vanrestock' && vanHas(prod.model)) ? vanKey() : 'warehouse',
+    ToLocation: type === 'vanrestock' ? vanKey() : 'job',
     // Nothing has been sent to QuickBooks yet. The sync sets QboInvoiceLineId once
     // posted, and must never post a row that already has one.
     QboStatus: (pullType === 'supplies' || pullType === 'vanrestock' || pullType === 'warranty') ? 'skipped' : 'pending',
@@ -986,7 +1032,7 @@ async function handleJobLabel(code) {
    the CDN on first use rather than inlined -- it is only needed by people without a
    hardware scanner, and it keeps the file from growing another 300KB. */
 
-let camScanner = null, camLibLoading = null, camHandling = false;
+let camScanner = null, camLibLoading = null, camHandling = false, camTarget = 'scan';
 
 function loadCamLib() {
   if (window.Html5Qrcode) return Promise.resolve();
@@ -1001,7 +1047,8 @@ function loadCamLib() {
   return camLibLoading;
 }
 
-async function openCamera() {
+async function openCamera(target) {
+  camTarget = target || 'scan';
   camHandling = false;
   const modal = document.getElementById('cam-modal');
   modal.style.display = 'flex';
@@ -1041,7 +1088,10 @@ async function onCamScan(decodedText) {
   if (navigator.vibrate) navigator.vibrate(80);
   await closeCamera();
   const bc = String(decodedText || '').trim();
-  if (bc) await handleScan(bc);   // same path as the hardware scanner, honours out/in
+  if (!bc) return;
+  // Same paths as the hardware scanner, so behaviour matches whichever is used.
+  if (camTarget === 'van') await unloadFromVan(bc);
+  else await handleScan(bc);
 }
 
 /* ---------- link a drifted model ---------- */
@@ -1177,6 +1227,101 @@ async function saveNewJob() {
   } catch (e) { toast(e.message, true); }
 }
 
+/* ---------- van stock ----------
+   A part on a van is still owned, so QuickBooks is unaffected by anything here -- these
+   are transfers, not consumption. What it buys is knowing where something physically
+   is, which QuickBooks Online cannot express at all: it has no concept of locations.
+
+   Contents are derived from movement rather than stored as a balance, so there is no
+   second number to drift out of step with the pull history.
+
+     on van = sum(qty where ToLocation = van) - sum(qty where FromLocation = van)   */
+
+let vanStock = [];
+
+function vanKey(who) { return 'van-' + (who || activeInstaller || ''); }
+
+// Is this installer carrying one? Reads the cached van list, so it only knows what was
+// loaded on the Van tab -- a miss just sources the pull from the warehouse, which is
+// the safe direction to be wrong in.
+function vanHas(model) {
+  const v = vanStock.find(x => sameModel(x.model, model));
+  return !!(v && v.qty > 0);
+}
+
+function computeVan(rows, van) {
+  const acc = {};
+  for (const f of rows) {
+    const q = Math.abs(parseFloat(f.Qty) || 0);
+    if (!q) continue;
+    const model = f.Model || f.Barcode || '';
+    if (!model) continue;
+    if (!acc[model]) acc[model] = { model, name: f.ProductName || '', qty: 0, since: null };
+    if (f.ToLocation === van) {
+      acc[model].qty += q;
+      const at = f.ScannedAt || '';
+      if (at && (!acc[model].since || at < acc[model].since)) acc[model].since = at;
+    } else if (f.FromLocation === van) {
+      acc[model].qty -= q;
+    }
+  }
+  return Object.values(acc).filter(v => v.qty > 0).sort((a, b) => a.model.localeCompare(b.model));
+}
+
+async function loadVan() {
+  const el = document.getElementById('vanList');
+  document.getElementById('vanTitle').textContent = (activeInstaller || 'Van') + '’s van';
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const van = vanKey();
+    const items = await getItemsOrFallback(LIST.pulls,
+      "fields/Installer eq '" + String(activeInstaller || '').replace(/'/g, "''") + "'");
+    vanStock = computeVan(items.map(i => i.fields || {}), van);
+
+    const total = vanStock.reduce((n, v) => n + v.qty, 0);
+    document.getElementById('vanSummary').textContent = vanStock.length
+      ? vanStock.length + ' item' + (vanStock.length === 1 ? '' : 's') + ', ' + total + ' pieces' : '';
+
+    if (!vanStock.length) { el.innerHTML = '<div class="empty">Nothing on board. Everything is back on the shelf.</div>'; return; }
+    el.innerHTML = '<table class="keep-cols"><thead><tr><th>Model</th><th>Description</th><th>Qty</th><th>Aboard</th></tr></thead><tbody>' +
+      vanStock.map(v => '<tr><td class="mono">' + esc(v.model) + '</td><td>' + esc(v.name) + '</td><td class="mono">' + v.qty +
+        '</td><td>' + ageTag(ageDays(v.since)) + '</td></tr>').join('') + '</tbody></table>';
+  } catch (e) { el.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+
+document.getElementById('vanBox').addEventListener('keydown', async e => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const bc = e.target.value.trim();
+  e.target.value = '';
+  if (bc) await unloadFromVan(bc);
+});
+
+// Van -> warehouse. A transfer between two places you already own, so nothing is
+// reported to QuickBooks.
+async function unloadFromVan(barcode, qty) {
+  const p = lookup(barcode);
+  if (!p || !p.model) { toast('⚠ Barcode not recognised — scan it out on a job first', true); return; }
+  const van = vanKey();
+  const held = vanStock.find(v => sameModel(v.model, p.model));
+  if (!held || held.qty <= 0) { toast('⚠ "' + p.model + '" is not showing on your van', true); return; }
+  const n = Math.min(qty || 1, held.qty);
+
+  try {
+    await createItem(LIST.pulls, {
+      Title: p.model + ' (unload)',
+      JobKey: '', PullType: 'vanreturn', Barcode: p.barcode, Model: p.model,
+      ProductName: p.name, Qty: String(n), UnitCost: String(p.cost || 0), UnitPrice: '0',
+      Installer: activeInstaller || '', ScannedAt: new Date().toISOString(),
+      FromLocation: van, ToLocation: 'warehouse',
+      QboStatus: 'skipped'
+    });
+    held.qty -= n;
+    toast('✓ ' + p.model + ' ×' + n + ' back on the shelf');
+    loadVan();
+  } catch (e) { toast(e.message, true); }
+}
+
 /* ---------- loose ends ----------
    Every leak found while designing this is invisible by default: material out on a
    service call with no customer, an extra nobody raised a change order for, a warranty
@@ -1199,10 +1344,14 @@ async function loadExceptions() {
     // list -- most rows are ordinary job pulls. Filtering server-side keeps this to one
     // request no matter how big FulfillPulls gets. Needs PullType indexed.
     const excTypes = "fields/PullType eq 'noquote' or fields/PullType eq 'extra' or fields/PullType eq 'warranty'";
-    const [pullItems, jobItems] = await Promise.all([
+    const [pullItems, jobItems, coItems] = await Promise.all([
       getItemsOrFallback(LIST.pulls, excTypes),
-      getItems(LIST.jobs)
+      getItems(LIST.jobs),
+      // The Change Order Tracker may not be reachable for every user; a failure here
+      // must not take out the rest of the view.
+      getItems(LIST.co).catch(() => [])
     ]);
+    const cos = coItems.map(i => ({ spId: i.id, ...(i.fields || {}) }));
     const pulls = pullItems.map(i => ({ spId: i.id, ...(i.fields || {}) }));
     const jobRows = jobItems.map(i => ({ spId: i.id, ...(i.fields || {}) }));
 
@@ -1218,7 +1367,28 @@ async function loadExceptions() {
     // Staged a fortnight ago and never collected.
     const stale = jobRows.filter(j => j.JobStatus === 'picked' && ageDays(j.PickedAt) >= 14);
 
-    const total = noQuote.length + extras.length + rmas.length + stale.length;
+    /* Cross-reference against the Change Order Tracker, both directions.
+
+       Job cannot be the key -- the CO Tracker's Job is free text ("Job name / #") and
+       v5 keys on estimate numbers. Barcode plus a few days either side is far more
+       reliable, and the CO's own Job text is shown so a person can sanity-check the
+       pairing rather than trusting it silently. */
+    const coOut = cos.filter(c => c.Direction === 'Going In');
+    const matchesCo = p => coOut.some(c =>
+      c.Barcode && p.Barcode && String(c.Barcode).trim() === String(p.Barcode).trim() &&
+      Math.abs(new Date(c.DateCreated || 0) - new Date(p.ScannedAt || 0)) < 4 * DAY);
+
+    const extrasNoCo = extras.filter(p => !matchesCo(p));
+
+    // The reverse gap, only visible because two independent records exist: material
+    // reported on a change order that never left through the system. Inventory still
+    // thinks you have it.
+    const pullByBarcode = pullItems.map(i => i.fields || {});
+    const coNoScan = coOut.filter(c => c.Status !== 'Processed' && c.Barcode && !pullByBarcode.some(p =>
+      String(p.Barcode || '').trim() === String(c.Barcode).trim() &&
+      Math.abs(new Date(c.DateCreated || 0) - new Date(p.ScannedAt || 0)) < 4 * DAY));
+
+    const total = noQuote.length + extrasNoCo.length + rmas.length + stale.length + coNoScan.length;
     const badge = document.getElementById('excCount');
     badge.textContent = total; badge.style.display = total ? 'inline-block' : 'none';
 
@@ -1228,9 +1398,10 @@ async function loadExceptions() {
       section('Out with no customer', noQuote,
         'Service calls scanned against a name, not a QuickBooks customer. Until one is attached, none of this can be invoiced.',
         p => (p.Notes || '').replace(/^No-quote job:\s*/, '') || '—') +
-      section('Extras never quoted', extras,
-        'Scanned against a job but not on the estimate. Each needs a change order or it goes out unbilled.',
+      section('Extras with no change order', extrasNoCo,
+        'Scanned against a job but not on the estimate, and no matching entry in the Change Order Tracker. Each of these goes out unbilled unless a change order is raised.',
         p => 'Job ' + (p.JobKey || '—')) +
+      coSection(coNoScan) +
       section('Open RMAs', rmas,
         'Warranty stock sent out and not yet replaced. The manufacturer owes you this.',
         p => p.RmaNumber ? ('RMA ' + p.RmaNumber) : 'no RMA number') +
@@ -1250,6 +1421,23 @@ function section(title, rows, blurb, ctx) {
       '<td>' + esc(p.Installer || '') + ' ' + ageTag(ageDays(p.ScannedAt)) + '</td>' +
       '<td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="markHandled(' + p.spId + ')">Handled</button></td></tr>'
     ).join('') + '</tbody></table></div>';
+}
+
+// Change orders with no matching scan. Read-only -- these belong to the Change Order
+// Tracker and are resolved there, not here.
+function coSection(rows) {
+  if (!rows.length) return '';
+  return '<div class="panel"><div class="panel-head"><span class="panel-title">Change orders with no scan</span>' +
+    '<span class="spacer"></span><span class="tag t-short">' + rows.length + '</span></div>' +
+    '<p style="color:var(--text3);font-size:12.5px;margin-bottom:10px">Reported as used on a change order, but never scanned out. Inventory still thinks this is on the shelf — either it left without being scanned, or the change order is wrong.</p>' +
+    '<table class="keep-cols"><tbody>' + rows.map(c =>
+      '<tr><td class="mono">' + esc(c.MfrSKU || c.SKU || c.Barcode || '—') + '</td>' +
+      '<td>' + esc(c.ProductName || '') + '</td>' +
+      '<td>' + esc(c.Job || '—') + '</td>' +
+      '<td>×' + esc(c.Qty || '') + '</td>' +
+      '<td>' + esc(c.Installer || '') + ' ' + ageTag(ageDays(c.DateCreated)) + '</td></tr>').join('') +
+    '</tbody></table>' +
+    '<p style="color:var(--text3);font-size:12px;margin-top:8px">Resolve these in the Change Order Tracker — v5 only reads that list.</p></div>';
 }
 
 function staleSection(jobs) {
