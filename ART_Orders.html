@@ -71,6 +71,23 @@
   .toast.bad { border-color: var(--accent); color: var(--accent); }
   .toast.good { border-color: var(--green); color: var(--green); }
 
+  /* Lead-time editor. Lives on this page rather than in SharePoint because the moment
+     you want to change a lead time is while you are looking at the order list and have
+     just noticed something is running late. */
+  .lt { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; overflow: hidden; }
+  .lt-head { display: flex; align-items: center; gap: 10px; padding: 11px 16px; cursor: pointer; background: var(--surface2); }
+  .lt-head .panel-title { font-size: 14px; font-weight: 700; }
+  .lt-body { padding: 12px 16px; display: none; }
+  .lt.open .lt-body { display: block; }
+  .lt-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .lt-row input { padding: 7px 9px; font-size: 13px; }
+  .lt-row .v { flex: 1 1 150px; min-width: 0; }
+  .lt-row .m { flex: 1 1 130px; min-width: 0; }
+  .lt-row .w { width: 70px; text-align: right; }
+  .lt-hint { font-size: 11.5px; color: var(--text3); line-height: 1.55; margin-bottom: 10px; }
+  .lt-del { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; padding: 0 6px; }
+  .lt-del:hover { color: var(--accent); }
+
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
   .card h2 { font-size: 20px; margin-bottom: 8px; }
@@ -189,7 +206,9 @@ async function load() {
       items(LIST.ordered).catch(() => [])
     ]);
     projects = pr.map(i => i.fields || {});
-    leadTimes = lt.map(i => i.fields || {});
+    // Keep the SharePoint item id alongside the fields, or saving an edit would create
+    // a duplicate row instead of updating the existing one.
+    leadTimes = lt.map(i => ({ id: i.id, ...(i.fields || {}) }));
     orderedKeys = new Set(od.map(i => (i.fields || {}).LineKey).filter(Boolean));
     usingSample = false;
     if (!projects.length) { loadSample(); }
@@ -344,7 +363,87 @@ function render() {
       tot('soon', soon.length, 'this week') +
       tot('', rows.length, 'lines') +
       tot('', '$' + Math.round(value).toLocaleString(), 'est. value') +
-    '</div>' + body + '</div>';
+    '</div>' + leadPanel(rows) + body + '</div>';
+}
+
+/* Lead times, editable in place. Vendors are seeded from whatever is actually on the
+   order list, so you never have to remember who you buy from -- the ones you have lines
+   for are already there, with the default applied until you set one. */
+function leadPanel(rows) {
+  const vendors = [...new Set(rows.map(r => r.vendor).filter(Boolean))].sort();
+  const known = new Set(leadTimes.map(r => String(r.Vendor || '').trim().toLowerCase()));
+  const missing = vendors.filter(v => !known.has(v.toLowerCase()));
+
+  const editable = leadTimes.map((r, i) =>
+    '<div class="lt-row">' +
+    '<input class="v" value="' + esc(r.Vendor || '') + '" placeholder="Vendor" onchange="ltSet(' + i + ',\'Vendor\',this.value)">' +
+    '<input class="m" value="' + esc(r.Match || '') + '" placeholder="all products" onchange="ltSet(' + i + ',\'Match\',this.value)">' +
+    '<input class="w" type="number" min="0" step="0.5" value="' + esc(r.Weeks || '') + '" onchange="ltSet(' + i + ',\'Weeks\',this.value)">' +
+    '<span style="font-size:12px;color:var(--text3)">weeks</span>' +
+    '<button class="lt-del" title="Remove" onclick="ltDelete(' + i + ')">×</button>' +
+    '</div>').join('');
+
+  return '<div class="lt' + (ltOpen ? ' open' : '') + '">' +
+    '<div class="lt-head" onclick="ltToggle()">' +
+      '<span class="panel-title">Lead times</span>' +
+      '<span class="vendor-meta">' + leadTimes.length + ' rule' + (leadTimes.length === 1 ? '' : 's') +
+      (missing.length ? ' · ' + missing.length + ' supplier' + (missing.length === 1 ? '' : 's') + ' on default ' + DEFAULT_LEAD_WEEKS + 'wk' : '') + '</span>' +
+      '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">' + (ltOpen ? 'hide' : 'edit') + '</span>' +
+    '</div>' +
+    '<div class="lt-body">' +
+      '<p class="lt-hint">Leave the middle box empty to cover everything from that supplier. Fill it to override — a Lutron row matching <b>shade</b> at 5 weeks, alongside a blank Lutron row at 2, gives shades the longer lead. The most specific match wins. A week of buffer is added on top of whatever you set.</p>' +
+      editable +
+      (missing.length ? '<p class="lt-hint" style="margin-top:10px">No rule yet, using the ' + DEFAULT_LEAD_WEEKS + '-week default: <b>' + missing.map(esc).join(', ') + '</b></p>' : '') +
+      '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-ghost btn-sm" onclick="ltAdd()">Add a rule</button>' +
+        (missing.length ? '<button class="btn btn-ghost btn-sm" onclick="ltAddMissing()">Add the ' + missing.length + ' missing supplier' + (missing.length === 1 ? '' : 's') + '</button>' : '') +
+        '<button class="btn btn-sm" id="ltSave" onclick="ltSave()"' + (ltDirty ? '' : ' disabled') + '>Save</button>' +
+      '</div>' +
+    '</div></div>';
+}
+
+let ltOpen = false, ltDirty = false, ltDeleted = [];
+
+function ltToggle() { ltOpen = !ltOpen; render(); }
+function ltSet(i, field, val) { leadTimes[i][field] = val; ltDirty = true; render(); }
+function ltAdd() { leadTimes.push({ Vendor: '', Match: '', Weeks: String(DEFAULT_LEAD_WEEKS) }); ltDirty = true; ltOpen = true; render(); }
+
+function ltAddMissing() {
+  const known = new Set(leadTimes.map(r => String(r.Vendor || '').trim().toLowerCase()));
+  for (const v of [...new Set(build().map(r => r.vendor).filter(Boolean))].sort()) {
+    if (!known.has(v.toLowerCase())) leadTimes.push({ Vendor: v, Match: '', Weeks: String(DEFAULT_LEAD_WEEKS) });
+  }
+  ltDirty = true; ltOpen = true; render();
+}
+
+function ltDelete(i) {
+  const r = leadTimes[i];
+  if (r.id) ltDeleted.push(r.id);      // remove from SharePoint on save
+  leadTimes.splice(i, 1);
+  ltDirty = true; render();
+}
+
+async function ltSave() {
+  if (usingSample) { ltDirty = false; toast('Sample mode — not saved'); render(); return; }
+  try {
+    const lid = await listId(LIST.lead);
+    for (const id of ltDeleted) {
+      await graph('DELETE', '/sites/' + siteId + '/lists/' + lid + '/items/' + id).catch(() => {});
+    }
+    ltDeleted = [];
+    for (const r of leadTimes) {
+      if (!String(r.Vendor || '').trim()) continue;         // skip blank rows
+      const fields = { Title: r.Vendor, Vendor: r.Vendor, Match: r.Match || '', Weeks: String(r.Weeks || '') };
+      if (r.id) await graph('PATCH', '/sites/' + siteId + '/lists/' + lid + '/items/' + r.id + '/fields', fields);
+      else {
+        const made = await graph('POST', '/sites/' + siteId + '/lists/' + lid + '/items', { fields });
+        r.id = made.id;
+      }
+    }
+    ltDirty = false;
+    toast('✓ Lead times saved');
+    render();
+  } catch (e) { toast(e.message, true); }
 }
 
 function tot(cls, n, label) {
