@@ -358,7 +358,13 @@ function render() {
   document.getElementById('app').innerHTML =
     (usingSample ? '<div class="banner">Sample data — the sync has not written to SharePoint yet</div>' : '') +
     '<div class="wrap"><h1 class="page">Orders</h1>' +
-    '<p class="page-sub">What needs ordering, grouped by supplier, counted back from when each phase starts.</p>' +
+    '<p class="page-sub">What upcoming jobs need, grouped by supplier, counted back from when each phase starts.</p>' +
+    // Said plainly and permanently, because a big number beside a tick box reads as
+    // "buy this many" and these are gross requirements. Stock netting arrives with
+    // QuickBooks; until then the shelf still needs checking.
+    '<div style="background:var(--yellow-dim);color:var(--yellow);border-radius:var(--radius);padding:10px 14px;font-size:12.5px;margin-bottom:16px;line-height:1.55">' +
+    '<b>These are quantities the jobs need — not stock-adjusted.</b> Check the shelf before ordering. ' +
+    'Netting against live inventory arrives when QuickBooks does.</div>' +
     '<div class="controls">' +
       '<div><label class="fld">Look ahead</label><select id="horizon" onchange="setHorizon(this.value)">' +
         [4, 8, 12, 26].map(w => '<option value="' + w + '"' + (w === horizonWeeks ? ' selected' : '') + '>' + w + ' weeks</option>').join('') +
@@ -369,7 +375,7 @@ function render() {
       tot('late', late.length, 'overdue') +
       tot('soon', soon.length, 'this week') +
       tot('', rows.length, 'lines') +
-      tot('', '$' + Math.round(value).toLocaleString(), 'est. value') +
+      tot('', '$' + Math.round(value).toLocaleString(), 'est. value if all bought') +
       tot('', rows.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
     '</div>' + leadPanel(rows) + body + '</div>';
 }
