@@ -80,7 +80,7 @@
   .lt-body { padding: 12px 16px; display: none; }
   .lt.open .lt-body { display: block; }
   .lt-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
-  .lt-row input { padding: 7px 9px; font-size: 13px; }
+  .lt-row input, .lt-row select { padding: 7px 9px; font-size: 13px; }
   .lt-row .v { flex: 1 1 150px; min-width: 0; }
   .lt-row .m { flex: 1 1 130px; min-width: 0; }
   .lt-row .w { width: 70px; text-align: right; }
@@ -379,9 +379,19 @@ function leadPanel(rows) {
   const known = new Set(leadTimes.map(r => String(r.Vendor || '').trim().toLowerCase()));
   const missing = vendors.filter(v => !known.has(v.toLowerCase()));
 
+  // Vendor is a picker, not free text. Typing "Sonace" would silently match nothing and
+  // drop that supplier to the default lead time with no error shown — the worst kind of
+  // bug, because the dates just come out wrong. Options come from the vendors actually
+  // on the order list, so the list is always relevant.
+  const vendorOpts = (cur) => {
+    const all = [...new Set([...vendors, ...leadTimes.map(r => r.Vendor).filter(Boolean)])].sort();
+    return '<option value=""' + (cur ? '' : ' selected') + '>— pick a supplier —</option>' +
+      all.map(v => '<option value="' + esc(v) + '"' + (String(cur || '').toLowerCase() === v.toLowerCase() ? ' selected' : '') + '>' + esc(v) + '</option>').join('');
+  };
+
   const editable = leadTimes.map((r, i) =>
     '<div class="lt-row">' +
-    '<input class="v" value="' + esc(r.Vendor || '') + '" placeholder="Vendor" onchange="ltSet(' + i + ',\'Vendor\',this.value)">' +
+    '<select class="v" onchange="ltSet(' + i + ',\'Vendor\',this.value)">' + vendorOpts(r.Vendor) + '</select>' +
     '<input class="m" value="' + esc(r.Match || '') + '" placeholder="all products" onchange="ltSet(' + i + ',\'Match\',this.value)">' +
     '<input class="w" type="number" min="0" step="0.5" value="' + esc(r.Weeks || '') + '" onchange="ltSet(' + i + ',\'Weeks\',this.value)">' +
     '<span style="font-size:12px;color:var(--text3)">weeks</span>' +
