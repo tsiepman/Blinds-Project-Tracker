@@ -25,10 +25,12 @@
   .swatch { width: 1.5em; height: .85em; border-radius: .2em; display: inline-block; }
   .sw-rough { background: var(--rough); }
   .sw-finish { background: var(--fin); }
-  .sw-est { background: repeating-linear-gradient(135deg, var(--estbg) 0 .4em, transparent .4em .8em); border: 1px dashed var(--text3); }
+  .sw-est { background: linear-gradient(90deg, var(--rough-est), var(--fin-est)); border: 1px dashed var(--text3); }
   .stamp { font-size: .85em; color: var(--text3); font-variant-numeric: tabular-nums; }
 
-  :root { --rough: #4a7fe3; --fin: #e34a4a; --estbg: #6b7488; }
+  /* Estimated work keeps its phase colour, muted and desaturated. Grey hatching read
+     as "some unknown thing" from across the room — the phase is the useful part. */
+  :root { --rough: #4a7fe3; --fin: #e34a4a; --rough-est: #2f4a7a; --fin-est: #7a3436; }
 
   .board { height: calc(100vh - 4.2em); overflow-y: auto; overflow-x: hidden; }
   .grid { display: grid; grid-template-columns: 22vw 1fr; }
@@ -41,17 +43,21 @@
   .month { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); padding: .35em 0 0 .5em; font-size: .95em; font-weight: 600; color: var(--text2); white-space: nowrap; overflow: hidden; }
   .wk { position: absolute; bottom: 0; width: 1px; height: .5em; background: var(--border); }
 
-  .rowlabel { padding: .6em .9em; border-bottom: 1px solid var(--border); overflow: hidden; }
+  .rowlabel, .track { min-height: var(--rowh, 3.4em); }
+  .rowlabel { padding: .5em .9em; border-bottom: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
   .rl-name { font-weight: 600; font-size: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rl-sub { font-size: .82em; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rl-builder { color: var(--accent); }
 
   .track { position: relative; border-bottom: 1px solid var(--border); border-left: 1px solid var(--border); }
-  .bar { position: absolute; top: 22%; height: 56%; border-radius: .25em; display: flex; align-items: center; padding: 0 .5em; font-size: .8em; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; }
+  .bar { position: absolute; top: 20%; height: 60%; border-radius: .25em; display: flex; align-items: center; padding: 0 .5em; font-size: .82em; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; }
   .bar.rough { background: var(--rough); }
   .bar.finish { background: var(--fin); }
-  /* Estimated work is drawn hollow and hatched so a plan never reads as a commitment. */
-  .bar.est { background: repeating-linear-gradient(135deg, rgba(107,116,136,.55) 0 .45em, rgba(107,116,136,.18) .45em .9em); border: 1px dashed var(--text3); color: var(--text2); }
+  /* Estimated keeps the phase colour but muted, with a dashed edge — a plan should not
+     read as a commitment, but it should still read as the right kind of work. */
+  .bar.est { border: 1px dashed rgba(255,255,255,.45); color: rgba(255,255,255,.8); }
+  .bar.est.rough { background: var(--rough-est); }
+  .bar.est.finish { background: var(--fin-est); }
   .today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--yellow); z-index: 2; opacity: .85; }
   .todaycap { position: absolute; top: 0; transform: translateX(-50%); background: var(--yellow); color: #1a1a1a; font-size: .7em; font-weight: 700; padding: .1em .4em; border-radius: 0 0 .25em .25em; z-index: 3; }
 
@@ -270,9 +276,15 @@ function render() {
     const bars = segs.map(s => {
       const l = Math.max(0, pct(s.from));
       const r = Math.min(100, pct(s.to) + (1 / range.span) * 100);
-      return '<div class="bar ' + (s.est ? 'est' : s.phase === 'roughIn' ? 'rough' : 'finish') +
-        '" style="left:' + l + '%;width:' + Math.max(0.6, r - l) + '%" title="' +
-        esc(s.phase === 'roughIn' ? 'Rough-In' : 'Finish') + ' ' + s.from + ' → ' + s.to + '">' + esc(s.label) + '</div>';
+      const w = Math.max(0.6, r - l);
+      // Only label a bar wide enough to hold the text. A clipped word is worse than no
+      // word from across a room, and the colour plus the row label already carry it.
+      // Roughly 0.75% of the track per character at this type size.
+      const label = w > 3.5 && s.label.length * 0.75 < w ? esc(s.label) : '';
+      const cls = 'bar ' + (s.phase === 'roughIn' ? 'rough' : 'finish') + (s.est ? ' est' : '');
+      return '<div class="' + cls + '" style="left:' + l + '%;width:' + w + '%" title="' +
+        esc((s.phase === 'roughIn' ? 'Rough-In' : 'Finish') + (s.est ? ' (estimated)' : '') + ' · ' + s.from + ' → ' + s.to + ' · ' + s.label) +
+        '">' + label + '</div>';
     }).join('');
     return '<div class="rowlabel"><div class="rl-name">' + esc(p.name || p.number) + '</div>' +
       '<div class="rl-sub"><span class="rl-builder">' + esc(p.builder || '—') + '</span> · ' + esc(p.client) + '</div></div>' +
@@ -293,11 +305,29 @@ function render() {
     '<span class="key"><span class="swatch sw-finish"></span>Finish</span>' +
     '<span class="key"><span class="swatch sw-est"></span>Estimated</span>' +
     '</div><span class="stamp">' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>' +
-    '<div class="board"><div class="grid">' +
+    '<div class="board"><div class="grid" style="--rowh:' + rowHeight(scheduled.length, unscheduled.length) + 'px">' +
     '<div class="axis-pad"></div><div class="axis-months">' + axis + (todayPct >= 0 && todayPct <= 100 ? '<div class="todaycap" style="left:' + todayPct + '%">TODAY</div>' : '') + '</div>' +
     bodyRows +
     '</div>' + un + '</div>';
 }
+
+/* Rows grow to fill the screen rather than sitting in a short list at the top. With a
+   price cutoff keeping the count low, that is what makes the board legible from across
+   a room — ten jobs get tall bars, thirty get compact ones, and either way the screen
+   is used. Clamped so a single project does not become one absurd stripe. */
+function rowHeight(scheduled, unscheduledCount) {
+  const chrome = 96 + (unscheduledCount ? 72 : 0);   // header + axis, plus the strip
+  const avail = Math.max(200, window.innerHeight - chrome);
+  return Math.round(Math.min(130, Math.max(46, avail / Math.max(1, scheduled))));
+}
+
+// Re-render on resize so the kiosk adapts if the panel reports a different size after
+// waking, and so the same file stays usable on a laptop.
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (rows.length) render(); }, 200);
+});
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
