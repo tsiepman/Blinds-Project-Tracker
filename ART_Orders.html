@@ -88,6 +88,12 @@
   .lt-del { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; padding: 0 6px; }
   .lt-del:hover { color: var(--accent); }
 
+  .stock { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; overflow: hidden; }
+  .stock.stale .lt-head { background: var(--yellow-dim); }
+  .stock textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 9px; font-family: var(--mono); font-size: 11.5px; }
+  .line-stock { font-size: 11.5px; color: var(--text3); min-width: 6em; text-align: right; }
+  .line-stock b { color: var(--green); font-size: 13px; }
+
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
   .card h2 { font-size: 20px; margin-bottom: 8px; }
@@ -128,7 +134,7 @@ const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
 const SITE_PATH = '/sites/ART43';
 const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
-const LIST = { projects: 'SchedProjects', lead: 'LeadTimes', ordered: 'OrderedLines' };
+const LIST = { projects: 'SchedProjects', lead: 'LeadTimes', ordered: 'OrderedLines', stock: 'StockSnapshot' };
 
 // A supplier who is unreliable gets a longer lead time, not a longer buffer, so one
 // global week is enough and there is no reason to vary it per vendor.
@@ -210,6 +216,10 @@ async function load() {
     // a duplicate row instead of updating the existing one.
     leadTimes = lt.map(i => ({ id: i.id, ...(i.fields || {}) }));
     orderedKeys = new Set(od.map(i => (i.fields || {}).LineKey).filter(Boolean));
+    try {
+      const st = await items(LIST.stock);
+      if (st.length) { const f = st[0].fields || {}; stockMap = JSON.parse(f.DataJson || '{}'); stockAsOf = f.AsOf || ''; }
+    } catch (e) { /* list not created yet -- stock stays unloaded */ }
     usingSample = false;
     if (!projects.length) { loadSample(); }
     setStatus('connected', 'SharePoint');
@@ -292,6 +302,7 @@ function build() {
         // Wire is measured in feet, not counted in pieces. A job with 33 Cat6 runs is
         // 3,245 ft, and ordering "33" of anything would be badly short.
         bulk: !!l.bulk,
+        rq: l.rq || '', mfr: l.mfr || '',      // keys for matching a pasted RQ report
         cost: Number(l.cost) || 0, qty: 0, jobs: [], needBy: null, orderBy: null
       };
       row.qty += Number(l.qty) || 0;
@@ -303,6 +314,10 @@ function build() {
 
   const rows = [];
   for (const r of byKey.values()) {
+    // Net off stock when a report has been pasted. Without one, order is the gross
+    // requirement and the banner says so.
+    r.stock = stockFor(r);
+    r.order = r.stock === null ? r.qty : Math.max(0, r.qty - r.stock);
     if (r.needBy) {
       const wk = leadWeeks(r.vendor, r.model, r.desc);
       r.orderBy = iso(addDays(parseD(r.needBy), -((wk + BUFFER_WEEKS) * 7)));
@@ -362,9 +377,10 @@ function render() {
     // Said plainly and permanently, because a big number beside a tick box reads as
     // "buy this many" and these are gross requirements. Stock netting arrives with
     // QuickBooks; until then the shelf still needs checking.
-    '<div style="background:var(--yellow-dim);color:var(--yellow);border-radius:var(--radius);padding:10px 14px;font-size:12.5px;margin-bottom:16px;line-height:1.55">' +
-    '<b>These are quantities the jobs need — not stock-adjusted.</b> Check the shelf before ordering. ' +
-    'Netting against live inventory arrives when QuickBooks does.</div>' +
+    (stockAsOf ? '' :
+      '<div style="background:var(--yellow-dim);color:var(--yellow);border-radius:var(--radius);padding:10px 14px;font-size:12.5px;margin-bottom:16px;line-height:1.55">' +
+      '<b>No stock report loaded — these are quantities the jobs need, not what to buy.</b> ' +
+      'Paste an RQ inventory export below and they become order quantities.</div>') +
     '<div class="controls">' +
       '<div><label class="fld">Look ahead</label><select id="horizon" onchange="setHorizon(this.value)">' +
         [4, 8, 12, 26].map(w => '<option value="' + w + '"' + (w === horizonWeeks ? ' selected' : '') + '>' + w + ' weeks</option>').join('') +
@@ -377,7 +393,7 @@ function render() {
       tot('', rows.length, 'lines') +
       tot('', '$' + Math.round(value).toLocaleString(), 'est. value if all bought') +
       tot('', rows.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
-    '</div>' + leadPanel(rows) + body + '</div>';
+    '</div>' + stockPanel() + leadPanel(rows) + body + '</div>';
 }
 
 /* Lead times, editable in place. Vendors are seeded from whatever is actually on the
@@ -427,6 +443,115 @@ function leadPanel(rows) {
 }
 
 let ltOpen = false, ltDirty = false, ltDeleted = [];
+
+/* ---------- stock, from a pasted RQ report ----------
+
+   Not a daily chore -- you run the report when you sit down to order, which is a moment
+   that actually happens. Pasted here rather than synced because RQ has no link worth
+   building for the three months until QuickBooks takes over.
+
+   The match uses the catalog's RQ SKU where it is trustworthy, falling back to the
+   report's Manufacturer SKU. Roughly 90% of answers come out right: most products with
+   no match genuinely have no stock, because the report only lists what you hold. */
+
+let stockMap = {}, stockAsOf = '', stockOpen = false;
+
+function stockPanel() {
+  const age = stockAsOf ? Math.floor((Date.now() - new Date(stockAsOf)) / 86400000) : null;
+  const stale = age !== null && age >= 3;
+  const label = stockAsOf
+    ? 'as of ' + new Date(stockAsOf).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) +
+      (age > 0 ? ' · ' + age + ' day' + (age === 1 ? '' : 's') + ' old' : '')
+    : 'not loaded — quantities below are what the jobs need, not what to buy';
+
+  return '<div class="stock' + (stale ? ' stale' : '') + (stockOpen ? ' open lt' : ' lt') + '">' +
+    '<div class="lt-head" onclick="stockToggle()">' +
+      '<span class="panel-title">Stock on hand</span>' +
+      '<span class="vendor-meta">' + esc(label) + '</span>' +
+      '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">' + (stockOpen ? 'hide' : 'update') + '</span>' +
+    '</div><div class="lt-body">' +
+      '<p class="lt-hint">Run the inventory listing in RQ, open it in Excel, select all and paste here. ' +
+      'Anything the report does not list is treated as zero, which is correct — it only lists what you hold.</p>' +
+      '<textarea id="stockPaste" rows="4" placeholder="Paste the RQ inventory export"></textarea>' +
+      '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-sm" onclick="stockLoad()">Use this</button>' +
+      (stockAsOf ? '<button class="btn btn-ghost btn-sm" onclick="stockClear()">Clear</button>' : '') + '</div>' +
+    '</div></div>';
+}
+
+function stockToggle() { stockOpen = !stockOpen; render(); }
+function stockClear() { stockMap = {}; stockAsOf = ''; saveStock(); render(); }
+
+// Excel copies as tab-separated; a saved .csv is comma-separated. Sniff rather than ask.
+function parseDelimited(text) {
+  const firstLine = text.slice(0, text.indexOf('\n') + 1 || text.length);
+  const delim = firstLine.includes('\t') ? '\t' : ',';
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === delim) { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (c !== '\r') cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(v => v.trim() !== ''));
+}
+
+function stockLoad() {
+  const raw = document.getElementById('stockPaste').value.trim();
+  if (!raw) { toast('Paste the report first', true); return; }
+  const rows = parseDelimited(raw);
+  // The export carries a title and a date stamp before the real header, so find the
+  // header rather than assuming it is first.
+  const hIdx = rows.findIndex(r => r.some(c => c.trim().toLowerCase() === 'product sku'));
+  if (hIdx < 0) { toast('No "Product SKU" column found — is that the inventory listing?', true); return; }
+  const head = rows[hIdx].map(h => h.trim().toLowerCase());
+  const cSku = head.indexOf('product sku'), cMfr = head.indexOf('manufacturer sku');
+  const cQty = head.indexOf('quantity'), cStatus = head.indexOf('status');
+
+  const map = {};
+  let used = 0;
+  for (const r of rows.slice(hIdx + 1)) {
+    if (cStatus >= 0 && (r[cStatus] || '').trim() && (r[cStatus] || '').trim().toLowerCase() !== 'in stock') continue;
+    const q = parseFloat(String(r[cQty] ?? '').replace(/[^0-9.\-]/g, '')) || 0;
+    if (!q) continue;
+    for (const idx of [cSku, cMfr]) {
+      if (idx < 0) continue;
+      const k = norm(r[idx]);
+      if (k) { map[k] = (map[k] || 0) + q; used++; }
+    }
+  }
+  stockMap = map;
+  stockAsOf = new Date().toISOString();
+  saveStock();
+  stockOpen = false;
+  toast('✓ Stock loaded — ' + Object.keys(map).length.toLocaleString() + ' keys');
+  render();
+}
+
+function norm(s) { return String(s ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); }
+
+// Catalog RQ SKU first (blank when shared across products and so meaningless), then the
+// manufacturer part number against the report's Manufacturer SKU column.
+function stockFor(r) {
+  if (!stockAsOf) return null;
+  for (const k of [norm(r.rq), norm(r.mfr), norm(r.model)]) {
+    if (k && stockMap[k] != null) return stockMap[k];
+  }
+  return 0;                       // absent from the report means none held
+}
+
+async function saveStock() {
+  if (usingSample) return;
+  try {
+    const lid = await listId(LIST.stock);
+    const all = await items(LIST.stock);
+    const fields = { Title: 'stock', DataJson: JSON.stringify(stockMap).slice(0, 100000), AsOf: stockAsOf };
+    if (all.length) await graph('PATCH', '/sites/' + siteId + '/lists/' + lid + '/items/' + all[0].id + '/fields', fields);
+    else await graph('POST', '/sites/' + siteId + '/lists/' + lid + '/items', { fields });
+  } catch (e) { console.warn('stock not saved:', e.message); }
+}
 
 function ltToggle() { ltOpen = !ltOpen; render(); }
 function ltSet(i, field, val) { leadTimes[i][field] = val; ltDirty = true; render(); }
@@ -490,7 +615,9 @@ function lineHtml(r) {
     '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + '</div>' +
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
     '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) + '</span></div>').join('') + '</div></div>' +
-    '<div class="line-qty">' + qty(r.qty, r.bulk) + '</div>' +
+    (r.stock === null ? '' :
+      '<div class="line-stock">have<br><b>' + qty(r.stock, r.bulk) + '</b></div>') +
+    '<div class="line-qty">' + qty(r.stock === null ? r.qty : r.order, r.bulk) + '</div>' +
     '<div class="line-by">' + by + '</div></div>';
 }
 
