@@ -27,15 +27,19 @@
   .sw-finish { background: var(--fin); }
   .sw-est { background: linear-gradient(90deg, var(--rough-est), var(--fin-est)); border: 1px dashed var(--text3); }
   .stamp { font-size: .85em; color: var(--text3); font-variant-numeric: tabular-nums; }
+  .pageno { font-size: .85em; color: var(--text2); font-variant-numeric: tabular-nums; background: var(--surface2); padding: .2em .6em; border-radius: 1em; }
 
   /* Teal for prewire, amber for install. Deliberately desaturated: a wall board is
      scanned for shape and gaps, and saturated red/blue pulled the eye to individual
      bars instead. It also keeps the ART red free for things that should grab you —
      the today line, and later the overdue-contact flags.
      Estimated work is the same hue, darker, with a dashed edge. */
+  /* Distinguished by temperature AND lightness, not by saturation. Hue alone is what
+     made the earlier pairs shout; a cool dark slate against a warm pale sand separates
+     cleanly in peripheral vision while neither competes for attention. */
   :root {
-    --rough: #4f7d8c; --fin: #b08447;
-    --rough-est: #32505a; --fin-est: #6d5430;
+    --rough: #4d6570; --fin: #9c9078;
+    --rough-est: #33434b; --fin-est: #5f5849;
   }
 
   .board { height: calc(100vh - 4.2em); overflow-y: auto; overflow-x: hidden; }
@@ -119,7 +123,7 @@ let rows = [], usingSample = false;
 async function init() {
   // ?demo renders the sample with no sign-in, so the layout can be checked from a
   // local file or before the sync has written anything.
-  if (location.search.includes('demo')) { rows = SAMPLE.map(shape); usingSample = true; render(); return; }
+  if (location.search.includes('demo')) { rows = SAMPLE.map(shape); usingSample = true; render(); startRotation(); return; }
 
   msalInstance = new msal.PublicClientApplication({
     auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/' + TENANT_ID, redirectUri: location.href.split('?')[0].split('#')[0] },
@@ -130,6 +134,7 @@ async function init() {
   if (!msalInstance.getAllAccounts().length) { renderSignIn(); return; }
   await load();
   setInterval(load, REFRESH_MS);
+  startRotation();
   setTimeout(() => location.reload(), HARD_RELOAD_MS);
 }
 
@@ -286,10 +291,15 @@ function render() {
   const todayMark = (todayPct >= 0 && todayPct <= 100)
     ? '<div class="today" style="left:' + todayPct + '%"></div>' : '';
 
-  const rowh = rowHeight(scheduled.length, unscheduled.length);
+  const per = pageSize(unscheduled.length);
+  const pageCount = Math.max(1, Math.ceil(scheduled.length / per));
+  if (pageIndex >= pageCount) pageIndex = 0;
+  const pageRows = pageCount > 1 ? scheduled.slice(pageIndex * per, pageIndex * per + per) : scheduled;
+
+  const rowh = rowHeight(pageRows.length, unscheduled.length);
   const compact = rowh < COMPACT_BELOW;
 
-  const bodyRows = scheduled.map(({ p, segs }) => {
+  const bodyRows = pageRows.map(({ p, segs }) => {
     const bars = segs.map(s => {
       const l = Math.max(0, pct(s.from));
       const r = Math.min(100, pct(s.to) + (1 / range.span) * 100);
@@ -326,7 +336,9 @@ function render() {
     '<span class="key"><span class="swatch sw-rough"></span>Rough-In</span>' +
     '<span class="key"><span class="swatch sw-finish"></span>Finish</span>' +
     '<span class="key"><span class="swatch sw-est"></span>Estimated</span>' +
-    '</div><span class="stamp">' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>' +
+    '</div>' +
+    (pageCount > 1 ? '<span class="pageno">' + (pageIndex + 1) + ' / ' + pageCount + '</span>' : '') +
+    '<span class="stamp">' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>' +
     '<div class="board"><div class="grid' + (compact ? ' compact' : '') + '" style="--rowh:' + rowh + 'px">' +
     '<div class="axis-pad"></div><div class="axis-months">' + axis + (todayPct >= 0 && todayPct <= 100 ? '<div class="todaycap" style="left:' + todayPct + '%">TODAY</div>' : '') + '</div>' +
     bodyRows +
@@ -337,16 +349,37 @@ function render() {
    price cutoff keeping the count low, that is what makes the board legible from across
    a room — ten jobs get tall bars, thirty get compact ones, and either way the screen
    is used. Clamped so a single project does not become one absurd stripe. */
-function rowHeight(scheduled, unscheduledCount) {
-  const chrome = 96 + (unscheduledCount ? 64 : 0);   // header + axis, plus the strip
-  const avail = Math.max(200, window.innerHeight - chrome);
-  // Ceiling of 56 rather than 130: with 35-40 jobs the realistic row is 24-28px, and a
-  // tall ceiling only mattered for a ten-row board that will not happen in practice.
-  return Math.round(Math.min(56, Math.max(22, avail / Math.max(1, scheduled))));
+/* Pagination.
+
+   Forty jobs crammed onto one screen gives ~24px rows, which is small from four metres
+   away. Rather than shrink until it is technically present but practically unreadable,
+   the board shows as many rows as fit at a comfortable height and rotates through the
+   rest. You wait a few seconds for the other half; you can always read what is up. */
+
+const TARGET_ROW_PX = 46;      // comfortable from across a room
+const PAGE_SECONDS = 20;
+const COMPACT_BELOW = 38;      // below this, second label line and bar text are dropped
+
+let pageIndex = 0;
+
+function availableHeight(unscheduledCount) {
+  return Math.max(200, window.innerHeight - 96 - (unscheduledCount ? 64 : 0));
 }
 
-// Below this the second label line and all bar text are dropped.
-const COMPACT_BELOW = 38;
+function pageSize(unscheduledCount) {
+  return Math.max(6, Math.floor(availableHeight(unscheduledCount) / TARGET_ROW_PX));
+}
+
+function rowHeight(onThisPage, unscheduledCount) {
+  const avail = availableHeight(unscheduledCount);
+  return Math.round(Math.min(64, Math.max(22, avail / Math.max(1, onThisPage))));
+}
+
+let rotateTimer = null;
+function startRotation() {
+  clearInterval(rotateTimer);
+  rotateTimer = setInterval(() => { pageIndex++; if (rows.length) render(); }, PAGE_SECONDS * 1000);
+}
 
 // Re-render on resize so the kiosk adapts if the panel reports a different size after
 // waking, and so the same file stays usable on a laptop.
