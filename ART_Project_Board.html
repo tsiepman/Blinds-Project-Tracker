@@ -34,12 +34,13 @@
      bars instead. It also keeps the ART red free for things that should grab you —
      the today line, and later the overdue-contact flags.
      Estimated work is the same hue, darker, with a dashed edge. */
-  /* Distinguished by temperature AND lightness, not by saturation. Hue alone is what
-     made the earlier pairs shout; a cool dark slate against a warm pale sand separates
-     cleanly in peripheral vision while neither competes for attention. */
+  /* Cool teal against warm ochre. Real colour, but separated by temperature AND
+     lightness rather than by saturation — that combination reads at distance without
+     any single bar pulling the eye, which fully saturated blue and red did.
+     Estimated work is the same hue, darker, with a dashed edge. */
   :root {
-    --rough: #4d6570; --fin: #9c9078;
-    --rough-est: #33434b; --fin-est: #5f5849;
+    --rough: #43707f; --fin: #b08d52;
+    --rough-est: #2b4854; --fin-est: #705a34;
   }
 
   .board { height: calc(100vh - 4.2em); overflow-y: auto; overflow-x: hidden; }
