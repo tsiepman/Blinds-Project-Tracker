@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART — Project Board</title>
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  /* Sized for a wall-mounted TV read from across a room, not a desk. Type scales with
+     viewport width so the same file works on a 1080p panel, a 4K one, and a laptop. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: clamp(13px, 0.85vw, 22px);
+    overflow: hidden;
+  }
+
+  .top { display: flex; align-items: center; gap: 1vw; padding: 0.9vw 1.4vw; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .mark { background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 1.05em; letter-spacing: .08em; padding: .25em .5em; border-radius: .3em; }
+  .title { font-family: var(--disp, inherit); font-size: 1.9em; font-weight: 700; letter-spacing: .01em; }
+  .spacer { margin-left: auto; }
+  .legend { display: flex; gap: 1.1vw; align-items: center; font-size: .92em; color: var(--text2); }
+  .key { display: inline-flex; align-items: center; gap: .45em; }
+  .swatch { width: 1.5em; height: .85em; border-radius: .2em; display: inline-block; }
+  .sw-rough { background: var(--rough); }
+  .sw-finish { background: var(--fin); }
+  .sw-est { background: repeating-linear-gradient(135deg, var(--estbg) 0 .4em, transparent .4em .8em); border: 1px dashed var(--text3); }
+  .stamp { font-size: .85em; color: var(--text3); font-variant-numeric: tabular-nums; }
+
+  :root { --rough: #4a7fe3; --fin: #e34a4a; --estbg: #6b7488; }
+
+  .board { height: calc(100vh - 4.2em); overflow-y: auto; overflow-x: hidden; }
+  .grid { display: grid; grid-template-columns: 22vw 1fr; }
+
+  /* Both axis cells stick so the months stay visible when the list scrolls. The month
+     and week marks are absolutely positioned inside, which sticky positioning still
+     establishes a containing block for. */
+  .axis-pad { position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .axis-months { position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--border); height: 3.1em; }
+  .month { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); padding: .35em 0 0 .5em; font-size: .95em; font-weight: 600; color: var(--text2); white-space: nowrap; overflow: hidden; }
+  .wk { position: absolute; bottom: 0; width: 1px; height: .5em; background: var(--border); }
+
+  .rowlabel { padding: .6em .9em; border-bottom: 1px solid var(--border); overflow: hidden; }
+  .rl-name { font-weight: 600; font-size: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rl-sub { font-size: .82em; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rl-builder { color: var(--accent); }
+
+  .track { position: relative; border-bottom: 1px solid var(--border); border-left: 1px solid var(--border); }
+  .bar { position: absolute; top: 22%; height: 56%; border-radius: .25em; display: flex; align-items: center; padding: 0 .5em; font-size: .8em; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; }
+  .bar.rough { background: var(--rough); }
+  .bar.finish { background: var(--fin); }
+  /* Estimated work is drawn hollow and hatched so a plan never reads as a commitment. */
+  .bar.est { background: repeating-linear-gradient(135deg, rgba(107,116,136,.55) 0 .45em, rgba(107,116,136,.18) .45em .9em); border: 1px dashed var(--text3); color: var(--text2); }
+  .today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--yellow); z-index: 2; opacity: .85; }
+  .todaycap { position: absolute; top: 0; transform: translateX(-50%); background: var(--yellow); color: #1a1a1a; font-size: .7em; font-weight: 700; padding: .1em .4em; border-radius: 0 0 .25em .25em; z-index: 3; }
+
+  .unscheduled { padding: .9em 1.4vw; border-top: 2px solid var(--border); background: var(--surface); }
+  .unscheduled h3 { font-size: 1em; color: var(--yellow); margin-bottom: .35em; }
+  .unscheduled .items { font-size: .9em; color: var(--text2); line-height: 1.6; }
+
+  .centre { display: flex; align-items: center; justify-content: center; height: 80vh; text-align: center; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: .6em; padding: 2.2em; max-width: 28em; }
+  .card h2 { font-size: 1.5em; margin-bottom: .4em; }
+  .card p { color: var(--text2); line-height: 1.6; margin-bottom: 1.2em; }
+  .btn { background: var(--accent); color: var(--on-accent); border: none; border-radius: .35em; padding: .7em 1.4em; font-size: 1em; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .banner { background: var(--yellow-dim); color: var(--yellow); text-align: center; padding: .4em; font-size: .85em; font-weight: 600; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   ART Project Board — wall display
+   Reads SchedProjects on ART43, written by the D-Tools sync.
+   Signs in once on the kiosk and stays signed in; offline_access
+   keeps silent refresh working.
+   ============================================================ */
+
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
+const LIST = 'SchedProjects';
+
+const MONTHS_AHEAD = 5;          // plus the current month = a 6-month window
+const REFRESH_MS = 10 * 60 * 1000;
+const HARD_RELOAD_MS = 6 * 60 * 60 * 1000;   // kiosk hygiene: reload the page twice a shift
+
+let msalInstance = null, siteId = null, listId = null;
+let rows = [], usingSample = false;
+
+/* ---------- auth + graph ---------- */
+
+async function init() {
+  // ?demo renders the sample with no sign-in, so the layout can be checked from a
+  // local file or before the sync has written anything.
+  if (location.search.includes('demo')) { rows = SAMPLE.map(shape); usingSample = true; render(); return; }
+
+  msalInstance = new msal.PublicClientApplication({
+    auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/' + TENANT_ID, redirectUri: location.href.split('?')[0].split('#')[0] },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msalInstance.initialize();
+  await msalInstance.handleRedirectPromise();
+  if (!msalInstance.getAllAccounts().length) { renderSignIn(); return; }
+  await load();
+  setInterval(load, REFRESH_MS);
+  setTimeout(() => location.reload(), HARD_RELOAD_MS);
+}
+
+function signIn() { msalInstance.loginRedirect({ scopes: SCOPES }); }
+
+async function token() {
+  const a = msalInstance.getAllAccounts();
+  if (!a.length) return null;
+  try { return (await msalInstance.acquireTokenSilent({ scopes: SCOPES, account: a[0] })).accessToken; }
+  catch { await msalInstance.acquireTokenRedirect({ scopes: SCOPES, account: a[0] }); return null; }
+}
+
+async function graph(path) {
+  const t = await token();
+  if (!t) return null;
+  const res = await fetch('https://graph.microsoft.com/v1.0' + path, { headers: { Authorization: 'Bearer ' + t } });
+  if (!res.ok) throw new Error('Graph ' + res.status);
+  return res.json();
+}
+
+async function load() {
+  try {
+    if (!siteId) siteId = (await graph('/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
+    if (!listId) listId = (await graph('/sites/' + siteId + '/lists/' + LIST)).id;
+    const d = await graph('/sites/' + siteId + '/lists/' + listId + '/items?expand=fields&$top=200');
+    rows = (d.value || []).map(i => shape(i.fields || {}));
+    usingSample = false;
+    if (!rows.length) { rows = SAMPLE.map(shape); usingSample = true; }
+  } catch (e) {
+    // A wall display that blanks on a transient error is worse than one showing
+    // slightly old data, so keep whatever is already on screen.
+    console.error(e);
+    if (!rows.length) { rows = SAMPLE.map(shape); usingSample = true; }
+  }
+  render();
+}
+
+function shape(f) {
+  let tasks = [];
+  try { tasks = JSON.parse(f.TasksJson || '[]'); } catch {}
+  return {
+    name: f.ProjectName || '', number: f.ProjectNumber || f.Title || '',
+    client: f.Client || '', builder: f.Builder || '', progress: f.Progress || '',
+    start: f.StartDate || '',
+    days: { roughIn: Number(f.DaysRoughIn) || 0, finish: Number(f.DaysFinish) || 0 },
+    tasks
+  };
+}
+
+/* ---------- dates ----------
+   Plain YYYY-MM-DD throughout with local-time parsing, matching the rest of the suite.
+   Feeding an ISO string with a Z suffix into Date() shifts days across timezones. */
+
+function parseD(s) { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); }
+function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function dayDiff(a, b) { return Math.round((b - a) / 86400000); }
+
+function windowRange() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + MONTHS_AHEAD + 1, 0);
+  return { from, to, span: dayDiff(from, to) || 1 };
+}
+
+/* ---------- segment building ----------
+   Scheduled work comes from real task dates: consecutive tasks of the same phase
+   collapse into one block, and a genuine gap between phases stays a gap. That gap is
+   the point of the board -- it is usually the builder not being ready.
+
+   Phases with no tasks yet are estimated from the project's quoted hours and drawn
+   hatched, so a plan never reads as a commitment. */
+
+function segmentsFor(p, range) {
+  const segs = [];
+  const byPhase = { roughIn: [], finish: [] };
+  for (const t of p.tasks) if (t.phase && t.start) byPhase[t.phase].push(t);
+
+  for (const phase of ['roughIn', 'finish']) {
+    const ts = byPhase[phase].slice().sort((a, b) => a.start.localeCompare(b.start));
+    if (ts.length) {
+      let s = ts[0].start, e = ts[0].end || ts[0].start;
+      for (let i = 1; i < ts.length; i++) {
+        const t = ts[i];
+        // More than a week apart is a real break in the work, not one continuous block.
+        if (dayDiff(parseD(e), parseD(t.start)) > 7) { segs.push({ phase, from: s, to: e, est: false, label: labelOf(ts, s, e) }); s = t.start; e = t.end || t.start; }
+        else if ((t.end || t.start) > e) e = t.end || t.start;
+      }
+      segs.push({ phase, from: s, to: e, est: false, label: labelOf(ts, s, e) });
+    }
+  }
+
+  // Estimated blocks for phases with nothing scheduled, anchored on the project start.
+  let cursor = p.start ? parseD(p.start) : null;
+  if (cursor) {
+    for (const phase of ['roughIn', 'finish']) {
+      if (byPhase[phase].length) {                       // already real; move past it
+        const last = segs.filter(s => s.phase === phase).map(s => s.to).sort().pop();
+        if (last && parseD(last) > cursor) cursor = addDays(parseD(last), 1);
+        continue;
+      }
+      const days = Math.max(1, Math.ceil(p.days[phase] || 0));
+      if (!p.days[phase]) continue;
+      const from = iso(cursor), to = iso(addDays(cursor, days - 1));
+      segs.push({ phase, from, to, est: true, label: days + 'd est' });
+      cursor = addDays(cursor, days + 6);                // nominal gap between phases
+    }
+  }
+
+  return segs.filter(s => parseD(s.to) >= range.from && parseD(s.from) <= range.to);
+}
+
+function labelOf(tasks, from, to) {
+  const inRange = tasks.filter(t => t.start >= from && t.start <= to);
+  const kinds = [...new Set(inRange.map(t => t.progress).filter(Boolean))];
+  return kinds.slice(0, 2).join(' · ') || (inRange.length + 'd');
+}
+
+/* ---------- render ---------- */
+
+function renderSignIn() {
+  document.getElementById('app').innerHTML =
+    '<div class="centre"><div class="card"><h2>ART Project Board</h2>' +
+    '<p>Sign in once on this display and it stays signed in.</p>' +
+    '<button class="btn" onclick="signIn()">Sign in with Microsoft</button></div></div>';
+}
+
+function render() {
+  const range = windowRange();
+  const pct = d => (dayDiff(range.from, parseD(d)) / range.span) * 100;
+
+  const scheduled = [], unscheduled = [];
+  for (const p of rows) {
+    const segs = segmentsFor(p, range);
+    (segs.length ? scheduled : unscheduled).push({ p, segs });
+  }
+  scheduled.sort((a, b) => (a.segs[0]?.from || '').localeCompare(b.segs[0]?.from || ''));
+
+  // Month columns with a tick per week, so a bar can be read to the week rather than
+  // guessed to the month.
+  let axis = '';
+  for (let m = 0; m <= MONTHS_AHEAD; m++) {
+    const s = new Date(range.from.getFullYear(), range.from.getMonth() + m, 1);
+    const e = new Date(range.from.getFullYear(), range.from.getMonth() + m + 1, 0);
+    const left = (dayDiff(range.from, s) / range.span) * 100;
+    const w = ((dayDiff(s, e) + 1) / range.span) * 100;
+    axis += '<div class="month" style="left:' + left + '%;width:' + w + '%">' + s.toLocaleDateString(undefined, { month: 'short' }) + (m === 0 || s.getMonth() === 0 ? " '" + String(s.getFullYear()).slice(2) : '') + '</div>';
+  }
+  for (let d = new Date(range.from); d <= range.to; d = addDays(d, 7)) {
+    axis += '<div class="wk" style="left:' + pct(iso(d)) + '%"></div>';
+  }
+
+  const todayPct = pct(iso(new Date()));
+  const todayMark = (todayPct >= 0 && todayPct <= 100)
+    ? '<div class="today" style="left:' + todayPct + '%"></div>' : '';
+
+  const bodyRows = scheduled.map(({ p, segs }) => {
+    const bars = segs.map(s => {
+      const l = Math.max(0, pct(s.from));
+      const r = Math.min(100, pct(s.to) + (1 / range.span) * 100);
+      return '<div class="bar ' + (s.est ? 'est' : s.phase === 'roughIn' ? 'rough' : 'finish') +
+        '" style="left:' + l + '%;width:' + Math.max(0.6, r - l) + '%" title="' +
+        esc(s.phase === 'roughIn' ? 'Rough-In' : 'Finish') + ' ' + s.from + ' → ' + s.to + '">' + esc(s.label) + '</div>';
+    }).join('');
+    return '<div class="rowlabel"><div class="rl-name">' + esc(p.name || p.number) + '</div>' +
+      '<div class="rl-sub"><span class="rl-builder">' + esc(p.builder || '—') + '</span> · ' + esc(p.client) + '</div></div>' +
+      '<div class="track">' + todayMark + bars + '</div>';
+  }).join('');
+
+  const un = unscheduled.length
+    ? '<div class="unscheduled"><h3>No start date — not on the board</h3><div class="items">' +
+      unscheduled.map(u => esc(u.p.name || u.p.number) + (u.p.builder ? ' <span style="color:var(--text3)">(' + esc(u.p.builder) + ')</span>' : '')).join(' &nbsp;·&nbsp; ') +
+      '</div></div>'
+    : '';
+
+  document.getElementById('app').innerHTML =
+    (usingSample ? '<div class="banner">Sample data — the sync has not written to SharePoint yet</div>' : '') +
+    '<div class="top"><span class="mark">ART</span><span class="title">Project Board</span>' +
+    '<span class="spacer"></span><div class="legend">' +
+    '<span class="key"><span class="swatch sw-rough"></span>Rough-In</span>' +
+    '<span class="key"><span class="swatch sw-finish"></span>Finish</span>' +
+    '<span class="key"><span class="swatch sw-est"></span>Estimated</span>' +
+    '</div><span class="stamp">' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>' +
+    '<div class="board"><div class="grid">' +
+    '<div class="axis-pad"></div><div class="axis-months">' + axis + (todayPct >= 0 && todayPct <= 100 ? '<div class="todaycap" style="left:' + todayPct + '%">TODAY</div>' : '') + '</div>' +
+    bodyRows +
+    '</div>' + un + '</div>';
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- sample ----------
+   Shown only when the list is empty, and clearly banner-marked. Modelled on the real
+   Fleetwood job so the layout is exercised with plausible shapes. */
+
+const today = new Date();
+const soon = n => iso(addDays(today, n));
+const SAMPLE = [
+  { ProjectName: 'New Maric Home, 5925 Southboine Dr', ProjectNumber: 'ADVAN-3346', Client: 'Fleetwood - Watson', Builder: 'Maric Homes',
+    Progress: 'Phase #2', StartDate: soon(-30), DaysRoughIn: '7.5', DaysFinish: '3.5',
+    TasksJson: JSON.stringify([
+      { start: soon(-28), end: soon(-28), phase: 'roughIn', progress: 'Prewire' },
+      { start: soon(-25), end: soon(-25), phase: 'roughIn', progress: 'Prewire' },
+      { start: soon(6), end: soon(6), phase: 'finish', progress: 'Lighting/Shades' },
+      { start: soon(9), end: soon(9), phase: 'finish', progress: 'Security' }
+    ]) },
+  { ProjectName: '12 Bridgewater Lane', ProjectNumber: 'ADVAN-3402', Client: 'Randall', Builder: 'Randall Homes',
+    Progress: 'Prewire', StartDate: soon(10), DaysRoughIn: '5', DaysFinish: '2.5', TasksJson: '[]' },
+  { ProjectName: 'Show Home — Sage Creek', ProjectNumber: 'ADVAN-3455', Client: 'Qualico', Builder: 'Qualico',
+    Progress: 'Not started', StartDate: soon(52), DaysRoughIn: '9', DaysFinish: '4', TasksJson: '[]' },
+  { ProjectName: 'Lakeside Reno', ProjectNumber: 'ADVAN-3388', Client: 'Weinstein', Builder: '',
+    Progress: 'Installing', StartDate: '', DaysRoughIn: '3', DaysFinish: '2', TasksJson: '[]' }
+];
+
+init().catch(e => { console.error(e); renderSignIn(); });
+</script>
+</body>
+</html>
