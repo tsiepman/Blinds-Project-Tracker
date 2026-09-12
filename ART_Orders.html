@@ -289,6 +289,9 @@ function build() {
         // use because the catalog has no vendor for this product — so it is a catalog
         // record worth fixing, and this line will change once you do.
         vendorSource: l.vendorSource || '',
+        // Wire is measured in feet, not counted in pieces. A job with 33 Cat6 runs is
+        // 3,245 ft, and ordering "33" of anything would be badly short.
+        bulk: !!l.bulk,
         cost: Number(l.cost) || 0, qty: 0, jobs: [], needBy: null, orderBy: null
       };
       row.qty += Number(l.qty) || 0;
@@ -480,8 +483,8 @@ function lineHtml(r) {
     '<div class="line-box"><input type="checkbox"' + (done ? ' checked' : '') + ' onchange="toggle(' + JSON.stringify(r.key).replace(/"/g, '&quot;') + ', this.checked)"></div>' +
     '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + '</div>' +
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
-    '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + j.qty + '</span><span>' + esc(j.name) + '</span></div>').join('') + '</div></div>' +
-    '<div class="line-qty">' + r.qty + '</div>' +
+    '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) + '</span></div>').join('') + '</div></div>' +
+    '<div class="line-qty">' + qty(r.qty, r.bulk) + '</div>' +
     '<div class="line-by">' + by + '</div></div>';
 }
 
@@ -521,6 +524,15 @@ function toast(m, bad) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 2600);
 }
 
+/* Wire reads in feet, everything else in pieces. D-Tools has no purchase-unit
+   conversion to offer — Order UOM and Order UOM Units are empty on all 49 bulk
+   products — so feet is the honest number and you convert to boxes yourself.
+   Populate those two catalog fields and this can show boxes instead. */
+function qty(n, bulk) {
+  const v = Math.ceil(Number(n) || 0);
+  return bulk ? v.toLocaleString() + '<span style="font-size:.6em;font-weight:600;color:var(--text3)"> ft</span>' : String(v);
+}
+
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /* ---------- sample ----------
@@ -543,7 +555,8 @@ function loadSample() {
       DaysRoughIn: '6', DaysFinish: '3', TasksJson: '[]',
       OrderLinesJson: JSON.stringify([
         { model: 'RJ45 Cat6 Ends', desc: 'Cat6e Ends', vendor: 'ADI', cost: 0.42, qty: 62, phase: 'finish' },
-        { model: 'CAT6', desc: 'Cat6 U/UTP 23AWG (per 1000ft)', vendor: 'Trends', cost: 0.28, qty: 33, phase: 'roughIn' },
+        { model: 'CAT6', desc: 'Cat6 U/UTP 23AWG (price per 1000 ft)', vendor: 'Trends', cost: 0.28, qty: 3245, phase: 'roughIn', bulk: true },
+        { model: '16-2 Speaker Wire', desc: '16 AWG 2 conductor (price per 1000 ft)', vendor: 'Sonance', cost: 0.30, qty: 2025, phase: 'roughIn', bulk: true },
         { model: 'MP1S', desc: 'Single gang low voltage stud bracket', vendor: 'Trends', cost: 1.55, qty: 12, phase: 'roughIn' },
         { model: 'SIVOIA QS Triathlon Shade', desc: 'Lutron motorised roller shade', vendor: 'Lutron', cost: 980, qty: 4, phase: 'finish' }
       ]) },
