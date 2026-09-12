@@ -28,9 +28,15 @@
   .sw-est { background: linear-gradient(90deg, var(--rough-est), var(--fin-est)); border: 1px dashed var(--text3); }
   .stamp { font-size: .85em; color: var(--text3); font-variant-numeric: tabular-nums; }
 
-  /* Estimated work keeps its phase colour, muted and desaturated. Grey hatching read
-     as "some unknown thing" from across the room — the phase is the useful part. */
-  :root { --rough: #4a7fe3; --fin: #e34a4a; --rough-est: #2f4a7a; --fin-est: #7a3436; }
+  /* Teal for prewire, amber for install. Deliberately desaturated: a wall board is
+     scanned for shape and gaps, and saturated red/blue pulled the eye to individual
+     bars instead. It also keeps the ART red free for things that should grab you —
+     the today line, and later the overdue-contact flags.
+     Estimated work is the same hue, darker, with a dashed edge. */
+  :root {
+    --rough: #4f7d8c; --fin: #b08447;
+    --rough-est: #32505a; --fin-est: #6d5430;
+  }
 
   .board { height: calc(100vh - 4.2em); overflow-y: auto; overflow-x: hidden; }
   .grid { display: grid; grid-template-columns: 22vw 1fr; }
@@ -43,11 +49,19 @@
   .month { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); padding: .35em 0 0 .5em; font-size: .95em; font-weight: 600; color: var(--text2); white-space: nowrap; overflow: hidden; }
   .wk { position: absolute; bottom: 0; width: 1px; height: .5em; background: var(--border); }
 
-  .rowlabel, .track { min-height: var(--rowh, 3.4em); }
-  .rowlabel { padding: .5em .9em; border-bottom: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
-  .rl-name { font-weight: 600; font-size: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rl-sub { font-size: .82em; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rl-builder { color: var(--accent); }
+  .rowlabel, .track { height: var(--rowh, 3.4em); }
+  .rowlabel { padding: 0 .9em; border-bottom: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .rl-name { font-weight: 600; font-size: 1.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rl-sub { font-size: .8em; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rl-builder { color: var(--text2); font-weight: 600; }
+
+  /* Forty projects on a 1080p panel leaves about 24px a row. The second line has to go,
+     so the builder moves inline with the job name and bar labels are dropped entirely.
+     Colour carries the phase at that size; text would only be clutter. */
+  .grid.compact .rowlabel { padding: 0 .7em; }
+  .grid.compact .rl-name { font-size: .95em; }
+  .grid.compact .rl-sub { display: none; }
+  .grid.compact .bar { font-size: 0; padding: 0; }
 
   .track { position: relative; border-bottom: 1px solid var(--border); border-left: 1px solid var(--border); }
   .bar { position: absolute; top: 20%; height: 60%; border-radius: .25em; display: flex; align-items: center; padding: 0 .5em; font-size: .82em; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; }
@@ -272,6 +286,9 @@ function render() {
   const todayMark = (todayPct >= 0 && todayPct <= 100)
     ? '<div class="today" style="left:' + todayPct + '%"></div>' : '';
 
+  const rowh = rowHeight(scheduled.length, unscheduled.length);
+  const compact = rowh < COMPACT_BELOW;
+
   const bodyRows = scheduled.map(({ p, segs }) => {
     const bars = segs.map(s => {
       const l = Math.max(0, pct(s.from));
@@ -280,15 +297,20 @@ function render() {
       // Only label a bar wide enough to hold the text. A clipped word is worse than no
       // word from across a room, and the colour plus the row label already carry it.
       // Roughly 0.75% of the track per character at this type size.
-      const label = w > 3.5 && s.label.length * 0.75 < w ? esc(s.label) : '';
+      const label = (!compact && w > 3.5 && s.label.length * 0.75 < w) ? esc(s.label) : '';
       const cls = 'bar ' + (s.phase === 'roughIn' ? 'rough' : 'finish') + (s.est ? ' est' : '');
       return '<div class="' + cls + '" style="left:' + l + '%;width:' + w + '%" title="' +
         esc((s.phase === 'roughIn' ? 'Rough-In' : 'Finish') + (s.est ? ' (estimated)' : '') + ' · ' + s.from + ' → ' + s.to + ' · ' + s.label) +
         '">' + label + '</div>';
     }).join('');
-    return '<div class="rowlabel"><div class="rl-name">' + esc(p.name || p.number) + '</div>' +
-      '<div class="rl-sub"><span class="rl-builder">' + esc(p.builder || '—') + '</span> · ' + esc(p.client) + '</div></div>' +
-      '<div class="track">' + todayMark + bars + '</div>';
+    // Compact rows have no second line, so the builder rides inline with the job name —
+    // it is the thing Terry scans for, and losing it would defeat the contact view.
+    const label = compact
+      ? '<div class="rl-name">' + esc(p.name || p.number) +
+        (p.builder ? ' <span class="rl-builder">· ' + esc(p.builder) + '</span>' : '') + '</div>'
+      : '<div class="rl-name">' + esc(p.name || p.number) + '</div>' +
+        '<div class="rl-sub"><span class="rl-builder">' + esc(p.builder || '—') + '</span> · ' + esc(p.client) + '</div>';
+    return '<div class="rowlabel">' + label + '</div><div class="track">' + todayMark + bars + '</div>';
   }).join('');
 
   const un = unscheduled.length
@@ -305,7 +327,7 @@ function render() {
     '<span class="key"><span class="swatch sw-finish"></span>Finish</span>' +
     '<span class="key"><span class="swatch sw-est"></span>Estimated</span>' +
     '</div><span class="stamp">' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span></div>' +
-    '<div class="board"><div class="grid" style="--rowh:' + rowHeight(scheduled.length, unscheduled.length) + 'px">' +
+    '<div class="board"><div class="grid' + (compact ? ' compact' : '') + '" style="--rowh:' + rowh + 'px">' +
     '<div class="axis-pad"></div><div class="axis-months">' + axis + (todayPct >= 0 && todayPct <= 100 ? '<div class="todaycap" style="left:' + todayPct + '%">TODAY</div>' : '') + '</div>' +
     bodyRows +
     '</div>' + un + '</div>';
@@ -316,10 +338,15 @@ function render() {
    a room — ten jobs get tall bars, thirty get compact ones, and either way the screen
    is used. Clamped so a single project does not become one absurd stripe. */
 function rowHeight(scheduled, unscheduledCount) {
-  const chrome = 96 + (unscheduledCount ? 72 : 0);   // header + axis, plus the strip
+  const chrome = 96 + (unscheduledCount ? 64 : 0);   // header + axis, plus the strip
   const avail = Math.max(200, window.innerHeight - chrome);
-  return Math.round(Math.min(130, Math.max(46, avail / Math.max(1, scheduled))));
+  // Ceiling of 56 rather than 130: with 35-40 jobs the realistic row is 24-28px, and a
+  // tall ceiling only mattered for a ten-row board that will not happen in practice.
+  return Math.round(Math.min(56, Math.max(22, avail / Math.max(1, scheduled))));
 }
+
+// Below this the second label line and all bar text are dropped.
+const COMPACT_BELOW = 38;
 
 // Re-render on resize so the kiosk adapts if the panel reports a different size after
 // waking, and so the same file stays usable on a laptop.
