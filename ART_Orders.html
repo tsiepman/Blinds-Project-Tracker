@@ -285,6 +285,10 @@ function build() {
       const key = (l.vendor || 'zz') + '|' + String(l.model).trim().toLowerCase();
       const row = byKey.get(key) ?? {
         key, model: l.model, desc: l.desc || '', vendor: l.vendor || '',
+        // Where the vendor came from. 'project' means the item's frozen snapshot is in
+        // use because the catalog has no vendor for this product — so it is a catalog
+        // record worth fixing, and this line will change once you do.
+        vendorSource: l.vendorSource || '',
         cost: Number(l.cost) || 0, qty: 0, jobs: [], needBy: null, orderBy: null
       };
       row.qty += Number(l.qty) || 0;
@@ -363,6 +367,7 @@ function render() {
       tot('soon', soon.length, 'this week') +
       tot('', rows.length, 'lines') +
       tot('', '$' + Math.round(value).toLocaleString(), 'est. value') +
+      tot('', rows.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
     '</div>' + leadPanel(rows) + body + '</div>';
 }
 
@@ -456,9 +461,14 @@ function lineHtml(r) {
     ? '<span class="tag t-' + r.urgency + '">' + (r.days < 0 ? Math.abs(r.days) + 'd late' : r.days === 0 ? 'today' : 'in ' + r.days + 'd') + '</span>' +
       '<div style="color:var(--text3);margin-top:3px">order by ' + fmt(parseD(r.orderBy)) + '</div>'
     : '<span class="tag t-none">no dates</span>';
+  // A stale-snapshot vendor is worth surfacing: it means the catalog has no vendor for
+  // this product, so it is a one-line catalog fix that then reaches every job.
+  const stale = r.vendorSource === 'project'
+    ? ' <span class="tag t-soon" title="Vendor came from this project, not the catalog — set it in the catalog and it fixes everywhere">catalog missing vendor</span>'
+    : '';
   return '<div class="line' + (done ? ' done' : '') + '">' +
     '<div class="line-box"><input type="checkbox"' + (done ? ' checked' : '') + ' onchange="toggle(' + JSON.stringify(r.key).replace(/"/g, '&quot;') + ', this.checked)"></div>' +
-    '<div class="line-main"><div class="line-model">' + esc(r.model) + '</div>' +
+    '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + '</div>' +
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
     '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + j.qty + '</span><span>' + esc(j.name) + '</span></div>').join('') + '</div></div>' +
     '<div class="line-qty">' + r.qty + '</div>' +
