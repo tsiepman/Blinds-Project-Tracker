@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART — Orders</title>
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; height: 52px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 40; }
+  .mark { background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 12px; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px; }
+  .hname { font-size: 14px; font-weight: 600; }
+  .hname span { color: var(--text3); font-weight: 400; }
+  .spacer { margin-left: auto; }
+  .sp-status { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; display: none; }
+  .sp-status.connected { display: inline; background: var(--green-dim); color: var(--green); }
+  .sp-status.error { display: inline; background: var(--red-dim); color: var(--red); }
+  .sp-status.loading { display: inline; background: var(--accent-dim); color: var(--accent); }
+  .art-back { margin-left: 0; }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 80px; }
+  h1.page { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  p.page-sub { color: var(--text2); font-size: 13px; margin-bottom: 18px; }
+
+  .controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
+  label.fld { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); margin-bottom: 5px; font-weight: 600; }
+  select, input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 9px 11px; font-size: 14px; font-family: inherit; }
+  .btn { background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--radius); padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-ghost { background: var(--surface2); color: var(--text); }
+  .btn-sm { padding: 6px 11px; font-size: 12.5px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .totals { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
+  .tot { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 16px; min-width: 120px; }
+  .tot-n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tot-l { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 600; }
+  .tot.late .tot-n { color: var(--accent); }
+  .tot.soon .tot-n { color: var(--yellow); }
+
+  .vendor { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; overflow: hidden; }
+  .vendor-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+  .vendor-name { font-size: 15px; font-weight: 700; }
+  .vendor-meta { font-size: 12px; color: var(--text3); }
+
+  .line { padding: 11px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; }
+  .line:last-child { border-bottom: none; }
+  .line.done { opacity: .45; }
+  .line-main { flex: 1; min-width: 0; }
+  .line-model { font-family: var(--mono); font-size: 13.5px; font-weight: 600; }
+  .line-desc { font-size: 11.5px; color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jobs { margin-top: 6px; font-size: 11.5px; color: var(--text2); }
+  .jobs div { display: flex; gap: 8px; }
+  .jobs .jq { font-family: var(--mono); color: var(--text3); min-width: 2.5em; text-align: right; }
+  .line-qty { font-family: var(--mono); font-size: 19px; font-weight: 700; min-width: 3em; text-align: right; }
+  .line-by { font-size: 11.5px; text-align: right; min-width: 7em; }
+  .line-box { padding-top: 2px; }
+  .line-box input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+
+  .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; display: inline-block; }
+  .t-late { background: var(--accent-dim); color: var(--accent); }
+  .t-soon { background: var(--yellow-dim); color: var(--yellow); }
+  .t-ok { background: var(--surface2); color: var(--text3); }
+  .t-none { background: var(--surface2); color: var(--text3); }
+
+  .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
+  .banner { background: var(--yellow-dim); color: var(--yellow); text-align: center; padding: 7px; font-size: 12.5px; font-weight: 600; }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 22px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 18px; font-size: 13.5px; font-weight: 600; z-index: 90; display: none; }
+  .toast.show { display: block; }
+  .toast.bad { border-color: var(--accent); color: var(--accent); }
+  .toast.good { border-color: var(--green); color: var(--green); }
+
+  .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
+  .card h2 { font-size: 20px; margin-bottom: 8px; }
+  .card p { color: var(--text2); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+
+  @media (max-width: 720px) {
+    .line { flex-wrap: wrap; }
+    .line-by { text-align: left; min-width: 0; }
+    .line-desc { white-space: normal; }
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+</head>
+<body>
+
+<div class="header">
+  <span class="mark">ART</span><span class="hname">Orders <span>purchasing</span></span>
+  <span id="spStatus" class="sp-status"></span>
+  <span class="spacer"></span>
+  <a class="art-back" href="index.html">← All tools</a>
+</div>
+
+<div id="app"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+/* ============================================================
+   ART Orders
+   What to order, from whom, by when, for which jobs.
+
+   Reads SchedProjects (written by the D-Tools sync) and LeadTimes.
+   Ticking a line records it in OrderedLines -- see the note on
+   writing back to D-Tools below.
+   ============================================================ */
+
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
+const LIST = { projects: 'SchedProjects', lead: 'LeadTimes', ordered: 'OrderedLines' };
+
+// A supplier who is unreliable gets a longer lead time, not a longer buffer, so one
+// global week is enough and there is no reason to vary it per vendor.
+const BUFFER_WEEKS = 1;
+const DEFAULT_LEAD_WEEKS = 2;
+
+let msal_ = null, siteId = null, listIds = {};
+let projects = [], leadTimes = [], orderedKeys = new Set();
+let usingSample = false;
+let horizonWeeks = 8;
+
+/* ---------- auth / graph ---------- */
+
+async function init() {
+  if (location.search.includes('demo')) { loadSample(); render(); return; }
+  msal_ = new msal.PublicClientApplication({
+    auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/' + TENANT_ID, redirectUri: location.href.split('?')[0].split('#')[0] },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msal_.initialize();
+  await msal_.handleRedirectPromise();
+  if (!msal_.getAllAccounts().length) { renderSignIn(); return; }
+  await load();
+}
+
+function signIn() { msal_.loginRedirect({ scopes: SCOPES }); }
+
+async function token() {
+  const a = msal_.getAllAccounts();
+  if (!a.length) return null;
+  try { return (await msal_.acquireTokenSilent({ scopes: SCOPES, account: a[0] })).accessToken; }
+  catch { await msal_.acquireTokenRedirect({ scopes: SCOPES, account: a[0] }); return null; }
+}
+
+async function graph(method, path, body) {
+  const t = await token();
+  if (!t) return null;
+  const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
+    method,
+    headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json', Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  });
+  if (!res.ok) throw new Error(method + ' ' + path + ' -> ' + res.status);
+  return res.status === 204 ? null : res.json();
+}
+
+async function listId(name) {
+  if (listIds[name]) return listIds[name];
+  if (!siteId) siteId = (await graph('GET', '/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
+  listIds[name] = (await graph('GET', '/sites/' + siteId + '/lists/' + name)).id;
+  return listIds[name];
+}
+
+async function items(name) {
+  const lid = await listId(name);
+  const out = [];
+  let url = '/sites/' + siteId + '/lists/' + lid + '/items?expand=fields&$top=999';
+  for (;;) {
+    const d = await graph('GET', url);
+    out.push(...(d.value || []));
+    if (!d['@odata.nextLink']) break;
+    url = d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '');
+  }
+  return out;
+}
+
+function setStatus(cls, txt) { const e = document.getElementById('spStatus'); e.className = 'sp-status ' + cls; e.textContent = txt; }
+
+async function load() {
+  setStatus('loading', 'Loading…');
+  try {
+    const [pr, lt, od] = await Promise.all([
+      items(LIST.projects),
+      items(LIST.lead).catch(() => []),      // optional until populated
+      items(LIST.ordered).catch(() => [])
+    ]);
+    projects = pr.map(i => i.fields || {});
+    leadTimes = lt.map(i => i.fields || {});
+    orderedKeys = new Set(od.map(i => (i.fields || {}).LineKey).filter(Boolean));
+    usingSample = false;
+    if (!projects.length) { loadSample(); }
+    setStatus('connected', 'SharePoint');
+  } catch (e) {
+    setStatus('error', 'Error');
+    if (!projects.length) loadSample();
+    console.error(e);
+  }
+  render();
+}
+
+/* ---------- dates ---------- */
+
+function parseD(s) { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); }
+function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function dayDiff(a, b) { return Math.round((b - a) / 86400000); }
+function fmt(d) { return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
+
+/* ---------- lead times ----------
+   Per vendor with overrides, because a supplier is not one number: Lutron shades run
+   five weeks while a keypad from the same supplier is far quicker. Most specific match
+   wins -- model, then category, then vendor, then the default. */
+
+function leadWeeks(vendor, model, desc) {
+  const v = String(vendor || '').trim().toLowerCase();
+  let best = null, bestScore = -1;
+  for (const r of leadTimes) {
+    if (String(r.Vendor || '').trim().toLowerCase() !== v) continue;
+    const m = String(r.Match || '').trim().toLowerCase();
+    let score, ok;
+    if (!m) { ok = true; score = 0; }                                    // whole vendor
+    else {
+      const hay = (String(model || '') + ' ' + String(desc || '')).toLowerCase();
+      ok = hay.includes(m); score = 1 + m.length;                        // longer = more specific
+    }
+    if (ok && score > bestScore) { best = Number(r.Weeks); bestScore = score; }
+  }
+  return Number.isFinite(best) && best !== null ? best : DEFAULT_LEAD_WEEKS;
+}
+
+/* ---------- aggregation ----------
+   One row per product across every job in the horizon, because you place one order per
+   vendor, not one per job. The per-job split rides underneath so the number can be
+   sanity-checked before it is keyed into a supplier's site. */
+
+function phaseDate(p, phase) {
+  let tasks = [];
+  try { tasks = JSON.parse(p.TasksJson || '[]'); } catch {}
+  const mine = tasks.filter(t => t.phase === phase && t.start).sort((a, b) => a.start.localeCompare(b.start));
+  if (mine.length) return mine[0].start;
+
+  // Nothing scheduled: fall back to the project start plus the estimated day-lengths,
+  // which come from the quoted labour hours divided by a 16-hour crew day.
+  if (!p.StartDate) return null;
+  const start = parseD(p.StartDate);
+  if (phase === 'roughIn') return iso(start);
+  const rough = Math.ceil(Number(p.DaysRoughIn) || 0);
+  return iso(addDays(start, rough + 6));      // nominal gap between phases
+}
+
+function build() {
+  const today = new Date();
+  const horizonEnd = addDays(today, horizonWeeks * 7);
+  const byKey = new Map();
+
+  for (const p of projects) {
+    let lines = [];
+    try { lines = JSON.parse(p.OrderLinesJson || '[]'); } catch {}
+    for (const l of lines) {
+      if (l.ordered) continue;                       // already marked in D-Tools
+      const needBy = phaseDate(p, l.phase || 'finish');
+      const key = (l.vendor || 'zz') + '|' + String(l.model).trim().toLowerCase();
+      const row = byKey.get(key) ?? {
+        key, model: l.model, desc: l.desc || '', vendor: l.vendor || '',
+        cost: Number(l.cost) || 0, qty: 0, jobs: [], needBy: null, orderBy: null
+      };
+      row.qty += Number(l.qty) || 0;
+      row.jobs.push({ name: p.ProjectName || p.ProjectNumber || '', qty: Number(l.qty) || 0, needBy });
+      if (needBy && (!row.needBy || needBy < row.needBy)) row.needBy = needBy;
+      byKey.set(key, row);
+    }
+  }
+
+  const rows = [];
+  for (const r of byKey.values()) {
+    if (r.needBy) {
+      const wk = leadWeeks(r.vendor, r.model, r.desc);
+      r.orderBy = iso(addDays(parseD(r.needBy), -((wk + BUFFER_WEEKS) * 7)));
+      r.days = dayDiff(today, parseD(r.orderBy));
+      r.urgency = r.days < 0 ? 'late' : r.days <= 7 ? 'soon' : 'ok';
+      // Outside the horizon and not yet urgent -- leave it off.
+      if (r.urgency === 'ok' && parseD(r.orderBy) > horizonEnd) continue;
+    } else {
+      r.urgency = 'none';                            // no dates on the job
+    }
+    rows.push(r);
+  }
+
+  const order = { late: 0, soon: 1, ok: 2, none: 3 };
+  rows.sort((a, b) => order[a.urgency] - order[b.urgency] || String(a.orderBy || '').localeCompare(String(b.orderBy || '')) || a.model.localeCompare(b.model));
+  return rows;
+}
+
+/* ---------- render ---------- */
+
+function renderSignIn() {
+  document.getElementById('app').innerHTML =
+    '<div class="centre"><div class="card"><h2>ART Orders</h2>' +
+    '<p>Sign in with your Advance Electronics account.</p>' +
+    '<button class="btn" onclick="signIn()">Sign in with Microsoft</button></div></div>';
+}
+
+function render() {
+  const rows = build();
+  const late = rows.filter(r => r.urgency === 'late');
+  const soon = rows.filter(r => r.urgency === 'soon');
+  const value = rows.reduce((n, r) => n + r.qty * r.cost, 0);
+
+  const vendors = new Map();
+  for (const r of rows) {
+    const v = r.vendor || '(no vendor set)';
+    if (!vendors.has(v)) vendors.set(v, []);
+    vendors.get(v).push(r);
+  }
+  // Vendors with something late float to the top.
+  const vendorOrder = [...vendors.entries()].sort((a, b) => {
+    const rank = g => Math.min(...g.map(r => ({ late: 0, soon: 1, ok: 2, none: 3 })[r.urgency]));
+    return rank(a[1]) - rank(b[1]) || a[0].localeCompare(b[0]);
+  });
+
+  const body = vendorOrder.length ? vendorOrder.map(([v, g]) => {
+    const val = g.reduce((n, r) => n + r.qty * r.cost, 0);
+    return '<div class="vendor"><div class="vendor-head"><span class="vendor-name">' + esc(v) + '</span>' +
+      '<span class="vendor-meta">' + g.length + ' line' + (g.length === 1 ? '' : 's') + ' · ~$' + val.toFixed(0) + '</span></div>' +
+      g.map(lineHtml).join('') + '</div>';
+  }).join('') : '<div class="empty">Nothing to order in the next ' + horizonWeeks + ' weeks.</div>';
+
+  document.getElementById('app').innerHTML =
+    (usingSample ? '<div class="banner">Sample data — the sync has not written to SharePoint yet</div>' : '') +
+    '<div class="wrap"><h1 class="page">Orders</h1>' +
+    '<p class="page-sub">What needs ordering, grouped by supplier, counted back from when each phase starts.</p>' +
+    '<div class="controls">' +
+      '<div><label class="fld">Look ahead</label><select id="horizon" onchange="setHorizon(this.value)">' +
+        [4, 8, 12, 26].map(w => '<option value="' + w + '"' + (w === horizonWeeks ? ' selected' : '') + '>' + w + ' weeks</option>').join('') +
+      '</select></div>' +
+      '<div style="align-self:flex-end"><button class="btn btn-ghost btn-sm" onclick="load()">Refresh</button></div>' +
+    '</div>' +
+    '<div class="totals">' +
+      tot('late', late.length, 'overdue') +
+      tot('soon', soon.length, 'this week') +
+      tot('', rows.length, 'lines') +
+      tot('', '$' + Math.round(value).toLocaleString(), 'est. value') +
+    '</div>' + body + '</div>';
+}
+
+function tot(cls, n, label) {
+  return '<div class="tot ' + cls + '"><div class="tot-n">' + n + '</div><div class="tot-l">' + label + '</div></div>';
+}
+
+function lineHtml(r) {
+  const done = orderedKeys.has(r.key);
+  const by = r.orderBy
+    ? '<span class="tag t-' + r.urgency + '">' + (r.days < 0 ? Math.abs(r.days) + 'd late' : r.days === 0 ? 'today' : 'in ' + r.days + 'd') + '</span>' +
+      '<div style="color:var(--text3);margin-top:3px">order by ' + fmt(parseD(r.orderBy)) + '</div>'
+    : '<span class="tag t-none">no dates</span>';
+  return '<div class="line' + (done ? ' done' : '') + '">' +
+    '<div class="line-box"><input type="checkbox"' + (done ? ' checked' : '') + ' onchange="toggle(' + JSON.stringify(r.key).replace(/"/g, '&quot;') + ', this.checked)"></div>' +
+    '<div class="line-main"><div class="line-model">' + esc(r.model) + '</div>' +
+    '<div class="line-desc">' + esc(r.desc) + '</div>' +
+    '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + j.qty + '</span><span>' + esc(j.name) + '</span></div>').join('') + '</div></div>' +
+    '<div class="line-qty">' + r.qty + '</div>' +
+    '<div class="line-by">' + by + '</div></div>';
+}
+
+function setHorizon(w) { horizonWeeks = Number(w); render(); }
+
+/* ---------- marking ordered ----------
+   Recorded in our own list for now. D-Tools has the right fields sitting unused
+   (Order Status, Ordered Date, Order Number) but offers no item-level update endpoint --
+   only a whole-project publish, and whether a partial publish merges or replaces has
+   never been established. With the catalog the stakes were a stock number; here they
+   would be a live quote. So: record safely, test the write-back on a throwaway project,
+   then switch. */
+
+async function toggle(key, on) {
+  if (usingSample) { on ? orderedKeys.add(key) : orderedKeys.delete(key); render(); return; }
+  try {
+    if (on) {
+      await graph('POST', '/sites/' + siteId + '/lists/' + (await listId(LIST.ordered)) + '/items',
+        { fields: { Title: key.slice(0, 250), LineKey: key, OrderedAt: new Date().toISOString() } });
+      orderedKeys.add(key);
+      toast('✓ Marked ordered');
+    } else {
+      const all = await items(LIST.ordered);
+      const hit = all.find(i => (i.fields || {}).LineKey === key);
+      if (hit) await graph('DELETE', '/sites/' + siteId + '/lists/' + (await listId(LIST.ordered)) + '/items/' + hit.id);
+      orderedKeys.delete(key);
+      toast('Unmarked');
+    }
+    render();
+  } catch (e) { toast(e.message, true); }
+}
+
+let toastTimer = null;
+function toast(m, bad) {
+  const t = document.getElementById('toast');
+  t.textContent = m; t.className = 'toast show ' + (bad ? 'bad' : 'good');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 2600);
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- sample ----------
+   Shown only when SchedProjects is empty, and banner-marked. Shapes taken from the real
+   Harris Home and Fleetwood jobs. */
+
+function loadSample() {
+  usingSample = true;
+  const t = new Date();
+  const d = n => iso(addDays(t, n));
+  leadTimes = [
+    { Vendor: 'SnapAV', Match: '', Weeks: '2' },
+    { Vendor: 'Lutron', Match: '', Weeks: '2' },
+    { Vendor: 'Lutron', Match: 'shade', Weeks: '5' },
+    { Vendor: 'ADI', Match: '', Weeks: '1' },
+    { Vendor: 'Trends', Match: '', Weeks: '2' }
+  ];
+  projects = [
+    { ProjectName: 'New Harris Home, 220 Handsart Blvd', ProjectNumber: 'ADVAN-3401', StartDate: d(18),
+      DaysRoughIn: '6', DaysFinish: '3', TasksJson: '[]',
+      OrderLinesJson: JSON.stringify([
+        { model: 'RJ45 Cat6 Ends', desc: 'Cat6e Ends', vendor: 'ADI', cost: 0.42, qty: 62, phase: 'finish' },
+        { model: 'CAT6', desc: 'Cat6 U/UTP 23AWG (per 1000ft)', vendor: 'Trends', cost: 0.28, qty: 33, phase: 'roughIn' },
+        { model: 'MP1S', desc: 'Single gang low voltage stud bracket', vendor: 'Trends', cost: 1.55, qty: 12, phase: 'roughIn' },
+        { model: 'SIVOIA QS Triathlon Shade', desc: 'Lutron motorised roller shade', vendor: 'Lutron', cost: 980, qty: 4, phase: 'finish' }
+      ]) },
+    { ProjectName: 'New Maric Home, 5925 Southboine Dr', ProjectNumber: 'ADVAN-3346', StartDate: d(-30),
+      DaysRoughIn: '7.5', DaysFinish: '3.5',
+      TasksJson: JSON.stringify([{ start: d(9), end: d(9), phase: 'finish', progress: 'Lighting/Shades' }]),
+      OrderLinesJson: JSON.stringify([
+        { model: 'RJ45 Cat6 Ends', desc: 'Cat6e Ends', vendor: 'ADI', cost: 0.42, qty: 12, phase: 'finish' },
+        { model: 'LUM-820-IP-TFHB', desc: 'Luma X20 8MP turret camera', vendor: 'SnapAV', cost: 490, qty: 8, phase: 'finish' },
+        { model: 'QN85QN82HA', desc: 'Samsung 85" Neo QLED', vendor: '', cost: 3200, qty: 1, phase: 'finish' }
+      ]) },
+    { ProjectName: 'Show Home — Sage Creek', ProjectNumber: 'ADVAN-3455', StartDate: '',
+      DaysRoughIn: '9', DaysFinish: '4', TasksJson: '[]',
+      OrderLinesJson: JSON.stringify([
+        { model: 'AN-220-RT', desc: 'Araknis 220 single-WAN router', vendor: 'SnapAV', cost: 305, qty: 2, phase: 'roughIn' }
+      ]) }
+  ];
+}
+
+init().catch(e => { console.error(e); renderSignIn(); });
+</script>
+</body>
+</html>
