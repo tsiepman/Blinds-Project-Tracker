@@ -29,8 +29,9 @@ async function main() {
     clientSecret: process.env.AZURE_CLIENT_SECRET,
   });
 
-  await graph.siteId(SITE_HOSTNAME, SITE_PATH);
-
+  // D-Tools first, SharePoint second. The D-Tools half needs nothing but the API key, so
+  // a dry run can prove it works -- endpoints, catalog map, parsing -- before the Azure
+  // admin consent exists. SharePoint is only touched once there is something to write.
   const projects = await si.projects();
   console.log(`Projects published to the integration: ${projects.length}`);
 
@@ -48,13 +49,22 @@ async function main() {
     .digest('hex').slice(0, 16);
 
   const existing = new Map();
-  for (const it of await graph.items(LIST)) {
-    const f = it.fields ?? {};
-    if (f.ProjectId) existing.set(f.ProjectId, { itemId: it.id, ...f });
+  try {
+    await graph.siteId(SITE_HOSTNAME, SITE_PATH);
+    for (const it of await graph.items(LIST)) {
+      const f = it.fields ?? {};
+      if (f.ProjectId) existing.set(f.ProjectId, { itemId: it.id, ...f });
+    }
+    console.log(`Already on the board: ${existing.size}`);
+  } catch (e) {
+    // A real run must not continue blind -- it would create duplicates of everything.
+    if (!dryRun) throw e;
+    console.log(`\nSharePoint not reachable (${e.message.slice(0, 120)})`);
+    console.log('Dry run continues as if the list were empty. Expected until Azure admin consent is granted.\n');
   }
-  console.log(`Already on the board: ${existing.size}`);
 
   let created = 0, updated = 0, skipped = 0, unchanged = 0;
+  const stats = { withStart: 0, withTasks: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
 
   for (const p of projects) {
     if (MIN_PRICE && Number(p.Price || 0) < MIN_PRICE) { skipped++; continue; }
@@ -119,10 +129,17 @@ async function main() {
       SyncedAt: new Date().toISOString(),
     };
 
+    // Tallies for the end-of-run report.
+    const lines = JSON.parse(orders);
+    stats.withStart += startDate ? 1 : 0;
+    stats.withTasks += spans.length ? 1 : 0;
+    stats.lines += lines.length;
+    for (const l of lines) stats[l.vendorSource || 'noVendor']++;
+
     if (!prior) {
       if (!dryRun) await graph.create(LIST, fields);
       created++;
-      console.log(`  + ${fields.Title} — ${fields.ProjectName}`);
+      console.log(`  + ${String(fields.Title).padEnd(11)} start ${(startDate || '—').padEnd(10)}  tasks ${String(spans.length).padStart(3)}  lines ${String(lines.length).padStart(3)}  ${fields.ProjectName}`);
     } else if (rebuild || String(prior.TasksJson || '') !== fields.TasksJson) {
       if (!dryRun) await graph.update(LIST, prior.itemId, fields);
       updated++;
@@ -133,6 +150,15 @@ async function main() {
   }
 
   console.log(`\ncreated ${created}  updated ${updated}  unchanged ${unchanged}  below MIN_PRICE ${skipped}`);
+  const shown = created + updated + unchanged;
+  console.log(
+    `\nprojects with a StartDate : ${stats.withStart} of ${shown}` +
+    `\nprojects with tasks       : ${stats.withTasks} of ${shown}` +
+    `\norder lines               : ${stats.lines}` +
+    `\n  vendor from catalog     : ${stats.catalog}` +
+    `\n  vendor from project copy: ${stats.project}` +
+    `\n  no vendor at all        : ${stats.noVendor}`
+  );
   if (dryRun) console.log('--dry-run: nothing was written.');
   if (!projects.length) {
     console.log(
