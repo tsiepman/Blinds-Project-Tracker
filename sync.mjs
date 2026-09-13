@@ -37,16 +37,27 @@ async function main() {
 
   // Vendor is resolved against the catalog rather than the project item, so one catalog
   // fix reaches every job instead of needing an item-by-item edit in each one.
-  const vendorMap = await catalogVendors(si);
-  console.log(`Catalog products seen in the feed: ${vendorMap.size}`);
+  const catalogs = (await si.listCatalogs()).Catalogs;
+  console.log(`Catalog messages in the feed: ${catalogs.length}`);
 
-  // A fingerprint of everything order lines take from the catalog. A vendor fix on an
-  // existing product leaves the product count alone, so counting would miss it; this
-  // changes on any edit that matters. Stored in CatalogSeen.
+  // Fingerprint of the catalog feed, stored in CatalogSeen. Every catalog edit arrives as
+  // a new message, so the list of message ids moves whenever a vendor fix does -- and
+  // reading that list is one small request, where reading the products means fetching
+  // every message (the base catalog alone is ~9,000 product rows).
   const catalogPrint = createHash('sha1')
-    .update([...vendorMap.entries()].sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => [k, v.vendor, v.cost, v.rq, v.part].join('|')).join('\n'))
+    .update(catalogs.map(c => c.Id).join('\n'))
     .digest('hex').slice(0, 16);
+
+  // So products are only read when some project actually needs rebuilding, and at most
+  // once per run. On a quiet twenty-minute tick nothing needs it.
+  let vendorMap = null;
+  const getVendorMap = async () => {
+    if (!vendorMap) {
+      vendorMap = await catalogVendors(si, catalogs);
+      console.log(`  (catalog read: ${vendorMap.size} products)`);
+    }
+    return vendorMap;
+  };
 
   const existing = new Map();
   try {
@@ -65,6 +76,7 @@ async function main() {
 
   let created = 0, updated = 0, skipped = 0, unchanged = 0;
   const stats = { withStart: 0, withTasks: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
+  const noVendorModels = new Map();                 // model -> number of jobs it is on
 
   for (const p of projects) {
     if (MIN_PRICE && Number(p.Price || 0) < MIN_PRICE) { skipped++; continue; }
@@ -99,7 +111,7 @@ async function main() {
       // would be 14,000 rows, past SharePoint's 5,000-item query threshold. Filtering
       // first cuts a job to roughly 70, so this stays one row per project and the
       // Orders page aggregates across them in a single request.
-      orders = JSON.stringify(orderLines(detail, vendorMap));
+      orders = JSON.stringify(orderLines(detail, await getVendorMap()));
     }
 
     // Tasks are cheap and change independently of the project, so always refresh them.
@@ -134,7 +146,10 @@ async function main() {
     stats.withStart += startDate ? 1 : 0;
     stats.withTasks += spans.length ? 1 : 0;
     stats.lines += lines.length;
-    for (const l of lines) stats[l.vendorSource || 'noVendor']++;
+    for (const l of lines) {
+      stats[l.vendorSource || 'noVendor']++;
+      if (!l.vendorSource) noVendorModels.set(l.model, (noVendorModels.get(l.model) ?? 0) + 1);
+    }
 
     if (!prior) {
       if (!dryRun) await graph.create(LIST, fields);
@@ -159,6 +174,13 @@ async function main() {
     `\n  vendor from project copy: ${stats.project}` +
     `\n  no vendor at all        : ${stats.noVendor}`
   );
+  // The catalog fixes worth doing first: products with no vendor, by how many jobs they
+  // are on. A fix in the catalog reaches every one of those jobs on the next run.
+  if (noVendorModels.size) {
+    console.log(`\nno vendor, most jobs first (${noVendorModels.size} products):`);
+    [...noVendorModels].sort((a, b) => b[1] - a[1]).slice(0, 25)
+      .forEach(([m, n]) => console.log(`  ${String(n).padStart(3)}  ${m}`));
+  }
   if (dryRun) console.log('--dry-run: nothing was written.');
   if (!projects.length) {
     console.log(

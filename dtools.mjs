@@ -58,7 +58,7 @@ export class DTools {
   /** Scheduled tasks for one project. */
   tasks(projectId) { return this.#get(`/Subscribe/Tasks/ByProject/${encodeURIComponent(projectId)}`); }
 
-  /** Every catalog message in the queue, newest first. Headers only -- no products. */
+  /** Every catalog message in the queue, OLDEST first. Headers only -- no products. */
   async listCatalogs({ pageSize = 200 } = {}) {
     const all = [];
     for (let page = 1; ; page++) {
@@ -67,9 +67,11 @@ export class DTools {
       all.push(...rows);
       if (all.length >= (d.TotalCount ?? 0) || rows.length === 0) break;
     }
-    // Sorted here rather than trusting the API's order, because catalogVendors relies on
-    // newest-wins when the same model appears in more than one message.
-    all.sort((a, b) => (b.PublishedOnUnixTimeMs ?? 0) - (a.PublishedOnUnixTimeMs ?? 0));
+    // Catalog headers carry only PublishedOn ("2026-09-12T23:26:00") -- not the
+    // PublishedOnUnixTimeMs that project messages have, so sorting on that was a no-op
+    // that only worked because the API happens to return newest first. ISO strings sort
+    // correctly as text, which avoids any timezone parsing.
+    all.sort((a, b) => String(a.PublishedOn || '').localeCompare(String(b.PublishedOn || '')));
     return { Catalogs: all };
   }
 
@@ -157,13 +159,15 @@ function round1(n) { return Math.round(n * 10) / 10; }
    the products you fix are precisely the ones that arrive. The map fills in as the work
    gets done.
 
-   The feed is deltas, so this is cumulative: merge what each run sees into what is
-   already known rather than replacing it. */
-export async function catalogVendors(si, { maxCatalogs = 100 } = {}) {
-  const { Catalogs = [] } = await si.listCatalogs();
-  const ordered = Catalogs.slice(0, maxCatalogs).reverse();   // newest N, applied oldest first so newest wins
+   The feed is deltas, so EVERY message has to be read, oldest first, newest copy of a
+   product winning. Do not cap it to the newest N: the base catalog is the OLDEST data in
+   the queue -- the first publish on 2026-04-02 carried 5,217 products and a republish on
+   04-15 another 3,727, while daily messages since carry 5 to 30. A cap of 100 was
+   silently dropping both once the queue passed 100 messages, leaving only products
+   edited since late April. */
+export async function catalogVendors(si, catalogs) {
+  const ordered = catalogs ?? (await si.listCatalogs()).Catalogs;   // oldest first
   const map = new Map();
-  const rqUse = new Map();                          // RQ SKU -> set of models using it
   for (const cat of ordered) {
     const full = await si.getCatalog(cat.Id);
     for (const p of full.Products ?? []) {
@@ -171,27 +175,30 @@ export async function catalogVendors(si, { maxCatalogs = 100 } = {}) {
       const key = p.Model.trim().toLowerCase();
       // CustomField1 holds the RepairQ SKU. It is the only bridge to the RQ stock
       // report, and it is heavily polluted -- one dead value, AVARNS000635, sits on 162
-      // catalog products and does not exist in RQ at all. Track which SKUs are used by
-      // more than one model so the untrustworthy ones can be ignored rather than
-      // silently returning another product's stock.
+      // catalog products and does not exist in RQ at all.
       const rq = String(p.CustomField1 || '').trim();
-      if (rq && rq !== '-') {
-        const r = rq.toUpperCase();
-        if (!rqUse.has(r)) rqUse.set(r, new Set());
-        rqUse.get(r).add(key);
-      }
       map.set(key, {
         model: p.Model,
         vendor: (p.Vendor && p.Vendor !== 'N/A') ? p.Vendor : '',
         cost: Number(p.UnitCost) || 0,
         rq: (rq && rq !== '-') ? rq : '',
         part: p.PartNumber || '',
+        // Read from the catalog for the same reason vendor is: ticking Do Not Order on
+        // ARTPART or PERDIEM once should clear it from every job, not just new ones.
+        doNotOrder: !!p.DoNotOrder,
       });
     }
   }
-  // Second pass: blank out RQ SKUs that identify more than one product.
+  // Blank out RQ SKUs that identify more than one product, so an untrustworthy one is
+  // ignored rather than silently returning another product's stock. Counted on the final
+  // map, not while reading -- a SKU someone has since corrected must not still count
+  // against the product it used to be on.
+  const rqUse = new Map();                          // RQ SKU -> number of models using it
   for (const v of map.values()) {
-    if (v.rq && (rqUse.get(v.rq.toUpperCase())?.size ?? 0) > 1) v.rq = '';
+    if (v.rq) rqUse.set(v.rq.toUpperCase(), (rqUse.get(v.rq.toUpperCase()) ?? 0) + 1);
+  }
+  for (const v of map.values()) {
+    if (v.rq && rqUse.get(v.rq.toUpperCase()) > 1) v.rq = '';
   }
   return map;
 }
@@ -227,6 +234,7 @@ export function orderLines(detail, vendorMap) {
     // Catalog first, item second. The item's copy is a snapshot from whenever it was
     // added; the catalog is current. This is what lets one catalog fix reach every job.
     const cat = vendorMap?.get(key);
+    if (cat?.doNotOrder) continue;                         // flagged in the catalog since quoting
     const fromCatalog = cat?.vendor;
     const fromItem = (it.Vendor && it.Vendor !== 'N/A') ? it.Vendor : '';
     const row = byProduct.get(key) ?? {
