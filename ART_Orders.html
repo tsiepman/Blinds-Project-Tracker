@@ -689,7 +689,9 @@ function loadSample() {
       OrderLinesJson: JSON.stringify([
         { model: 'RJ45 Cat6 Ends', desc: 'Cat6e Ends', vendor: 'ADI', cost: 0.42, qty: 62, phase: 'finish' },
         { model: 'CAT6', desc: 'Cat6 U/UTP 23AWG (price per 1000 ft)', vendor: 'Trends', cost: 0.28, qty: 3245, phase: 'roughIn', bulk: true },
-        { model: '16-2 Speaker Wire', desc: '16 AWG 2 conductor (price per 1000 ft)', vendor: 'Sonance', cost: 0.30, qty: 2025, phase: 'roughIn', bulk: true },
+        // Real values from the Harris job. Accessories keep their own vendor — this
+        // hangs off a Sonance IS8 but is bought from Trends.
+        { model: '16-2 Speaker Wire', desc: '16 AWG 2 conductor (price per 1000 ft)', vendor: 'Trends', cost: 0.30, qty: 2025, phase: 'roughIn', bulk: true },
         { model: 'MP1S', desc: 'Single gang low voltage stud bracket', vendor: 'Trends', cost: 1.55, qty: 12, phase: 'roughIn' },
         { model: 'SIVOIA QS Triathlon Shade', desc: 'Lutron motorised roller shade', vendor: 'Lutron', cost: 980, qty: 4, phase: 'finish' }
       ]) },
