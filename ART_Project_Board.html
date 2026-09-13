@@ -160,8 +160,18 @@ async function load() {
   try {
     if (!siteId) siteId = (await graph('/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
     if (!listId) listId = (await graph('/sites/' + siteId + '/lists/' + LIST)).id;
-    const d = await graph('/sites/' + siteId + '/lists/' + listId + '/items?expand=fields&$top=200');
-    rows = (d.value || []).map(i => shape(i.fields || {}));
+    // Follow nextLink rather than trusting one page -- past the page size, projects would
+    // otherwise drop off the board with no error.
+    const all = [];
+    let url = '/sites/' + siteId + '/lists/' + listId + '/items?expand=fields&$top=200';
+    for (;;) {
+      const d = await graph(url);
+      if (!d) return;                                    // redirecting to sign in
+      all.push(...(d.value || []));
+      if (!d['@odata.nextLink']) break;
+      url = d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '');
+    }
+    rows = all.map(i => shape(i.fields || {}));
     usingSample = false;
     if (!rows.length) { rows = SAMPLE.map(shape); usingSample = true; }
   } catch (e) {
@@ -245,8 +255,10 @@ function segmentsFor(p, range) {
     }
   }
 
-  return segs.filter(s => parseD(s.to) >= range.from && parseD(s.from) <= range.to);
+  return segs;
 }
+
+function inWindow(s, range) { return parseD(s.to) >= range.from && parseD(s.from) <= range.to; }
 
 function labelOf(tasks, from, to) {
   const inRange = tasks.filter(t => t.start >= from && t.start <= to);
@@ -269,8 +281,12 @@ function render() {
 
   const scheduled = [], unscheduled = [];
   for (const p of rows) {
-    const segs = segmentsFor(p, range);
-    (segs.length ? scheduled : unscheduled).push({ p, segs });
+    const all = segmentsFor(p, range);
+    // Only a job with no dates at all belongs in the strip. One whose work sits wholly
+    // outside the window -- finished, or not starting for months -- simply is not shown.
+    if (!all.length) { unscheduled.push({ p, segs: [] }); continue; }
+    const segs = all.filter(s => inWindow(s, range));
+    if (segs.length) scheduled.push({ p, segs });
   }
   scheduled.sort((a, b) => (a.segs[0]?.from || '').localeCompare(b.segs[0]?.from || ''));
 
@@ -325,7 +341,7 @@ function render() {
   }).join('');
 
   const un = unscheduled.length
-    ? '<div class="unscheduled"><h3>No start date — not on the board</h3><div class="items">' +
+    ? '<div class="unscheduled"><h3>No dates in D-Tools — not on the board</h3><div class="items">' +
       unscheduled.map(u => esc(u.p.name || u.p.number) + (u.p.builder ? ' <span style="color:var(--text3)">(' + esc(u.p.builder) + ')</span>' : '')).join(' &nbsp;·&nbsp; ') +
       '</div></div>'
     : '';
