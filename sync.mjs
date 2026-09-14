@@ -74,7 +74,7 @@ async function main() {
   }
 
   let created = 0, updated = 0, unchanged = 0;
-  const stats = { withStart: 0, withTasks: 0, board: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
+  const stats = { withStart: 0, withTasks: 0, board: 0, active: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
   const noVendorModels = new Map();                 // model -> number of jobs it is on
 
   for (const p of projects) {
@@ -143,8 +143,12 @@ async function main() {
     stats.withStart += startDate ? 1 : 0;
     stats.withTasks += spans.length ? 1 : 0;
     stats.board += Number(p.Price || 0) >= 10000 ? 1 : 0;   // report only -- matches the board's MIN_PRICE
-    stats.lines += lines.length;
-    for (const l of lines) {
+    // Order-line figures count only jobs the Orders page shows. It hides Completed jobs,
+    // and a missing vendor on a finished job is not worth anyone's time to fix.
+    const active = !String(p.Progress || '').trim().toLowerCase().startsWith('complete');
+    stats.active += active ? 1 : 0;
+    if (active) stats.lines += lines.length;
+    for (const l of active ? lines : []) {
       stats[l.vendorSource || 'noVendor']++;
       if (!l.vendorSource) noVendorModels.set(l.model, (noVendorModels.get(l.model) ?? 0) + 1);
     }
@@ -169,6 +173,7 @@ async function main() {
     `\n  $10k and over           : ${stats.board}  (the wall board shows these)` +
     `\nprojects with a StartDate : ${stats.withStart} of ${shown}` +
     `\nprojects with tasks       : ${stats.withTasks} of ${shown}` +
+    `\nnot Completed             : ${stats.active}  (what the Orders page shows; figures below are these jobs only)` +
     `\norder lines               : ${stats.lines}` +
     `\n  vendor from catalog     : ${stats.catalog}` +
     `\n  vendor from project copy: ${stats.project}` +
@@ -177,7 +182,7 @@ async function main() {
   // The catalog fixes worth doing first: products with no vendor, by how many jobs they
   // are on. A fix in the catalog reaches every one of those jobs on the next run.
   if (noVendorModels.size) {
-    console.log(`\nno vendor, most jobs first (${noVendorModels.size} products):`);
+    console.log(`\nno vendor on jobs not yet Completed, most jobs first (${noVendorModels.size} products):`);
     [...noVendorModels].sort((a, b) => b[1] - a[1]).slice(0, 25)
       .forEach(([m, n]) => console.log(`  ${String(n).padStart(3)}  ${m}`));
   }
