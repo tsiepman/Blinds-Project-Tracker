@@ -27,7 +27,5 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          # Optional repository variable. Leave unset to show every approved project.
-          MIN_PRICE: ${{ vars.MIN_PRICE }}
         # Scheduled runs have no inputs, so this is empty and they always write.
         run: node sync.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
