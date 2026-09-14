@@ -182,6 +182,7 @@ let showCovered = false;          // lines fully covered by stock are hidden unl
 // Suppliers expanded on the By supplier view, remembered per browser.
 let openVendors = (() => { try { return new Set(JSON.parse(localStorage.getItem('orders.openVendors') || '[]')); } catch { return new Set(); } })();
 let vendorRefs = [];
+let catalogVendors = [];         // every supplier in the D-Tools catalog, saved by the sync (StockSnapshot row "vendors")
 let view = (() => { try { return localStorage.getItem('orders.view') === 'job' ? 'job' : 'supplier'; } catch { return 'supplier'; } })();
 let jobSearch = '', openJobs = new Set(), busy = false;
 let rowRefs = [], jobRefs = [];     // what the onclick indexes in the current render point at
@@ -261,8 +262,12 @@ async function load() {
     sessionDone.clear();
     try {
       const st = await items(LIST.stock);
-      if (st.length) {
-        const f = st[0].fields || {};
+      // The list holds two rows: "stock" (written here) and "vendors" (written by the sync).
+      const vrow = st.find(i => (i.fields || {}).Title === 'vendors');
+      if (vrow) { try { catalogVendors = JSON.parse(vrow.fields.DataJson || '[]'); } catch { catalogVendors = []; } }
+      const srow = st.find(i => (i.fields || {}).Title !== 'vendors');
+      if (srow) {
+        const f = srow.fields || {};
         const saved = JSON.parse(f.DataJson || '{}');
         // v2 carries which products the report was checked against; older saves are a bare map.
         if (saved && saved.v === 2) { stockMap = saved.m || {}; stockModels = new Set(saved.models || []); }
@@ -507,7 +512,7 @@ function render() {
       tot('', toBuy.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
     '</div>' +
     (covered.length ? '<div style="margin:-6px 0 14px"><button class="btn btn-ghost btn-sm" onclick="toggleCovered()">' + (showCovered ? 'Hide' : 'Show') + ' ' + covered.length + ' line' + (covered.length === 1 ? '' : 's') + ' covered by stock</button></div>' : '') +
-    stockPanel() + leadPanel(built) + body + '</div>';
+    stockPanel() + leadPanel() + body + '</div>';
 }
 
 /* ---------- by job ----------
@@ -626,17 +631,30 @@ async function jobLine(i, n, on) {
 /* Lead times, editable in place. Vendors are seeded from whatever is actually on the
    order list, so you never have to remember who you buy from -- the ones you have lines
    for are already there, with the default applied until you set one. */
-function leadPanel(rows) {
-  const vendors = [...new Set(rows.map(r => r.vendor).filter(Boolean))].sort();
+// Suppliers on any open job, whatever the look-ahead. A lead time matters as soon as a
+// supplier has something to buy, not only once it falls inside the next few weeks.
+function openJobVendors() {
+  const s = new Set();
+  for (const p of projects) { if (isCompleted(p)) continue; for (const l of linesOf(p)) if (l.vendor) s.add(l.vendor); }
+  return [...s].sort((a, b) => a.localeCompare(b));
+}
+
+function leadPanel() {
+  const vendors = openJobVendors();
   const known = new Set(leadTimes.map(r => String(r.Vendor || '').trim().toLowerCase()));
   const missing = vendors.filter(v => !known.has(v.toLowerCase()));
 
   // Vendor is a picker, not free text. Typing "Sonace" would silently match nothing and
   // drop that supplier to the default lead time with no error shown — the worst kind of
-  // bug, because the dates just come out wrong. Options come from the vendors actually
-  // on the order list, so the list is always relevant.
+  // bug, because the dates just come out wrong. Options are every supplier in the D-Tools
+  // catalog (saved by the sync), so a supplier added there can be given a lead time
+  // before anything from it is on a job.
   const vendorOpts = (cur) => {
-    const all = [...new Set([...vendors, ...leadTimes.map(r => r.Vendor).filter(Boolean)])].sort();
+    const seen = new Map();
+    for (const v of [...catalogVendors, ...vendors, ...leadTimes.map(r => r.Vendor).filter(Boolean)]) {
+      const k = String(v).trim().toLowerCase(); if (k && !seen.has(k)) seen.set(k, String(v).trim());
+    }
+    const all = [...seen.values()].sort((a, b) => a.localeCompare(b));
     return '<option value=""' + (cur ? '' : ' selected') + '>— pick a supplier —</option>' +
       all.map(v => '<option value="' + esc(v) + '"' + (String(cur || '').toLowerCase() === v.toLowerCase() ? ' selected' : '') + '>' + esc(v) + '</option>').join('');
   };
@@ -848,7 +866,8 @@ async function saveStock() {
     const data = JSON.stringify({ v: 2, m: stockMap, models: stockModels ? [...stockModels] : [] });
     if (data.length > 60000) { toast('Stock is too large to save — it works until the page is reloaded', true); return; }
     const fields = { Title: 'stock', DataJson: data, AsOf: stockAsOf };
-    if (all.length) await graph('PATCH', '/sites/' + siteId + '/lists/' + lid + '/items/' + all[0].id + '/fields', fields);
+    const mine = all.find(i => (i.fields || {}).Title !== 'vendors');   // never overwrite the sync's supplier row
+    if (mine) await graph('PATCH', '/sites/' + siteId + '/lists/' + lid + '/items/' + mine.id + '/fields', fields);
     else await graph('POST', '/sites/' + siteId + '/lists/' + lid + '/items', { fields });
   } catch (e) { console.warn('stock not saved:', e.message); }
 }
@@ -859,7 +878,7 @@ function ltAdd() { leadTimes.push({ Vendor: '', Match: '', Weeks: String(DEFAULT
 
 function ltAddMissing() {
   const known = new Set(leadTimes.map(r => String(r.Vendor || '').trim().toLowerCase()));
-  for (const v of [...new Set(build().map(r => r.vendor).filter(Boolean))].sort()) {
+  for (const v of openJobVendors()) {
     if (!known.has(v.toLowerCase())) leadTimes.push({ Vendor: v, Match: '', Weeks: String(DEFAULT_LEAD_WEEKS) });
   }
   ltDirty = true; ltOpen = true; render();

@@ -13,6 +13,9 @@ import { createHash } from 'node:crypto';
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
 const SITE_PATH = '/sites/ART43';
 const LIST = 'SchedProjects';
+// The Orders page's small shared list. Its "vendors" row holds every supplier name in the
+// catalog, for the lead-time picker; the page itself owns the "stock" row.
+const STOCK_LIST = 'StockSnapshot';
 
 // Every approved project is synced, whatever its price. The Orders page reads this list and
 // needs every job that has product to buy; the wall board applies its own $10k cut when it
@@ -59,6 +62,7 @@ async function main() {
   };
 
   const existing = new Map();
+  let vendorsRow = null;
   try {
     await graph.siteId(SITE_HOSTNAME, SITE_PATH);
     for (const it of await graph.items(LIST)) {
@@ -66,6 +70,9 @@ async function main() {
       if (f.ProjectId) existing.set(f.ProjectId, { itemId: it.id, ...f });
     }
     console.log(`Already in SchedProjects: ${existing.size}`);
+    for (const it of await graph.items(STOCK_LIST)) {
+      if ((it.fields ?? {}).Title === 'vendors') vendorsRow = it;
+    }
   } catch (e) {
     // A real run must not continue blind -- it would create duplicates of everything.
     if (!dryRun) throw e;
@@ -178,6 +185,24 @@ async function main() {
     } catch (e) {
       failed.push(fields.Title);
       console.log(`  ! ${fields.Title} not saved: ${e.message.slice(0, 200)}`);
+    }
+  }
+
+  // Supplier names for the lead-time picker, refreshed only when the catalog feed has moved.
+  // AsOf carries the catalog fingerprint on this row, not a date, so the check is one compare.
+  if (!vendorsRow || String(vendorsRow.fields?.AsOf || '') !== catalogPrint) {
+    const names = [...new Set([...(await getVendorMap()).values()].map(v => v.vendor).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+    const fields = { Title: 'vendors', DataJson: JSON.stringify(names), AsOf: catalogPrint };
+    try {
+      if (!dryRun) {
+        if (vendorsRow) await graph.update(STOCK_LIST, vendorsRow.id, fields);
+        else await graph.create(STOCK_LIST, fields);
+      }
+      console.log(`\nsuppliers in the catalog: ${names.length}${dryRun ? '' : ' (saved for the lead-time picker)'}`);
+    } catch (e) {
+      failed.push('supplier list');
+      console.log(`  ! supplier list not saved: ${e.message.slice(0, 200)}`);
     }
   }
 
