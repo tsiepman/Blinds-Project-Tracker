@@ -281,12 +281,19 @@ function phaseDate(p, phase) {
   return iso(addDays(start, rough + 6));      // nominal gap between phases
 }
 
+// A job marked Completed in D-Tools has nothing left to buy, but it stays approved, so the
+// sync still carries it. 74 of 125 approved jobs were Completed when this was added --
+// left in, they would swamp the list with things already installed. Hidden here rather
+// than in the sync so the list keeps the full history.
+function isCompleted(p) { return String(p.Progress || '').trim().toLowerCase().startsWith('complete'); }
+
 function build() {
   const today = new Date();
   const horizonEnd = addDays(today, horizonWeeks * 7);
   const byKey = new Map();
 
   for (const p of projects) {
+    if (isCompleted(p)) continue;
     let lines = [];
     try { lines = JSON.parse(p.OrderLinesJson || '[]'); } catch {}
     for (const l of lines) {
@@ -350,6 +357,7 @@ function render() {
   const late = rows.filter(r => r.urgency === 'late');
   const soon = rows.filter(r => r.urgency === 'soon');
   const value = rows.reduce((n, r) => n + r.qty * r.cost, 0);
+  const completedCount = projects.filter(isCompleted).length;
 
   const vendors = new Map();
   for (const r of rows) {
@@ -373,7 +381,8 @@ function render() {
   document.getElementById('app').innerHTML =
     (usingSample ? '<div class="banner">Sample data — the sync has not written to SharePoint yet</div>' : '') +
     '<div class="wrap"><h1 class="page">Orders</h1>' +
-    '<p class="page-sub">What upcoming jobs need, grouped by supplier, counted back from when each phase starts.</p>' +
+    '<p class="page-sub">What upcoming jobs need, grouped by supplier, counted back from when each phase starts.' +
+      (completedCount ? ' ' + completedCount + ' job' + (completedCount === 1 ? '' : 's') + ' marked Completed in D-Tools ' + (completedCount === 1 ? 'is' : 'are') + ' hidden.' : '') + '</p>' +
     // Said plainly and permanently, because a big number beside a tick box reads as
     // "buy this many" and these are gross requirements. Stock netting arrives with
     // QuickBooks; until then the shelf still needs checking.
