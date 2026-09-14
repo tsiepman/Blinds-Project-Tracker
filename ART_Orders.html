@@ -255,7 +255,14 @@ async function load() {
     sessionDone.clear();
     try {
       const st = await items(LIST.stock);
-      if (st.length) { const f = st[0].fields || {}; stockMap = JSON.parse(f.DataJson || '{}'); stockAsOf = f.AsOf || ''; }
+      if (st.length) {
+        const f = st[0].fields || {};
+        const saved = JSON.parse(f.DataJson || '{}');
+        // v2 carries which products the report was checked against; older saves are a bare map.
+        if (saved && saved.v === 2) { stockMap = saved.m || {}; stockModels = new Set(saved.models || []); }
+        else { stockMap = saved || {}; stockModels = null; }
+        stockAsOf = f.AsOf || '';
+      }
     } catch (e) { /* list not created yet -- stock stays unloaded */ }
     usingSample = false;
     if (!projects.length) { loadSample(); }
@@ -645,6 +652,10 @@ let ltOpen = false, ltDirty = false, ltDeleted = [];
    no match genuinely have no stock, because the report only lists what you hold. */
 
 let stockMap = {}, stockAsOf = '', stockOpen = false;
+// Products (normalised model) that were on open jobs when the report was loaded. Only
+// their stock is kept -- the full report is ~6,800 SKUs, too big to save -- so a product
+// outside this set was never looked up and reads as unknown, not as zero. null = old save.
+let stockModels = null;
 
 function stockPanel() {
   const age = stockAsOf ? Math.floor((Date.now() - new Date(stockAsOf)) / 86400000) : null;
@@ -660,16 +671,51 @@ function stockPanel() {
       '<span class="vendor-meta">' + esc(label) + '</span>' +
       '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">' + (stockOpen ? 'hide' : 'update') + '</span>' +
     '</div><div class="lt-body">' +
-      '<p class="lt-hint">Run the inventory listing in RQ, open it in Excel, select all and paste here. ' +
+      '<p class="lt-hint">Export the <b>Inventory Listing</b> from RQ and choose the file — the .xls straight out of RQ works. ' +
+      'Or open it in Excel, select all and paste below. ' +
       'Anything the report does not list is treated as zero, which is correct — it only lists what you hold.</p>' +
-      '<textarea id="stockPaste" rows="4" placeholder="Paste the RQ inventory export"></textarea>' +
-      '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-sm" onclick="stockLoad()">Use this</button>' +
+      '<div style="margin-bottom:10px"><label class="btn btn-sm" style="display:inline-block">Choose file…' +
+        '<input type="file" accept=".xls,.xlsx,.csv,.txt" hidden onchange="stockFile(this)"></label></div>' +
+      '<textarea id="stockPaste" rows="3" placeholder="…or paste the report here"></textarea>' +
+      '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="stockLoad()">Use pasted text</button>' +
       (stockAsOf ? '<button class="btn btn-ghost btn-sm" onclick="stockClear()">Clear</button>' : '') + '</div>' +
     '</div></div>';
 }
 
 function stockToggle() { stockOpen = !stockOpen; render(); }
-function stockClear() { stockMap = {}; stockAsOf = ''; saveStock(); render(); }
+function stockClear() { stockMap = {}; stockModels = null; stockAsOf = ''; saveStock(); render(); }
+
+// RQ exports a genuine old-format .xls, which a browser cannot read on its own. SheetJS
+// can; it is ~900 KB, so it loads only when someone actually picks a spreadsheet.
+let sheetJs = null;
+function loadSheetJs() {
+  if (window.XLSX) return Promise.resolve();
+  if (!sheetJs) sheetJs = new Promise((ok, bad) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = ok;
+    s.onerror = () => { sheetJs = null; bad(new Error('the spreadsheet reader did not load — check the connection and try again')); };
+    document.head.appendChild(s);
+  });
+  return sheetJs;
+}
+
+async function stockFile(input) {
+  const file = input.files && input.files[0];
+  input.value = '';                                   // so picking the same file again still fires
+  if (!file) return;
+  try {
+    toast('Reading ' + file.name + '…');
+    let text;
+    if (/\.(csv|txt)$/i.test(file.name)) text = await file.text();
+    else {
+      await loadSheetJs();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      text = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { FS: '\t', RS: '\n', blankrows: false });
+    }
+    stockLoadText(text);
+  } catch (e) { toast('Could not read ' + file.name + ': ' + e.message, true); }
+}
 
 // Excel copies as tab-separated; a saved .csv is comma-separated. Sniff rather than ask.
 function parseDelimited(text) {
@@ -691,6 +737,10 @@ function parseDelimited(text) {
 function stockLoad() {
   const raw = document.getElementById('stockPaste').value.trim();
   if (!raw) { toast('Paste the report first', true); return; }
+  stockLoadText(raw);
+}
+
+function stockLoadText(raw) {
   const rows = parseDelimited(raw);
   // The export carries a title and a date stamp before the real header, so find the
   // header rather than assuming it is first.
@@ -712,11 +762,27 @@ function stockLoad() {
       if (k) { map[k] = (map[k] || 0) + q; used++; }
     }
   }
-  stockMap = map;
+  if (!used) { toast('Found the header but no in-stock rows with a quantity', true); return; }
+
+  // Keep only stock for products on open jobs. The whole report is too big to save
+  // (~105,000 characters against the list's limit), and nothing else is ever looked up.
+  const wanted = new Set(), models = new Set();
+  for (const p of projects) {
+    if (isCompleted(p)) continue;
+    for (const l of linesOf(p)) {
+      models.add(norm(l.model));
+      for (const k of [l.rq, l.mfr, l.model]) { const n = norm(k); if (n) wanted.add(n); }
+    }
+  }
+  const kept = {};
+  for (const k of wanted) if (map[k] != null) kept[k] = map[k];
+  stockMap = kept;
+  stockModels = models;
   stockAsOf = new Date().toISOString();
   saveStock();
   stockOpen = false;
-  toast('✓ Stock loaded — ' + Object.keys(map).length.toLocaleString() + ' keys');
+  const held = build().filter(r => r.stock > 0).length;
+  toast('✓ Stock loaded — ' + held + ' product' + (held === 1 ? ' on the list is' : 's on the list are') + ' on the shelf');
   render();
 }
 
@@ -726,6 +792,8 @@ function norm(s) { return String(s ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCa
 // manufacturer part number against the report's Manufacturer SKU column.
 function stockFor(r) {
   if (!stockAsOf) return null;
+  // Not on an open job when the report was loaded, so never looked up: unknown, not zero.
+  if (stockModels && !stockModels.has(norm(r.model))) return null;
   for (const k of [norm(r.rq), norm(r.mfr), norm(r.model)]) {
     if (k && stockMap[k] != null) return stockMap[k];
   }
@@ -737,7 +805,11 @@ async function saveStock() {
   try {
     const lid = await listId(LIST.stock);
     const all = await items(LIST.stock);
-    const fields = { Title: 'stock', DataJson: JSON.stringify(stockMap).slice(0, 100000), AsOf: stockAsOf };
+    // Never truncate: a cut-off JSON string fails to parse on the next load and the stock
+    // silently disappears. The filtering in stockLoadText keeps this well inside the limit.
+    const data = JSON.stringify({ v: 2, m: stockMap, models: stockModels ? [...stockModels] : [] });
+    if (data.length > 60000) { toast('Stock is too large to save — it works until the page is reloaded', true); return; }
+    const fields = { Title: 'stock', DataJson: data, AsOf: stockAsOf };
     if (all.length) await graph('PATCH', '/sites/' + siteId + '/lists/' + lid + '/items/' + all[0].id + '/fields', fields);
     else await graph('POST', '/sites/' + siteId + '/lists/' + lid + '/items', { fields });
   } catch (e) { console.warn('stock not saved:', e.message); }
@@ -807,8 +879,9 @@ function lineHtml(r) {
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
     '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) +
       (j.have > 0 ? ' <span class="had">(' + qty(j.have, r.bulk) + ' already marked)</span>' : '') + '</span></div>').join('') + '</div></div>' +
-    (r.stock === null ? '' :
-      '<div class="line-stock">have<br><b>' + qty(r.stock, r.bulk) + '</b></div>') +
+    (r.stock === null
+      ? (stockAsOf ? '<div class="line-stock" title="Not on an open job when stock was last loaded — load the report again">have<br><b style="color:var(--text3)">?</b></div>' : '')
+      : '<div class="line-stock">have<br><b>' + qty(r.stock, r.bulk) + '</b></div>') +
     '<div class="line-qty">' + qty(r.stock === null ? r.qty : r.order, r.bulk) + '</div>' +
     '<div class="line-by">' + by + '</div></div>';
 }
