@@ -14,10 +14,9 @@ const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
 const SITE_PATH = '/sites/ART43';
 const LIST = 'SchedProjects';
 
-// Projects below this price are left off the board. A wall display is readable at about
-// thirty bars and useless at three hundred, so this is the volume control. Set as a
-// repository variable rather than edited here.
-const MIN_PRICE = Number(process.env.MIN_PRICE || 0);
+// Every approved project is synced, whatever its price. The Orders page reads this list and
+// needs every job that has product to buy; the wall board applies its own $10k cut when it
+// reads (MIN_PRICE in ART_Project_Board.html). Filtering here once hid 46 jobs from ordering.
 
 const dryRun = process.argv.includes('--dry-run');
 
@@ -66,7 +65,7 @@ async function main() {
       const f = it.fields ?? {};
       if (f.ProjectId) existing.set(f.ProjectId, { itemId: it.id, ...f });
     }
-    console.log(`Already on the board: ${existing.size}`);
+    console.log(`Already in SchedProjects: ${existing.size}`);
   } catch (e) {
     // A real run must not continue blind -- it would create duplicates of everything.
     if (!dryRun) throw e;
@@ -74,13 +73,11 @@ async function main() {
     console.log('Dry run continues as if the list were empty. Expected until Azure admin consent is granted.\n');
   }
 
-  let created = 0, updated = 0, skipped = 0, unchanged = 0;
-  const stats = { withStart: 0, withTasks: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
+  let created = 0, updated = 0, unchanged = 0;
+  const stats = { withStart: 0, withTasks: 0, board: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
   const noVendorModels = new Map();                 // model -> number of jobs it is on
 
   for (const p of projects) {
-    if (MIN_PRICE && Number(p.Price || 0) < MIN_PRICE) { skipped++; continue; }
-
     const prior = existing.get(p.Id);
 
     // The full project record runs to well over a megabyte because it carries every
@@ -145,6 +142,7 @@ async function main() {
     const lines = JSON.parse(orders);
     stats.withStart += startDate ? 1 : 0;
     stats.withTasks += spans.length ? 1 : 0;
+    stats.board += Number(p.Price || 0) >= 10000 ? 1 : 0;   // report only -- matches the board's MIN_PRICE
     stats.lines += lines.length;
     for (const l of lines) {
       stats[l.vendorSource || 'noVendor']++;
@@ -164,9 +162,11 @@ async function main() {
     }
   }
 
-  console.log(`\ncreated ${created}  updated ${updated}  unchanged ${unchanged}  below MIN_PRICE ${skipped}`);
+  console.log(`\ncreated ${created}  updated ${updated}  unchanged ${unchanged}`);
   const shown = created + updated + unchanged;
   console.log(
+    `\nprojects synced           : ${shown}  (all go to the Orders page)` +
+    `\n  $10k and over           : ${stats.board}  (the wall board shows these)` +
     `\nprojects with a StartDate : ${stats.withStart} of ${shown}` +
     `\nprojects with tasks       : ${stats.withTasks} of ${shown}` +
     `\norder lines               : ${stats.lines}` +

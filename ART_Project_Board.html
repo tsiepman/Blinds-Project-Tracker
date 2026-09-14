@@ -113,6 +113,11 @@ const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_acce
 const LIST = 'SchedProjects';
 
 const MONTHS_AHEAD = 5;          // plus the current month = a 6-month window
+// Jobs below this price stay off the wall. A wall display is readable at about thirty
+// bars and useless at three hundred, so this is the volume control. It lives here rather
+// than in the sync because the Orders page reads the same list and needs EVERY job --
+// a $3k job still has product to order.
+const MIN_PRICE = 10000;
 const REFRESH_MS = 10 * 60 * 1000;
 const HARD_RELOAD_MS = 6 * 60 * 60 * 1000;   // kiosk hygiene: reload the page twice a shift
 
@@ -171,7 +176,9 @@ async function load() {
       if (!d['@odata.nextLink']) break;
       url = d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '');
     }
-    rows = all.map(i => shape(i.fields || {}));
+    rows = all.map(i => i.fields || {})
+      .filter(f => Number(f.Price || 0) >= MIN_PRICE)
+      .map(shape);
     usingSample = false;
     if (!rows.length) { rows = SAMPLE.map(shape); usingSample = true; }
   } catch (e) {
