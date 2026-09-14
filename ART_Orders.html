@@ -176,6 +176,7 @@ let projects = [], leadTimes = [];
 let ordered = new Map();            // "job|model" -> { id, qty } -- see "marking ordered"
 let usingSample = false;
 let horizonWeeks = 8;
+let showCovered = false;          // lines fully covered by stock are hidden unless asked for
 let view = (() => { try { return localStorage.getItem('orders.view') === 'job' ? 'job' : 'supplier'; } catch { return 'supplier'; } })();
 let jobSearch = '', openJobs = new Set(), busy = false;
 let rowRefs = [], jobRefs = [];     // what the onclick indexes in the current render point at
@@ -425,11 +426,16 @@ function render() {
     return;
   }
 
-  const rows = build();
-  const late = rows.filter(r => r.urgency === 'late');
-  const soon = rows.filter(r => r.urgency === 'soon');
+  const built = build();
+  // Stock on hand covers the whole need: nothing to buy, so it leaves the list and the
+  // counts. Still viewable, because stock is shared across jobs and worth a glance.
+  const covered = built.filter(r => r.stock !== null && r.order <= 0);
+  const rows = showCovered ? built : built.filter(r => !(r.stock !== null && r.order <= 0));
+  const toBuy = built.filter(r => !(r.stock !== null && r.order <= 0));
+  const late = toBuy.filter(r => r.urgency === 'late');
+  const soon = toBuy.filter(r => r.urgency === 'soon');
   // What is left to buy: net of stock once a report is loaded, the gross need before.
-  const value = rows.reduce((n, r) => n + r.order * r.cost, 0);
+  const value = toBuy.reduce((n, r) => n + r.order * r.cost, 0);
   // Rows ticked since the last load stay on screen, greyed, so a mis-tick can be undone.
   const live = new Set(rows.map(r => r.key));
   const doneRows = [...sessionDone.values()].filter(d => !live.has(d.key));
@@ -475,10 +481,12 @@ function render() {
     '<div class="totals">' +
       tot('late', late.length, 'overdue') +
       tot('soon', soon.length, 'this week') +
-      tot('', rows.length, 'lines') +
+      tot('', toBuy.length, 'lines to buy') +
       tot('', '$' + Math.round(value).toLocaleString(), stockAsOf ? 'est. cost to buy, after stock' : 'est. cost if all bought') +
-      tot('', rows.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
-    '</div>' + stockPanel() + leadPanel(rows) + body + '</div>';
+      tot('', toBuy.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
+    '</div>' +
+    (covered.length ? '<div style="margin:-6px 0 14px"><button class="btn btn-ghost btn-sm" onclick="toggleCovered()">' + (showCovered ? 'Hide' : 'Show') + ' ' + covered.length + ' line' + (covered.length === 1 ? '' : 's') + ' covered by stock</button></div>' : '') +
+    stockPanel() + leadPanel(built) + body + '</div>';
 }
 
 /* ---------- by job ----------
@@ -882,9 +890,10 @@ function lineHtml(r) {
   const stale = r.vendorSource === 'project'
     ? ' <span class="tag t-soon" title="Vendor came from this project, not the catalog — set it in the catalog and it fixes everywhere">catalog missing vendor</span>'
     : '';
-  return '<div class="line' + (done ? ' done' : '') + '">' +
+  const cov = !done && r.stock !== null && r.order <= 0;
+  return '<div class="line' + (done || cov ? ' done' : '') + '">' +
     '<div class="line-box"><input type="checkbox" aria-label="' + esc(r.model) + ' ordered"' + (done ? ' checked' : '') + (busy ? ' disabled' : '') + ' onchange="toggleRow(' + ref + ', this.checked)"></div>' +
-    '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + (done ? ' <span class="tag t-done">marked ordered</span>' : '') + '</div>' +
+    '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + (done ? ' <span class="tag t-done">marked ordered</span>' : '') + (cov ? ' <span class="tag t-done">covered by stock</span>' : '') + '</div>' +
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
     '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) +
       (j.have > 0 ? ' <span class="had">(' + qty(j.have, r.bulk) + ' already marked)</span>' : '') + '</span></div>').join('') + '</div></div>' +
@@ -896,6 +905,7 @@ function lineHtml(r) {
 }
 
 function setHorizon(w) { horizonWeeks = Number(w); render(); }
+function toggleCovered() { showCovered = !showCovered; render(); }
 
 /* ---------- marking ordered ----------
    One OrderedLines row per job per product:
