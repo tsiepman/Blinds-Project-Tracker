@@ -428,7 +428,8 @@ function render() {
   const rows = build();
   const late = rows.filter(r => r.urgency === 'late');
   const soon = rows.filter(r => r.urgency === 'soon');
-  const value = rows.reduce((n, r) => n + r.qty * r.cost, 0);
+  // What is left to buy: net of stock once a report is loaded, the gross need before.
+  const value = rows.reduce((n, r) => n + r.order * r.cost, 0);
   // Rows ticked since the last load stay on screen, greyed, so a mis-tick can be undone.
   const live = new Set(rows.map(r => r.key));
   const doneRows = [...sessionDone.values()].filter(d => !live.has(d.key));
@@ -449,7 +450,7 @@ function render() {
 
   const body = vendorOrder.length ? vendorOrder.map(([v, g]) => {
     const open = g.filter(r => !r.done);
-    const val = open.reduce((n, r) => n + r.qty * r.cost, 0);
+    const val = open.reduce((n, r) => n + r.order * r.cost, 0);
     return '<div class="vendor"><div class="vendor-head"><span class="vendor-name">' + esc(v) + '</span>' +
       '<span class="vendor-meta">' + open.length + ' line' + (open.length === 1 ? '' : 's') + ' · ~$' + val.toFixed(0) +
       (g.length > open.length ? ' · ' + (g.length - open.length) + ' just marked' : '') + '</span></div>' +
@@ -475,7 +476,7 @@ function render() {
       tot('late', late.length, 'overdue') +
       tot('soon', soon.length, 'this week') +
       tot('', rows.length, 'lines') +
-      tot('', '$' + Math.round(value).toLocaleString(), 'est. value if all bought') +
+      tot('', '$' + Math.round(value).toLocaleString(), stockAsOf ? 'est. cost to buy, after stock' : 'est. cost if all bought') +
       tot('', rows.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
     '</div>' + stockPanel() + leadPanel(rows) + body + '</div>';
 }
@@ -748,14 +749,22 @@ function stockLoadText(raw) {
   if (hIdx < 0) { toast('No "Product SKU" column found — is that the inventory listing?', true); return; }
   const head = rows[hIdx].map(h => h.trim().toLowerCase());
   const cSku = head.indexOf('product sku'), cMfr = head.indexOf('manufacturer sku');
-  const cQty = head.indexOf('quantity'), cStatus = head.indexOf('status');
+  const cStatus = head.indexOf('status');
+  // RQ names the quantity differently per report: the Inventory Listing (one row per unit)
+  // says "Quantity", the Inventory Availability Summary says "In Stock". Missing it used to
+  // read every row as zero and save an empty stock list with no warning.
+  const cQty = ['quantity', 'in stock', 'on hand', 'qty on hand', 'available', 'qty']
+    .map(n => head.indexOf(n)).find(i => i >= 0) ?? -1;
+  if (cQty < 0) { toast('Found "Product SKU" but no Quantity or In Stock column — is that an inventory report?', true); return; }
 
   const map = {};
   let used = 0;
   for (const r of rows.slice(hIdx + 1)) {
     if (cStatus >= 0 && (r[cStatus] || '').trim() && (r[cStatus] || '').trim().toLowerCase() !== 'in stock') continue;
-    const q = parseFloat(String(r[cQty] ?? '').replace(/[^0-9.\-]/g, '')) || 0;
-    if (!q) continue;
+    // Accounting format: the summary report shows oversold stock as "(20.00)".
+    const rawQ = String(r[cQty] ?? '').trim();
+    const q = (/^\(.*\)$/.test(rawQ) ? -1 : 1) * (parseFloat(rawQ.replace(/[^0-9.]/g, '')) || 0);
+    if (q <= 0) continue;
     for (const idx of [cSku, cMfr]) {
       if (idx < 0) continue;
       const k = norm(r[idx]);
@@ -881,7 +890,7 @@ function lineHtml(r) {
       (j.have > 0 ? ' <span class="had">(' + qty(j.have, r.bulk) + ' already marked)</span>' : '') + '</span></div>').join('') + '</div></div>' +
     (r.stock === null
       ? (stockAsOf ? '<div class="line-stock" title="Not on an open job when stock was last loaded — load the report again">have<br><b style="color:var(--text3)">?</b></div>' : '')
-      : '<div class="line-stock">have<br><b>' + qty(r.stock, r.bulk) + '</b></div>') +
+      : '<div class="line-stock">have<br><b' + (r.stock > 0 ? '' : ' style="color:var(--text3)"') + '>' + qty(r.stock, r.bulk) + '</b></div>') +
     '<div class="line-qty">' + qty(r.stock === null ? r.qty : r.order, r.bulk) + '</div>' +
     '<div class="line-by">' + by + '</div></div>';
 }
