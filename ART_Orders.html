@@ -63,6 +63,33 @@
   .t-soon { background: var(--yellow-dim); color: var(--yellow); }
   .t-ok { background: var(--surface2); color: var(--text3); }
   .t-none { background: var(--surface2); color: var(--text3); }
+  .t-done { background: var(--green-dim); color: var(--green); }
+  .jobs .had { color: var(--text3); }
+
+  /* View switch */
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .seg button { background: var(--bg); color: var(--text2); border: none; padding: 8px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--surface2); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+  .seg button:focus-visible, .job-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* By-job catch-up view */
+  .hint { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; color: var(--text2); line-height: 1.55; margin-bottom: 16px; }
+  .job { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 10px; overflow: hidden; }
+  .job.all { opacity: .7; }
+  .job-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px; cursor: pointer; flex-wrap: wrap; }
+  .job-chev { color: var(--text3); width: 12px; font-size: 11px; }
+  .job-num { font-family: var(--mono); font-size: 12.5px; color: var(--text3); }
+  .job-name { font-weight: 600; font-size: 14px; min-width: 0; }
+  .job-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .job-body { border-top: 1px solid var(--border); }
+  .job-phase { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 700; padding: 9px 16px 4px; background: var(--surface2); }
+  .jl { display: flex; gap: 12px; align-items: flex-start; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+  .jl:last-child { border-bottom: none; }
+  .jl.done .jl-main { opacity: .5; }
+  .jl-main { flex: 1; min-width: 0; }
+  .jl-vendor { font-size: 11.5px; color: var(--text3); min-width: 8em; text-align: right; }
+  .jl .line-qty { font-size: 15px; }
 
   .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
   .banner { background: var(--yellow-dim); color: var(--yellow); text-align: center; padding: 7px; font-size: 12.5px; font-weight: 600; }
@@ -100,6 +127,9 @@
   .card p { color: var(--text2); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
 
   @media (max-width: 720px) {
+    .job-acts { margin-left: 22px; }
+    .jl { flex-wrap: wrap; }
+    .jl-vendor { text-align: left; min-width: 0; }
     .line { flex-wrap: wrap; }
     .line-by { text-align: left; min-width: 0; }
     .line-desc { white-space: normal; }
@@ -125,8 +155,8 @@
    What to order, from whom, by when, for which jobs.
 
    Reads SchedProjects (written by the D-Tools sync) and LeadTimes.
-   Ticking a line records it in OrderedLines -- see the note on
-   writing back to D-Tools below.
+   Ticking records what was ordered, per job, in OrderedLines --
+   see "marking ordered" below.
    ============================================================ */
 
 const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
@@ -142,9 +172,14 @@ const BUFFER_WEEKS = 1;
 const DEFAULT_LEAD_WEEKS = 2;
 
 let msal_ = null, siteId = null, listIds = {};
-let projects = [], leadTimes = [], orderedKeys = new Set();
+let projects = [], leadTimes = [];
+let ordered = new Map();            // "job|model" -> { id, qty } -- see "marking ordered"
 let usingSample = false;
 let horizonWeeks = 8;
+let view = (() => { try { return localStorage.getItem('orders.view') === 'job' ? 'job' : 'supplier'; } catch { return 'supplier'; } })();
+let jobSearch = '', openJobs = new Set(), busy = false;
+let rowRefs = [], jobRefs = [];     // what the onclick indexes in the current render point at
+const sessionDone = new Map();      // supplier rows ticked since the last load, kept visible so they can be unticked
 
 /* ---------- auth / graph ---------- */
 
@@ -215,7 +250,9 @@ async function load() {
     // Keep the SharePoint item id alongside the fields, or saving an edit would create
     // a duplicate row instead of updating the existing one.
     leadTimes = lt.map(i => ({ id: i.id, ...(i.fields || {}) }));
-    orderedKeys = new Set(od.map(i => (i.fields || {}).LineKey).filter(Boolean));
+    ordered = new Map(od.filter(i => (i.fields || {}).LineKey)
+      .map(i => [i.fields.LineKey, { id: i.id, qty: parseOrderedQty(i.fields.Title) }]));
+    sessionDone.clear();
     try {
       const st = await items(LIST.stock);
       if (st.length) { const f = st[0].fields || {}; stockMap = JSON.parse(f.DataJson || '{}'); stockAsOf = f.AsOf || ''; }
@@ -287,6 +324,11 @@ function phaseDate(p, phase) {
 // than in the sync so the list keeps the full history.
 function isCompleted(p) { return String(p.Progress || '').trim().toLowerCase().startsWith('complete'); }
 
+// A job's buyable lines. l.ordered is D-Tools' own ordered flag, unused today but honoured.
+function linesOf(p) {
+  try { return JSON.parse(p.OrderLinesJson || '[]').filter(l => l.model && !l.ordered); } catch { return []; }
+}
+
 function build() {
   const today = new Date();
   const horizonEnd = addDays(today, horizonWeeks * 7);
@@ -294,10 +336,13 @@ function build() {
 
   for (const p of projects) {
     if (isCompleted(p)) continue;
-    let lines = [];
-    try { lines = JSON.parse(p.OrderLinesJson || '[]'); } catch {}
-    for (const l of lines) {
-      if (l.ordered) continue;                       // already marked in D-Tools
+    for (const l of linesOf(p)) {
+      // Only what is still unordered on THIS job counts. A change order that adds three
+      // more of something already marked shows up as just those three.
+      const need = Math.ceil(Number(l.qty) || 0);
+      const lkey = lineKey(p, l);
+      const have = Math.min(orderedQty(lkey), need);
+      if (need - have <= 0) continue;
       const needBy = phaseDate(p, l.phase || 'finish');
       const key = (l.vendor || 'zz') + '|' + String(l.model).trim().toLowerCase();
       const row = byKey.get(key) ?? {
@@ -312,8 +357,8 @@ function build() {
         rq: l.rq || '', mfr: l.mfr || '',      // keys for matching a pasted RQ report
         cost: Number(l.cost) || 0, qty: 0, jobs: [], needBy: null, orderBy: null
       };
-      row.qty += Number(l.qty) || 0;
-      row.jobs.push({ name: p.ProjectName || p.ProjectNumber || '', qty: Number(l.qty) || 0, needBy });
+      row.qty += need - have;
+      row.jobs.push({ name: p.ProjectName || p.ProjectNumber || '', qty: need - have, have, need, key: lkey, needBy });
       if (needBy && (!row.needBy || needBy < row.needBy)) row.needBy = needBy;
       byKey.set(key, row);
     }
@@ -353,36 +398,59 @@ function renderSignIn() {
 }
 
 function render() {
+  const completedCount = projects.filter(isCompleted).length;
+  const hidden = completedCount ? ' ' + completedCount + ' job' + (completedCount === 1 ? '' : 's') + ' marked Completed in D-Tools ' + (completedCount === 1 ? 'is' : 'are') + ' hidden.' : '';
+  const switcher =
+    '<div><label class="fld">View</label><div class="seg" role="tablist">' +
+      '<button role="tab" aria-selected="' + (view === 'supplier') + '" class="' + (view === 'supplier' ? 'on' : '') + '" onclick="setView(\'supplier\')">By supplier</button>' +
+      '<button role="tab" aria-selected="' + (view === 'job') + '" class="' + (view === 'job' ? 'on' : '') + '" onclick="setView(\'job\')">By job</button>' +
+    '</div></div>';
+  const head = (usingSample ? '<div class="banner">Sample data — the sync has not written to SharePoint yet</div>' : '') +
+    '<div class="wrap"><h1 class="page">Orders</h1>';
+
+  if (view === 'job') {
+    document.getElementById('app').innerHTML = head +
+      '<p class="page-sub">Every open job and what has been marked ordered on it.' + hidden + '</p>' +
+      '<div class="controls">' + switcher +
+        '<div style="flex:1 1 220px"><label class="fld" for="jobSearch">Find a job</label><input id="jobSearch" style="width:100%" placeholder="Number, name or client" value="' + esc(jobSearch) + '" oninput="setJobSearch(this.value)"></div>' +
+        '<div style="align-self:flex-end"><button class="btn btn-ghost btn-sm" onclick="load()">Refresh</button></div>' +
+      '</div>' + jobsView() + '</div>';
+    return;
+  }
+
   const rows = build();
   const late = rows.filter(r => r.urgency === 'late');
   const soon = rows.filter(r => r.urgency === 'soon');
   const value = rows.reduce((n, r) => n + r.qty * r.cost, 0);
-  const completedCount = projects.filter(isCompleted).length;
+  // Rows ticked since the last load stay on screen, greyed, so a mis-tick can be undone.
+  const live = new Set(rows.map(r => r.key));
+  const doneRows = [...sessionDone.values()].filter(d => !live.has(d.key));
+  rowRefs = [];
 
   const vendors = new Map();
-  for (const r of rows) {
+  for (const r of [...rows, ...doneRows]) {
     const v = r.vendor || '(no vendor set)';
     if (!vendors.has(v)) vendors.set(v, []);
     vendors.get(v).push(r);
   }
+  const rankOf = { late: 0, soon: 1, ok: 2, none: 3 };
   // Vendors with something late float to the top.
   const vendorOrder = [...vendors.entries()].sort((a, b) => {
-    const rank = g => Math.min(...g.map(r => ({ late: 0, soon: 1, ok: 2, none: 3 })[r.urgency]));
+    const rank = g => Math.min(4, ...g.filter(r => !r.done).map(r => rankOf[r.urgency]));
     return rank(a[1]) - rank(b[1]) || a[0].localeCompare(b[0]);
   });
 
   const body = vendorOrder.length ? vendorOrder.map(([v, g]) => {
-    const val = g.reduce((n, r) => n + r.qty * r.cost, 0);
+    const open = g.filter(r => !r.done);
+    const val = open.reduce((n, r) => n + r.qty * r.cost, 0);
     return '<div class="vendor"><div class="vendor-head"><span class="vendor-name">' + esc(v) + '</span>' +
-      '<span class="vendor-meta">' + g.length + ' line' + (g.length === 1 ? '' : 's') + ' · ~$' + val.toFixed(0) + '</span></div>' +
-      g.map(lineHtml).join('') + '</div>';
+      '<span class="vendor-meta">' + open.length + ' line' + (open.length === 1 ? '' : 's') + ' · ~$' + val.toFixed(0) +
+      (g.length > open.length ? ' · ' + (g.length - open.length) + ' just marked' : '') + '</span></div>' +
+      [...open, ...g.filter(r => r.done)].map(lineHtml).join('') + '</div>';
   }).join('') : '<div class="empty">Nothing to order in the next ' + horizonWeeks + ' weeks.</div>';
 
-  document.getElementById('app').innerHTML =
-    (usingSample ? '<div class="banner">Sample data — the sync has not written to SharePoint yet</div>' : '') +
-    '<div class="wrap"><h1 class="page">Orders</h1>' +
-    '<p class="page-sub">What upcoming jobs need, grouped by supplier, counted back from when each phase starts.' +
-      (completedCount ? ' ' + completedCount + ' job' + (completedCount === 1 ? '' : 's') + ' marked Completed in D-Tools ' + (completedCount === 1 ? 'is' : 'are') + ' hidden.' : '') + '</p>' +
+  document.getElementById('app').innerHTML = head +
+    '<p class="page-sub">What upcoming jobs need, grouped by supplier, counted back from when each phase starts.' + hidden + '</p>' +
     // Said plainly and permanently, because a big number beside a tick box reads as
     // "buy this many" and these are gross requirements. Stock netting arrives with
     // QuickBooks; until then the shelf still needs checking.
@@ -390,7 +458,7 @@ function render() {
       '<div style="background:var(--yellow-dim);color:var(--yellow);border-radius:var(--radius);padding:10px 14px;font-size:12.5px;margin-bottom:16px;line-height:1.55">' +
       '<b>No stock report loaded — these are quantities the jobs need, not what to buy.</b> ' +
       'Paste an RQ inventory export below and they become order quantities.</div>') +
-    '<div class="controls">' +
+    '<div class="controls">' + switcher +
       '<div><label class="fld">Look ahead</label><select id="horizon" onchange="setHorizon(this.value)">' +
         [4, 8, 12, 26].map(w => '<option value="' + w + '"' + (w === horizonWeeks ? ' selected' : '') + '>' + w + ' weeks</option>').join('') +
       '</select></div>' +
@@ -403,6 +471,119 @@ function render() {
       tot('', '$' + Math.round(value).toLocaleString(), 'est. value if all bought') +
       tot('', rows.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
     '</div>' + stockPanel() + leadPanel(rows) + body + '</div>';
+}
+
+/* ---------- by job ----------
+   For the one-time catch-up on jobs already underway, and afterwards for checking a
+   single job. Rough-in is usually all bought by the time a job is installing while trim
+   and shades are not, hence the two bulk buttons. */
+
+function jobList() {
+  const q = jobSearch.trim().toLowerCase();
+  return projects.filter(p => !isCompleted(p))
+    .map(p => {
+      const lines = linesOf(p).map(l => {
+        const need = Math.ceil(Number(l.qty) || 0), key = lineKey(p, l);
+        return { ...l, need, key, have: Math.min(orderedQty(key), need), phase: l.phase === 'roughIn' ? 'roughIn' : 'finish' };
+      }).filter(l => l.need > 0);
+      return { p, lines, done: lines.filter(l => l.have >= l.need).length };
+    })
+    .filter(j => j.lines.length)
+    .filter(j => !q || [j.p.ProjectNumber, j.p.ProjectName, j.p.Client].join(' ').toLowerCase().includes(q))
+    .sort((a, b) => String(b.p.ProjectNumber || '').localeCompare(String(a.p.ProjectNumber || ''), undefined, { numeric: true }));
+}
+
+function jobsView() {
+  const jobs = jobList();
+  jobRefs = jobs;
+  const untouched = jobs.filter(j => !j.lines.some(l => l.have > 0)).length;
+  const full = jobs.filter(j => j.done === j.lines.length).length;
+  return '<div class="hint"><b>Catching up on jobs already underway:</b> for each job, mark what has already been ordered or installed so it stays off the order list. ' +
+    'Usually that is <b>Rough-in ordered</b>, then open the job and untick anything still to buy. Marks count for that job only — the same product on another job still shows up.</div>' +
+    '<div class="totals">' + tot('', jobs.length, 'open jobs') + tot('soon', untouched, 'nothing marked yet') + tot('', full, 'fully marked') + '</div>' +
+    (jobs.length ? jobs.map(jobCard).join('') : '<div class="empty">' + (jobSearch ? 'No open job matches "' + esc(jobSearch) + '".' : 'No open jobs with anything to order.') + '</div>');
+}
+
+function jobCard(j, i) {
+  const open = openJobs.has(jobId(j.p));
+  const total = j.lines.length;
+  const rough = j.lines.filter(l => l.phase === 'roughIn');
+  const roughDone = rough.length > 0 && rough.every(l => l.have >= l.need);
+  const all = j.done === total;
+  const touched = j.lines.filter(l => l.have > 0).length;   // includes part-marked lines
+  const state = all ? '<span class="tag t-done">all marked</span>'
+    : touched ? '<span class="tag t-soon">' + j.done + ' of ' + total + ' marked' + (touched > j.done ? ', ' + (touched - j.done) + ' part' : '') + '</span>'
+    : '<span class="tag t-none">' + total + ' lines · none marked</span>';
+  const btn = (label, fn, disabled) => '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();' + fn + '"' + (disabled || busy ? ' disabled' : '') + '>' + label + '</button>';
+
+  let body = '';
+  if (open) {
+    const group = (phase, label) => {
+      const ls = j.lines.map((l, n) => [l, n]).filter(([l]) => l.phase === phase);
+      if (!ls.length) return '';
+      return '<div class="job-phase">' + label + '</div>' + ls.map(([l, n]) => {
+        const done = l.have >= l.need;
+        const part = !done && l.have > 0 ? ' <span class="tag t-soon">' + qty(l.have, l.bulk) + ' of ' + qty(l.need, l.bulk) + ' marked</span>' : '';
+        return '<div class="jl' + (done ? ' done' : '') + '">' +
+          '<div class="line-box"><input type="checkbox" aria-label="' + esc(l.model) + ' ordered"' + (done ? ' checked' : '') + (busy ? ' disabled' : '') + ' onchange="jobLine(' + i + ',' + n + ',this.checked)"></div>' +
+          '<div class="jl-main"><div class="line-model">' + esc(l.model) + part + '</div><div class="line-desc">' + esc(l.desc) + '</div></div>' +
+          '<div class="jl-vendor">' + esc(l.vendor || 'no vendor') + '</div>' +
+          '<div class="line-qty">' + qty(l.need, l.bulk) + '</div></div>';
+      }).join('');
+    };
+    body = '<div class="job-body">' + group('roughIn', 'Rough-in') + group('finish', 'Finish & trim') + '</div>';
+  }
+
+  return '<div class="job' + (all ? ' all' : '') + '">' +
+    '<div class="job-head" role="button" tabindex="0" aria-expanded="' + open + '" onclick="jobToggle(' + i + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();jobToggle(' + i + ')}">' +
+      '<span class="job-chev">' + (open ? '▾' : '▸') + '</span>' +
+      '<span class="job-num">' + esc(j.p.ProjectNumber || '') + '</span>' +
+      '<span class="job-name">' + esc(j.p.ProjectName || '') + '</span>' +
+      (j.p.Progress ? '<span class="tag t-ok">' + esc(j.p.Progress) + '</span>' : '') + state +
+      '<span class="job-acts">' +
+        btn('Rough-in ordered', 'jobMark(' + i + ',\'rough\')', !rough.length || roughDone) +
+        btn('Everything ordered', 'jobMark(' + i + ',\'all\')', all) +
+        (touched ? btn('Clear', 'jobClear(' + i + ')', false) : '') +
+      '</span>' +
+    '</div>' + body + '</div>';
+}
+
+function setView(v) { view = v; try { localStorage.setItem('orders.view', v); } catch {} render(); }
+
+// Re-rendering replaces the input, so put focus and the caret back where they were.
+function setJobSearch(v) {
+  jobSearch = v; render();
+  const el = document.getElementById('jobSearch');
+  if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
+}
+
+function jobToggle(i) {
+  const j = jobRefs[i]; if (!j) return;
+  const id = jobId(j.p);
+  openJobs.has(id) ? openJobs.delete(id) : openJobs.add(id);
+  render();
+}
+
+async function jobMark(i, which) {
+  const j = jobRefs[i]; if (!j) return;
+  const pick = which === 'rough' ? j.lines.filter(l => l.phase === 'roughIn') : j.lines;
+  if (await setMarks(pick.map(l => [l.key, l.need]))) {
+    toast('✓ ' + (which === 'rough' ? 'Rough-in' : 'Everything') + ' marked ordered on ' + (j.p.ProjectNumber || 'the job'));
+  }
+  render();
+}
+
+async function jobClear(i) {
+  const j = jobRefs[i]; if (!j) return;
+  if (!confirm('Clear every ordered mark on ' + (j.p.ProjectNumber || 'this job') + '? Its lines go back on the order list.')) return;
+  if (await setMarks(j.lines.filter(l => ordered.has(l.key)).map(l => [l.key, null]))) toast('Marks cleared on ' + (j.p.ProjectNumber || 'the job'));
+  render();
+}
+
+async function jobLine(i, n, on) {
+  const l = jobRefs[i] && jobRefs[i].lines[n]; if (!l) return;
+  if (await setMarks([[l.key, on ? l.need : null]])) toast(on ? '✓ Marked ordered' : 'Unmarked');
+  render();
 }
 
 /* Lead times, editable in place. Vendors are seeded from whatever is actually on the
@@ -609,7 +790,8 @@ function tot(cls, n, label) {
 }
 
 function lineHtml(r) {
-  const done = orderedKeys.has(r.key);
+  const done = !!r.done;
+  const ref = rowRefs.push(r) - 1;
   const by = r.orderBy
     ? '<span class="tag t-' + r.urgency + '">' + (r.days < 0 ? Math.abs(r.days) + 'd late' : r.days === 0 ? 'today' : 'in ' + r.days + 'd') + '</span>' +
       '<div style="color:var(--text3);margin-top:3px">order by ' + fmt(parseD(r.orderBy)) + '</div>'
@@ -620,10 +802,11 @@ function lineHtml(r) {
     ? ' <span class="tag t-soon" title="Vendor came from this project, not the catalog — set it in the catalog and it fixes everywhere">catalog missing vendor</span>'
     : '';
   return '<div class="line' + (done ? ' done' : '') + '">' +
-    '<div class="line-box"><input type="checkbox"' + (done ? ' checked' : '') + ' onchange="toggle(' + JSON.stringify(r.key).replace(/"/g, '&quot;') + ', this.checked)"></div>' +
-    '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + '</div>' +
+    '<div class="line-box"><input type="checkbox" aria-label="' + esc(r.model) + ' ordered"' + (done ? ' checked' : '') + (busy ? ' disabled' : '') + ' onchange="toggleRow(' + ref + ', this.checked)"></div>' +
+    '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + (done ? ' <span class="tag t-done">marked ordered</span>' : '') + '</div>' +
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
-    '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) + '</span></div>').join('') + '</div></div>' +
+    '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) +
+      (j.have > 0 ? ' <span class="had">(' + qty(j.have, r.bulk) + ' already marked)</span>' : '') + '</span></div>').join('') + '</div></div>' +
     (r.stock === null ? '' :
       '<div class="line-stock">have<br><b>' + qty(r.stock, r.bulk) + '</b></div>') +
     '<div class="line-qty">' + qty(r.stock === null ? r.qty : r.order, r.bulk) + '</div>' +
@@ -633,6 +816,17 @@ function lineHtml(r) {
 function setHorizon(w) { horizonWeeks = Number(w); render(); }
 
 /* ---------- marking ordered ----------
+   One OrderedLines row per job per product:
+
+     LineKey    "<D-Tools project id>|<model, lower case>"
+     Title      the quantity marked ordered, e.g. "12"
+     OrderedAt  when
+
+   Per job, not per product. Keyed on the product alone, one tick would hide that product
+   from every job forever, including jobs approved next month. And the quantity is kept
+   so a change order that adds three more of something already marked shows those three,
+   rather than nothing. Title carries it so the list needs no new column.
+
    Recorded in our own list for now. D-Tools has the right fields sitting unused
    (Order Status, Ordered Date, Order Number) but offers no item-level update endpoint --
    only a whole-project publish, and whether a partial publish merges or replaces has
@@ -640,23 +834,77 @@ function setHorizon(w) { horizonWeeks = Number(w); render(); }
    would be a live quote. So: record safely, test the write-back on a throwaway project,
    then switch. */
 
-async function toggle(key, on) {
-  if (usingSample) { on ? orderedKeys.add(key) : orderedKeys.delete(key); render(); return; }
-  try {
-    if (on) {
-      await graph('POST', '/sites/' + siteId + '/lists/' + (await listId(LIST.ordered)) + '/items',
-        { fields: { Title: key.slice(0, 250), LineKey: key, OrderedAt: new Date().toISOString() } });
-      orderedKeys.add(key);
-      toast('✓ Marked ordered');
-    } else {
-      const all = await items(LIST.ordered);
-      const hit = all.find(i => (i.fields || {}).LineKey === key);
-      if (hit) await graph('DELETE', '/sites/' + siteId + '/lists/' + (await listId(LIST.ordered)) + '/items/' + hit.id);
-      orderedKeys.delete(key);
-      toast('Unmarked');
+function jobId(p) { return String(p.ProjectId || p.ProjectNumber || p.ProjectName || ''); }
+function lineKey(p, l) { return jobId(p) + '|' + String(l.model || '').trim().toLowerCase(); }
+function orderedQty(key) { const o = ordered.get(key); return o ? o.qty : 0; }
+// A row with no number in Title means "ordered, quantity unknown" -- treat it as all of it.
+function parseOrderedQty(t) { const n = parseFloat(t); return Number.isFinite(n) ? n : Infinity; }
+
+// Supplier view: a tick marks the product ordered on every job listed under it.
+async function toggleRow(i, on) {
+  const r = rowRefs[i]; if (!r) return;
+  if (on) {
+    const prev = r.jobs.map(j => [j.key, ordered.has(j.key) ? ordered.get(j.key).qty : null]);
+    if (await setMarks(r.jobs.map(j => [j.key, j.need]))) {
+      sessionDone.set(r.key, { ...r, done: true, prev });
+      toast('✓ Marked ordered' + (r.jobs.length > 1 ? ' on ' + r.jobs.length + ' jobs' : ''));
     }
-    render();
-  } catch (e) { toast(e.message, true); }
+  } else {
+    const d = sessionDone.get(r.key); if (!d) return;
+    if (await setMarks(d.prev)) { sessionDone.delete(r.key); toast('Unmarked'); }
+  }
+  render();
+}
+
+/* Apply [key, qty] changes; qty null removes the mark. Sent through Graph's $batch, 20
+   requests at a time, because "Everything ordered" on a 70-line job is 70 writes and
+   one request each would take long enough to look broken. */
+async function setMarks(changes) {
+  changes = changes.filter(([k, q]) => {
+    const cur = ordered.get(k);
+    return q === null ? !!cur : !(cur && cur.qty === q);
+  });
+  if (!changes.length) return true;
+  if (usingSample) {
+    for (const [k, q] of changes) q === null ? ordered.delete(k) : ordered.set(k, { id: null, qty: q });
+    return true;
+  }
+  if (busy) { toast('Still saving the last change — try again in a moment', true); return false; }
+  busy = true;
+  setStatus('loading', 'Saving…');
+  let failed = 0;
+  try {
+    const lid = await listId(LIST.ordered);
+    const base = '/sites/' + siteId + '/lists/' + lid + '/items';
+    const now = new Date().toISOString();
+    const json = { 'Content-Type': 'application/json' };
+    const reqs = changes.map(([k, q], n) => {
+      const cur = ordered.get(k);
+      if (q === null) return { id: String(n), method: 'DELETE', url: base + '/' + cur.id };
+      if (cur && cur.id) return { id: String(n), method: 'PATCH', url: base + '/' + cur.id + '/fields', headers: json, body: { Title: String(q), OrderedAt: now } };
+      return { id: String(n), method: 'POST', url: base, headers: json, body: { fields: { Title: String(q), LineKey: k, OrderedAt: now } } };
+    });
+    for (let s = 0; s < reqs.length; s += 20) {
+      const res = await graph('POST', '/$batch', { requests: reqs.slice(s, s + 20) });
+      if (!res) return false;                        // redirecting to sign in
+      for (const r of res.responses || []) {
+        const [k, q] = changes[Number(r.id)];
+        if (r.status >= 200 && r.status < 300) {
+          if (q === null) ordered.delete(k);
+          else ordered.set(k, { id: (r.body && r.body.id) || (ordered.get(k) || {}).id, qty: q });
+        } else failed++;
+      }
+    }
+  } catch (e) {
+    setStatus('error', 'Error');
+    toast(e.message, true);
+    return false;
+  } finally {
+    busy = false;
+  }
+  setStatus('connected', 'SharePoint');
+  if (failed) { toast(failed + ' of ' + changes.length + ' did not save — press Refresh, then try again', true); return false; }
+  return true;
 }
 
 let toastTimer = null;
