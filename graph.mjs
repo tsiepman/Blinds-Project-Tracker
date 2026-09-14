@@ -39,18 +39,28 @@ export class Graph {
   }
 
   async req(method, path, body) {
-    const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
-      method,
-      headers: {
-        Authorization: 'Bearer ' + (await this.#accessToken()),
-        'Content-Type': 'application/json',
-        // SharePoint refuses $filter on unindexed columns without this.
-        Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly',
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-    if (!res.ok) throw new Error(`${method} ${path} -> ${res.status} ${(await res.text()).slice(0, 300)}`);
-    return res.status === 204 ? null : res.json();
+    // SharePoint throttles bursts -- a first run writes 125 rows back to back. 429 and 503
+    // come with Retry-After; honour it a few times before giving up.
+    for (let attempt = 1; ; attempt++) {
+      const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
+        method,
+        headers: {
+          Authorization: 'Bearer ' + (await this.#accessToken()),
+          'Content-Type': 'application/json',
+          // SharePoint refuses $filter on unindexed columns without this.
+          Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly',
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      if ((res.status === 429 || res.status === 503) && attempt < 5) {
+        const wait = Math.min(60, Number(res.headers.get('retry-after')) || attempt * 5);
+        console.log(`  (SharePoint busy, waiting ${wait}s)`);
+        await new Promise(r => setTimeout(r, wait * 1000));
+        continue;
+      }
+      if (!res.ok) throw new Error(`${method} ${path} -> ${res.status} ${(await res.text()).slice(0, 300)}`);
+      return res.status === 204 ? null : res.json();
+    }
   }
 
   async siteId(hostname, sitePath) {

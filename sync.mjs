@@ -74,6 +74,7 @@ async function main() {
   }
 
   let created = 0, updated = 0, unchanged = 0;
+  const failed = [];
   const stats = { withStart: 0, withTasks: 0, board: 0, active: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
   const noVendorModels = new Map();                 // model -> number of jobs it is on
 
@@ -111,8 +112,15 @@ async function main() {
       orders = JSON.stringify(orderLines(detail, await getVendorMap()));
     }
 
-    // Tasks are cheap and change independently of the project, so always refresh them.
-    const spans = taskSpans(await si.tasks(p.Id));
+    // Tasks change independently of the project, so refresh them every run -- but only for
+    // jobs still open. A Completed job's schedule is history; it is read once, the first
+    // time the job is seen, and kept. Otherwise every finished job costs a request every
+    // twenty minutes forever. (Reopening a job in D-Tools changes its Progress, so it
+    // starts refreshing again.)
+    const active = !String(p.Progress || '').trim().toLowerCase().startsWith('complete');
+    let spans;
+    if (active || !prior) spans = taskSpans(await si.tasks(p.Id));
+    else { try { spans = JSON.parse(prior.TasksJson || '[]'); } catch { spans = []; } }
 
     const fields = {
       Title: p.Number || p.Name || p.Id,
@@ -145,7 +153,6 @@ async function main() {
     stats.board += Number(p.Price || 0) >= 10000 ? 1 : 0;   // report only -- matches the board's MIN_PRICE
     // Order-line figures count only jobs the Orders page shows. It hides Completed jobs,
     // and a missing vendor on a finished job is not worth anyone's time to fix.
-    const active = !String(p.Progress || '').trim().toLowerCase().startsWith('complete');
     stats.active += active ? 1 : 0;
     if (active) stats.lines += lines.length;
     for (const l of active ? lines : []) {
@@ -153,16 +160,24 @@ async function main() {
       if (!l.vendorSource) noVendorModels.set(l.model, (noVendorModels.get(l.model) ?? 0) + 1);
     }
 
-    if (!prior) {
-      if (!dryRun) await graph.create(LIST, fields);
-      created++;
-      console.log(`  + ${String(fields.Title).padEnd(11)} start ${(startDate || '—').padEnd(10)}  tasks ${String(spans.length).padStart(3)}  lines ${String(lines.length).padStart(3)}  ${fields.ProjectName}`);
-    } else if (rebuild || String(prior.TasksJson || '') !== fields.TasksJson) {
-      if (!dryRun) await graph.update(LIST, prior.itemId, fields);
-      updated++;
-      console.log(`  ~ ${fields.Title} — ${spans.length} task(s)`);
-    } else {
-      unchanged++;
+    // One project SharePoint rejects must not stop the rest being written. Log it, carry
+    // on, and fail the run at the end so GitHub still flags it. A rerun is safe: rows are
+    // matched on ProjectId, so anything already written is updated, not duplicated.
+    try {
+      if (!prior) {
+        if (!dryRun) await graph.create(LIST, fields);
+        created++;
+        console.log(`  + ${String(fields.Title).padEnd(11)} start ${(startDate || '—').padEnd(10)}  tasks ${String(spans.length).padStart(3)}  lines ${String(lines.length).padStart(3)}  ${fields.ProjectName}`);
+      } else if (rebuild || String(prior.TasksJson || '') !== fields.TasksJson) {
+        if (!dryRun) await graph.update(LIST, prior.itemId, fields);
+        updated++;
+        console.log(`  ~ ${fields.Title} — ${spans.length} task(s)`);
+      } else {
+        unchanged++;
+      }
+    } catch (e) {
+      failed.push(fields.Title);
+      console.log(`  ! ${fields.Title} not saved: ${e.message.slice(0, 200)}`);
     }
   }
 
@@ -187,6 +202,10 @@ async function main() {
       .forEach(([m, n]) => console.log(`  ${String(n).padStart(3)}  ${m}`));
   }
   if (dryRun) console.log('--dry-run: nothing was written.');
+  if (failed.length) {
+    console.error(`\n${failed.length} project(s) not saved: ${failed.join(', ')}`);
+    process.exitCode = 1;
+  }
   if (!projects.length) {
     console.log(
       '\nNo projects in the queue. The Subscribe feed is delta-based, so a project\n' +
