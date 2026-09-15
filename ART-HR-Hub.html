@@ -273,6 +273,19 @@ thead .bname{background:var(--surface2);z-index:3}
 .empty .big{font-family:var(--disp);text-transform:uppercase;letter-spacing:.1em;font-size:14px;color:var(--ink2);margin-bottom:5px;font-weight:600}
 .modal{position:fixed;inset:0;background:rgba(22,24,29,.42);display:grid;place-items:center;z-index:100;padding:18px}
 .modal .box{background:var(--panel);border-radius:10px;max-width:540px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.28)}
+.modal .box.wide{max-width:900px}
+/* ---------- fuel ---------- */
+.fuelgrid{overflow-x:auto}
+.fuelgrid table{min-width:max-content}
+.fuelgrid td,.fuelgrid th{padding:8px 11px;text-align:right;vertical-align:top}
+.fuelgrid td:first-child,.fuelgrid th:first-child{text-align:left;position:sticky;left:0;background:var(--panel);z-index:1}
+.fuelgrid th:first-child{background:var(--surface2)}
+.fuelgrid .l{font-weight:600}
+.fuelgrid .tot{background:var(--surface2)}
+.fuelgrid tfoot td{border-top:1px solid var(--line);font-weight:600}
+.fuelgrid a{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--text-dim)}
+.fuelgrid a:hover{color:var(--red);border-color:var(--red)}
+.oth{color:var(--warn)}
 .modal .mh{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center}
 .modal .mh h3{font-family:var(--disp);text-transform:uppercase;letter-spacing:.06em;font-size:17px;margin:0;font-weight:600}
 .modal .mb{padding:18px}
@@ -385,7 +398,11 @@ async function getToken(){
    ========================================================================= */
 const LIST={employees:"HR_Employees",timeOff:"HR_TimeOff",training:"HR_Training",tools:"HR_Tools",
   toolLog:"HR_ToolLog",vehicles:"HR_Vehicles",service:"HR_Service",incidents:"HR_Incidents",
-  acks:"HR_Acks",posAcks:"HR_PositionContracts",settings:"HR_Settings"};
+  acks:"HR_Acks",posAcks:"HR_PositionContracts",fuel:"HR_Fuel",settings:"HR_Settings"};
+/* Lists that may not exist yet, or that a user may not have permission to read (HR_Fuel is
+   meant to be locked to managers in SharePoint). The hub loads without them, and never
+   writes to one it could not read -- an empty read must not look like "delete everything". */
+const UNAVAILABLE=new Set();
 
 let siteId=null, listIds={};
 
@@ -506,8 +523,21 @@ const M={
   acks:{
     from:f=>({id:f.AppKey||uid(),empId:f.EmpId||"",polId:f.PolId||"",at:f.AtDate||""}),
     to:r=>({Title:"Ack "+r.at,AppKey:r.id,EmpId:r.empId,PolId:r.polId,AtDate:r.at})
+  },
+  /* One row per fill-up from a Co-op commercial card statement. EmpId is set when the card
+     belongs to someone on the Team list; CardLabel holds the name otherwise (Warehouse, or
+     someone not in HR). Both are fixed at upload, so reassigning a card later does not
+     rewrite who used the fuel back then. Numbers are stored as text like every other field. */
+  fuel:{
+    from:f=>({id:f.AppKey||uid(),card:f.CardNo||"",empId:f.EmpId||"",label:f.CardLabel||"",invoice:f.Invoice||"",
+      stmt:f.StmtDate||"",date:f.TxnDate||"",receipt:f.Receipt||"",location:f.Location||"",city:f.City||"",prov:f.Prov||"",
+      product:f.Product||"",litres:+f.Litres||0,fuel:+f.FuelAmt||0,oil:+f.Oil||0,other:+f.Other||0,tax:+f.Tax||0,total:+f.Total||0}),
+    to:r=>({Title:r.receipt+" "+r.date,AppKey:r.id,CardNo:r.card,EmpId:r.empId,CardLabel:r.label,Invoice:r.invoice,
+      StmtDate:r.stmt,TxnDate:r.date,Receipt:r.receipt,Location:r.location,City:r.city,Prov:r.prov,Product:r.product,
+      Litres:String(r.litres),FuelAmt:String(r.fuel),Oil:String(r.oil),Other:String(r.other),Tax:String(r.tax),Total:String(r.total)})
   }
 };
+const FUEL_COLS=["AppKey","CardNo","EmpId","CardLabel","Invoice","StmtDate","TxnDate","Receipt","Location","City","Prov","Product","Litres","FuelAmt","Oil","Other","Tax","Total"];
 const COLLECTIONS=Object.keys(M);
 
 /* =========================================================================
@@ -550,15 +580,17 @@ async function saveSettings(settings){
 const Store={
   async load(){
     await getSiteId();
-    const OPTIONAL=["posAcks"];
+    const OPTIONAL=["posAcks","fuel"];
+    UNAVAILABLE.clear();
     for(const key of Object.keys(LIST)){
       try{ await getListId(LIST[key]); }
-      catch(e){ if(!OPTIONAL.includes(key)) throw e; }
+      catch(e){ if(!OPTIONAL.includes(key)) throw e; UNAVAILABLE.add(key); }
     }
     const raw={};
     await Promise.all(Object.keys(LIST).map(async key=>{
+      if(UNAVAILABLE.has(key)){ raw[key]=[]; return; }
       try{ raw[key]=await getItems(LIST[key]); }
-      catch(e){ if(OPTIONAL.includes(key)){ raw[key]=[]; } else { throw e; } }
+      catch(e){ if(OPTIONAL.includes(key)){ raw[key]=[]; UNAVAILABLE.add(key); } else { throw e; } }
     }));
     synced={};
     const db={};
@@ -583,7 +615,7 @@ const Store={
   },
   async save(db){
     try{
-      for(const key of COLLECTIONS) await saveCollection(key,db[key]);
+      for(const key of COLLECTIONS){ if(!UNAVAILABLE.has(key)) await saveCollection(key,db[key]||[]); }
       await saveSettings(db.settings);
       return true;
     }catch(e){ console.error(e); toast("Sync failed: "+e.message); return false; }
@@ -764,8 +796,9 @@ function seed(){
   employees.forEach((e,i)=>{ if(i<4){ acks.push({id:uid(),empId:e.id,polId:"p1",at:iso(addD(today(),-200))});
                                        acks.push({id:uid(),empId:e.id,polId:"p2",at:iso(addD(today(),-200))}); } });
   return {
-    employees,timeOff,training,tools,toolLog:[],vehicles,service,incidents,policies,acks,
+    employees,timeOff,training,tools,toolLog:[],vehicles,service,incidents,policies,acks,fuel:[],
     settings:{
+      fuelCards:[], fuelVisibility:"managers",
       seasonStart:Y+"-06-15", seasonEnd:Y+"-09-05",
       bidDeadline:Y+"-03-01",
       maxOffTotal:2, maxKeyOff:1, noticeDays:14,
@@ -1467,7 +1500,8 @@ function vVehicles(){
         <td style="text-align:right"><button class="btn sm" onclick="del('service','${x.id}')">Remove</button></td></tr>`;}).join("")
       ||`<tr><td colspan="6"><div class="empty"><div class="big">Nothing logged</div></div></td></tr>`}
     </tbody></table></div></div>
-  <p class="mini" style="margin-top:11px">Oil changes are flagged at ${s.oilKm.toLocaleString()} km or ${s.oilMonths} months, whichever lands first — adjustable in Settings. Winnipeg extra: keep the tire changeover in the service log so you can see at a glance which vans are still on winters in May.</p>`;
+  <p class="mini" style="margin-top:11px">Oil changes are flagged at ${s.oilKm.toLocaleString()} km or ${s.oilMonths} months, whichever lands first — adjustable in Settings. Winnipeg extra: keep the tire changeover in the service log so you can see at a glance which vans are still on winters in May.</p>
+  ${fuelSection()}`;
 }
 
 function vSafety(){
@@ -1531,6 +1565,7 @@ function vSettings(){
       <label class="f"><span class="lb">Oil change — kilometres</span><input type="number" step="500" value="${s.oilKm}" onchange="setS('oilKm',+this.value)"></label>
       <label class="f"><span class="lb">Oil change — months</span><input type="number" min="1" value="${s.oilMonths}" onchange="setS('oilMonths',+this.value)"></label>
     </div></div>
+    ${fuelSettingsCard()}
     <div class="card"><div class="hd"><h3>Data</h3></div><div class="bd">
       <p class="mini" style="margin-bottom:11px">Everything here is synced live with the ART43 SharePoint site. Export is a manual backup; import overwrites — anything not in the file gets deleted from SharePoint, so only use it to restore from a known-good backup.</p>
       <div class="btnrow">
@@ -1548,7 +1583,7 @@ function vSettings(){
 /* =========================================================================
    MODALS
    ========================================================================= */
-function mo(title,body,footer){modal={title,body,footer};render();}
+function mo(title,body,footer,wide){modal={title,body,footer,wide:!!wide};render();}
 function closeModal(){modal=null;render();}
 function val(id){const e=document.getElementById(id);return e?e.value:"";}
 function chkd(id){const e=document.getElementById(id);return e?e.checked:false;}
@@ -1786,6 +1821,399 @@ function saveAck(pid){
 function ackNow(eid,pid){ if(!isManager)return; db.acks.push({id:uid(),empId:eid,polId:pid,at:iso(today())});commit("Marked signed");}
 
 /* =========================================================================
+   FUEL  — Co-op commercial card statements
+   -------------------------------------------------------------------------
+   Brian uploads the monthly Federated Co-op "Commercial Credit Card Invoice"
+   PDF. It is read in the browser (pdf.js, loaded only when a file is picked),
+   checked against Co-op's own card and invoice totals, and saved one row per
+   fill-up to HR_Fuel. Nothing is saved unless every total matches.
+
+   Fill-ups count toward the STATEMENT month, not the pump date: an August
+   statement carries a few late-July fill-ups, and counting them in August keeps
+   every month equal to the bill that was actually paid.
+
+   Cards map to people in settings.fuelCards: {card, empId, label}. A card held
+   by someone not on the Team list keeps a name in label instead of an empId.
+   ========================================================================= */
+const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+const SHEETJS="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+const FUEL_KEYS=["litres","fuel","oil","other","tax","total"];
+let fuelUp=null, fuelImp=null, fuelRefs=[];
+
+function loadScript(src,ready){
+  if(ready()) return Promise.resolve();
+  return new Promise((ok,bad)=>{const s=document.createElement("script");s.src=src;s.onload=ok;
+    s.onerror=()=>bad(new Error("couldn't load the "+src.split("/").pop()+" reader — check the connection"));document.head.appendChild(s);});
+}
+const r2=v=>Math.round(v*100)/100;
+const money=s=>{const t=String(s).replace(/[$,\s]/g,"");const v=parseFloat(t.replace(/[^0-9.]/g,""));
+  return isFinite(v)?(/^-|-$|CR$/i.test(t)?-v:v):0;};
+const cad=v=>"$"+(+v||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2});
+const cad0=v=>"$"+Math.round(+v||0).toLocaleString("en-CA");
+const lit=v=>(+v||0).toLocaleString("en-CA",{maximumFractionDigits:1})+" L";
+const last4=c=>"…"+String(c).slice(-4);
+const ymLabel=ym=>{const[y,m]=ym.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString("en-CA",{month:"short",year:"2-digit"});};
+
+/* Read the statement. Amounts are assigned to columns by where they sit on the page
+   (their centre against the column headings), not by their order in the line: a row can
+   carry an OIL amount, an OTHER amount, both or neither, and the text alone can't say
+   which one a lone number is. */
+async function parseCoop(buf){
+  await loadScript(PDFJS+"pdf.min.js",()=>window.pdfjsLib);
+  pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js";
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const st={invoice:"",date:"",cards:[],invoiceTotal:null};
+  let card=null;
+  for(let p=1;p<=pdf.numPages;p++){
+    const tc=await (await pdf.getPage(p)).getTextContent();
+    const byY=new Map();
+    for(const i of tc.items){
+      const s=i.str.trim(); if(!s) continue;
+      const y=Math.round(i.transform[5]);
+      if(!byY.has(y)) byY.set(y,[]);
+      byY.get(y).push({s,x:i.transform[4],w:i.width});
+    }
+    const lines=[...byY.entries()].sort((a,b)=>b[0]-a[0]).map(([,l])=>l.sort((a,b)=>a.x-b.x));
+    const head=lines.find(l=>l.some(i=>i.s==="LITRES")&&l.some(i=>i.s==="HST/GST"));
+    if(!head) continue;
+    const hx=n=>{const i=head.find(i=>i.s===n);return i?i.x:null;};
+    const cols=[["litres",hx("LITRES")],["fuel",hx("DOLLARS")],["oil",hx("OIL")],["other",hx("OTHER")],["tax",hx("HST/GST")],["total",hx("TOTAL")]];
+    const cityX=hx("CITY"), provX=hx("PROV"), prodX=hx("PRODUCT");
+    if(cols.some(c=>c[1]==null)||cityX==null||provX==null||prodX==null) throw new Error("page "+p+" doesn't have the usual Co-op columns");
+    const amounts=l=>{
+      const o={litres:0,fuel:0,oil:0,other:0,tax:0,total:0};
+      for(const i of l){
+        if(i.x<cols[0][1]-20||!/\d/.test(i.s)||!/^[-\d,.$\s]+(CR)?$/i.test(i.s)) continue;
+        const c=i.x+i.w/2; let k=null;
+        for(const [name,x] of cols) if(c>=x) k=name;
+        if(k) o[k]=r2(o[k]+money(i.s));
+      }
+      return o;
+    };
+    for(const l of lines){
+      const txt=l.map(i=>i.s).join(" ");
+      if(!st.invoice){const m=txt.match(/INVOICE#\s*(\d+)/); if(m) st.invoice=m[1];}
+      if(!st.date){const m=txt.match(/DATE\s+(\d{4})\/(\d{2})\/(\d{2})/); if(m) st.date=m[1]+"-"+m[2]+"-"+m[3];}
+      if(l.length===1&&/^\d{15,19}$/.test(l[0].s)){ card={card:l[0].s,rows:[],total:null}; st.cards.push(card); continue; }
+      if(/^CREDIT CARD TOTAL/.test(txt)){ if(card) card.total=amounts(l); continue; }
+      if(/^INVOICE TOTAL/.test(txt)){ st.invoiceTotal=amounts(l); continue; }
+      const m=txt.match(/^\S+\s+([A-Z]\d{5,})\s+(\d{4})(\d{2})(\d{2})\b/);
+      if(!m||!card) continue;
+      const dateItem=l.find(i=>i.s.includes(m[2]+m[3]+m[4]));
+      const from=dateItem?dateItem.x+dateItem.w:0;
+      const seg=(a,b)=>l.filter(i=>i.x>=a&&i.x<b).map(i=>i.s).join(" ");
+      card.rows.push({receipt:m[1],date:m[2]+"-"+m[3]+"-"+m[4],
+        location:seg(from,cityX-8),city:seg(cityX-8,provX-8),prov:seg(provX-8,prodX-3),product:seg(prodX-3,cols[0][1]-20),
+        ...amounts(l)});
+    }
+  }
+  return st;
+}
+
+/* Every card's fill-ups must add up to Co-op's card total, and all of them to the invoice
+   total. A mismatch means something was misread, and nothing is saved. */
+function fuelChecks(st){
+  const errs=[], sum=(rows,k)=>r2(rows.reduce((n,r)=>n+r[k],0));
+  const diff=(rows,t)=>FUEL_KEYS.filter(k=>Math.abs(sum(rows,k)-t[k])>0.011)
+    .map(k=>k+" "+sum(rows,k)+" read vs "+t[k]+" on the statement");
+  if(!st.invoice||!st.date) errs.push("No invoice number or date found — is this a Co-op commercial card invoice?");
+  if(!st.cards.length) errs.push("No fuel cards found on the statement.");
+  for(const c of st.cards){
+    if(!c.total){errs.push("Card "+last4(c.card)+" has no card total line.");continue;}
+    const d=diff(c.rows,c.total); if(d.length) errs.push("Card "+last4(c.card)+": "+d.join(", "));
+  }
+  if(!st.invoiceTotal) errs.push("No invoice total found.");
+  else{ const d=diff(st.cards.flatMap(c=>c.rows),st.invoiceTotal); if(d.length) errs.push("Invoice total: "+d.join(", ")); }
+  return errs;
+}
+
+function fuelCards(){ return db.settings.fuelCards||(db.settings.fuelCards=[]); }
+function fuelCardFor(card){ return fuelCards().find(c=>c.card===card); }
+function fuelScope(){
+  if(isManager) return "all";
+  const v=db.settings.fuelVisibility||"managers";
+  return v==="all"?"all":v==="own"?"own":null;
+}
+function fuelWhoName(x){ return x.empId?empName(x.empId):(x.label||"Card "+last4(x.card||"")); }
+
+/* Person picker shared by the upload preview, the card editor and the card import.
+   "new" reveals a text box for a name that isn't on the Team list. */
+function fuelWhoSelect(id,cur,extraLabel){
+  const emps=db.employees.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
+  const labels=[...new Set([...fuelCards().map(c=>c.label).filter(Boolean),...(extraLabel?[extraLabel]:[])])].sort();
+  const curLabel=cur&&!cur.empId?cur.label:"";
+  return `<select id="${id}" onchange="document.getElementById('${id}_n').style.display=this.value==='new'?'block':'none'">
+      <option value="">— choose —</option>
+      <optgroup label="Team">${emps.map(e=>`<option value="e:${e.id}"${cur&&cur.empId===e.id?" selected":""}>${esc(e.name)}${e.active?"":" (inactive)"}</option>`).join("")}</optgroup>
+      <optgroup label="Not on the Team list">${labels.map(l=>`<option value="l:${esc(l)}"${curLabel===l?" selected":""}>${esc(l)}</option>`).join("")}
+        <option value="new">New name…</option></optgroup>
+    </select><input type="text" id="${id}_n" placeholder="Name, e.g. Warehouse" style="display:none;margin-top:5px">`;
+}
+function fuelWhoRead(id){
+  const v=val(id);
+  if(v.startsWith("e:")) return {empId:v.slice(2),label:""};
+  if(v.startsWith("l:")) return {empId:"",label:v.slice(2)};
+  if(v==="new"){ const n=val(id+"_n").trim(); return n?{empId:"",label:n}:null; }
+  return null;
+}
+function fuelSetCard(card,who){
+  const c=fuelCardFor(card);
+  if(c){ c.empId=who.empId; c.label=who.label; } else fuelCards().push({card,empId:who.empId,label:who.label});
+}
+
+/* ---------- upload ---------- */
+async function fuelFile(inp){
+  if(!isManager)return;
+  const f=inp.files&&inp.files[0]; inp.value=""; if(!f)return;
+  toast("Reading "+f.name+"…");
+  try{
+    const st=await parseCoop(await f.arrayBuffer());
+    fuelUp={st,errs:fuelChecks(st),file:f.name};
+    openFuelPreview();
+  }catch(e){ console.error(e); toast("Couldn't read that PDF: "+e.message); }
+}
+
+function openFuelPreview(){
+  const {st,errs,file}=fuelUp;
+  const all=st.cards.flatMap(c=>c.rows);
+  const have=new Set(db.fuel.map(r=>r.invoice+"|"+r.card+"|"+r.receipt));
+  const dup=st.cards.reduce((n,c)=>n+c.rows.filter(r=>have.has(st.invoice+"|"+c.card+"|"+r.receipt)).length,0);
+  const fresh=all.length-dup;
+  const t=st.invoiceTotal||{};
+  const banner=errs.length
+    ?`<div class="banner b-red"><span class="bi">▲</span><div><b>Doesn't add up — not saved</b>
+        What was read from the PDF doesn't match Co-op's own totals, so something was misread:
+        <ul style="margin:6px 0 0;padding-left:17px">${errs.map(e=>`<li>${esc(e)}</li>`).join("")}</ul></div></div>`
+    :`<div class="banner b-ok"><span class="bi">✓</span><div><b>Matches the invoice</b>
+        ${all.length} fill-ups on ${st.cards.length} cards add up to Co-op's totals: ${lit(t.litres)}, ${cad(t.total)} including GST.</div></div>`;
+  const dupNote=dup?`<div class="banner b-warn"><span class="bi">◷</span><div><b>${fresh?dup+" already saved":"Already uploaded"}</b>
+      ${fresh?`${dup} of these fill-ups were saved from an earlier upload and will be skipped.`:"Every fill-up on this statement is already saved. Nothing new to add."}</div></div>`:"";
+  mo("Co-op statement "+(st.invoice||""),`
+    <p class="lede">${esc(file)} · invoice ${esc(st.invoice||"?")} · ${fmt(st.date)}. Fill-ups count toward ${st.date?ymLabel(st.date.slice(0,7)):"the statement month"}, including any from late the month before.</p>
+    ${banner}${dupNote}
+    <div class="card"><div class="bd tight" style="overflow-x:auto"><table>
+      <thead><tr><th>Card</th><th>Belongs to</th><th style="text-align:right">Fill-ups</th><th style="text-align:right">Litres</th>
+        <th style="text-align:right">Fuel</th><th style="text-align:right">Other</th><th style="text-align:right">Total</th></tr></thead>
+      <tbody>${st.cards.map((c,i)=>{
+        const s=k=>r2(c.rows.reduce((n,r)=>n+r[k],0));
+        const known=fuelCardFor(c.card), oth=r2(s("oil")+s("other"));
+        return `<tr><td class="num nm">${last4(c.card)}${known?"":' <span class="tag t-warn">New</span>'}</td>
+          <td style="min-width:210px">${fuelWhoSelect("fu_"+i,known)}</td>
+          <td class="num" style="text-align:right">${c.rows.length}</td><td class="num" style="text-align:right">${lit(s("litres"))}</td>
+          <td class="num" style="text-align:right">${cad(s("fuel"))}</td>
+          <td class="num ${oth?"oth":""}" style="text-align:right">${oth?cad(oth):"—"}</td>
+          <td class="num" style="text-align:right">${cad(s("total"))}</td></tr>`;}).join("")}
+      </tbody></table></div></div>
+    <p class="mini" style="margin-top:10px">Other is oil, lube and anything else bought on the card that isn't fuel. Totals include GST.</p>`,
+    `<button class="btn" onclick="fuelUp=null;closeModal()">Cancel</button>
+     <button class="btn pri" onclick="saveFuelUpload()"${errs.length||!fresh?" disabled":""}>Save ${fresh} fill-up${fresh===1?"":"s"}</button>`,true);
+}
+
+function saveFuelUpload(){
+  if(!isManager||!fuelUp||fuelUp.errs.length)return;
+  const {st}=fuelUp;
+  const who=[];
+  for(let i=0;i<st.cards.length;i++){
+    const w=fuelWhoRead("fu_"+i);
+    if(!w){ toast("Choose who card "+last4(st.cards[i].card)+" belongs to"); return; }
+    who.push(w);
+  }
+  const have=new Set(db.fuel.map(r=>r.invoice+"|"+r.card+"|"+r.receipt));
+  let n=0;
+  st.cards.forEach((c,i)=>{
+    fuelSetCard(c.card,who[i]);
+    for(const r of c.rows){
+      if(have.has(st.invoice+"|"+c.card+"|"+r.receipt)) continue;
+      db.fuel.push({id:uid(),card:c.card,empId:who[i].empId,label:who[i].label,invoice:st.invoice,stmt:st.date,...r});
+      n++;
+    }
+  });
+  fuelUp=null; modal=null;
+  toast("Saving "+n+" fill-ups…");
+  commit("Saved "+n+" fill-ups from invoice "+st.invoice);
+}
+
+function fuelRemoveStatement(inv){
+  if(!isManager)return;
+  const n=db.fuel.filter(r=>r.invoice===inv).length;
+  if(!confirm("Remove invoice "+inv+" and its "+n+" fill-ups? You can upload the PDF again afterwards."))return;
+  db.fuel=db.fuel.filter(r=>r.invoice!==inv);
+  commit("Removed invoice "+inv);
+}
+
+/* ---------- the Vehicles-page view ---------- */
+function fuelSection(){
+  const scope=fuelScope(); if(!scope) return "";
+  const upload=isManager?`<label class="btn sm pri" style="margin-left:auto;cursor:pointer">Upload Co-op statement
+      <input type="file" accept="application/pdf,.pdf" style="display:none" onchange="fuelFile(this)"></label>`:"";
+  if(UNAVAILABLE.has("fuel")){
+    return isManager?`<div class="card" style="margin-top:16px"><div class="hd"><h3>Fuel</h3></div><div class="bd">
+      <div class="banner b-warn" style="margin:0"><span class="bi">▲</span><div><b>The HR_Fuel list isn't set up yet</b>
+        Create a list called <b style="display:inline">HR_Fuel</b> on ART43 with these columns, all single line of text, then reload:
+        <div class="mini" style="margin-top:6px">${FUEL_COLS.join(", ")}</div></div></div></div></div>`:"";
+  }
+  const rows=scope==="own"?db.fuel.filter(r=>r.empId===me.id):db.fuel;
+  const months=[...new Set(rows.map(r=>(r.stmt||"").slice(0,7)).filter(Boolean))].sort().slice(-12);
+  const shown=rows.filter(r=>months.includes((r.stmt||"").slice(0,7)));
+  const people=new Map();
+  for(const r of shown){
+    const key=r.empId?"e:"+r.empId:"l:"+(r.label||r.card);
+    if(!people.has(key)) people.set(key,{key,name:fuelWhoName(r),team:!!r.empId,m:{},rows:[]});
+    const p=people.get(key), ym=r.stmt.slice(0,7);
+    const c=p.m[ym]||(p.m[ym]={litres:0,fuel:0,other:0,total:0,n:0});
+    c.litres+=r.litres; c.fuel+=r.fuel; c.other+=r.oil+r.other; c.total+=r.total; c.n++;
+    p.rows.push(r);
+  }
+  fuelRefs=[...people.values()].sort((a,b)=>(b.team-a.team)||a.name.localeCompare(b.name));
+  const colTot=ym=>fuelRefs.reduce((o,p)=>{const c=p.m[ym];if(c){o.litres+=c.litres;o.fuel+=c.fuel;o.other+=c.other;o.total+=c.total;}return o;},{litres:0,fuel:0,other:0,total:0});
+  const cell=(c,high)=>c?`<div class="l num">${lit(c.litres)}</div><div class="sm2 num">${cad0(c.fuel)}</div>
+      ${c.other?`<div class="mini num oth">+${cad0(c.other)} other</div>`:""}${high?'<span class="tag t-warn" style="margin-top:3px">High</span>':""}`:'<span class="sm2">—</span>';
+  /* "High": this month's fuel dollars are well above the person's own average of their
+     other months. Needs a few months of history before it says anything. */
+  const isHigh=(p,ym)=>{const others=months.filter(x=>x!==ym&&p.m[x]).map(x=>p.m[x].fuel);
+    if(others.length<3||!p.m[ym]) return false; const avg=others.reduce((a,b)=>a+b,0)/others.length; return p.m[ym].fuel>avg*1.35;};
+  const sumP=p=>Object.values(p.m).reduce((o,c)=>{o.litres+=c.litres;o.fuel+=c.fuel;o.other+=c.other;o.total+=c.total;return o;},{litres:0,fuel:0,other:0,total:0});
+
+  const grid=fuelRefs.length?`<div class="fuelgrid"><table>
+      <thead><tr><th>Person</th>${months.map(ym=>`<th>${ymLabel(ym)}</th>`).join("")}<th class="tot">${months.length>1?months.length+" months":"Total"}</th></tr></thead>
+      <tbody>${fuelRefs.map((p,i)=>`<tr><td class="nm"><a href="#" onclick="fuelPerson(${i});return false">${esc(p.name)}</a>
+          ${p.team?"":'<div class="mini">not on the Team list</div>'}</td>
+        ${months.map(ym=>`<td>${cell(p.m[ym],isHigh(p,ym))}</td>`).join("")}<td class="tot">${cell(sumP(p))}</td></tr>`).join("")}</tbody>
+      ${scope==="all"&&fuelRefs.length>1?`<tfoot><tr><td>All cards</td>${months.map(ym=>`<td>${cell(colTot(ym))}</td>`).join("")}
+        <td class="tot">${cell(fuelRefs.reduce((o,p)=>{const s=sumP(p);for(const k in o)o[k]+=s[k];return o;},{litres:0,fuel:0,other:0,total:0}))}</td></tr></tfoot>`:""}
+    </table></div>`
+    :`<div class="empty"><div class="big">No fuel yet</div>${isManager?"Upload a Co-op commercial card statement to start.":"Nothing to show."}</div>`;
+
+  const invs=isManager?[...new Set(db.fuel.map(r=>r.invoice))].map(inv=>{
+    const rs=db.fuel.filter(r=>r.invoice===inv);
+    return {inv,date:rs[0].stmt,n:rs.length,litres:rs.reduce((a,r)=>a+r.litres,0),total:rs.reduce((a,r)=>a+r.total,0)};
+  }).sort((a,b)=>b.date<a.date?-1:1):[];
+
+  return `<div class="card" style="margin-top:16px"><div class="hd"><h3>Fuel</h3>
+      <span class="sm2">Co-op cards · by statement month${scope==="own"?" · yours only":""}</span>${upload}</div>
+    <div class="bd tight">${grid}</div></div>
+    <p class="mini" style="margin-top:9px">Litres and fuel dollars before GST. Other is oil, lube and non-fuel purchases on the card. A month counts everything on that month's statement, including a few fill-ups from late the month before. Click a name for the individual fill-ups.</p>
+    ${invs.length?`<div class="card" style="margin-top:16px"><div class="hd"><h3>Statements uploaded</h3></div><div class="bd tight"><table>
+      <thead><tr><th>Invoice</th><th>Statement date</th><th>Fill-ups</th><th>Litres</th><th>Total incl. GST</th><th></th></tr></thead>
+      <tbody>${invs.map(s=>`<tr><td class="num nm">${esc(s.inv)}</td><td class="num">${fmt(s.date)}</td><td class="num">${s.n}</td>
+        <td class="num">${lit(s.litres)}</td><td class="num">${cad(s.total)}</td>
+        <td style="text-align:right"><button class="btn sm" onclick="fuelRemoveStatement('${esc(s.inv)}')">Remove</button></td></tr>`).join("")}
+      </tbody></table></div></div>`:""}`;
+}
+
+function fuelPerson(i){
+  const p=fuelRefs[i]; if(!p)return;
+  const rs=p.rows.slice().sort((a,b)=>(b.stmt+b.date)<(a.stmt+a.date)?-1:1);
+  let lastYm="";
+  mo(p.name+" — fuel",`
+    <div class="card"><div class="bd tight" style="overflow-x:auto"><table>
+      <thead><tr><th>Date</th><th>Station</th><th>Product</th><th style="text-align:right">Litres</th><th style="text-align:right">Fuel</th>
+        <th style="text-align:right">Other</th><th style="text-align:right">Total</th><th>Card</th></tr></thead>
+      <tbody>${rs.map(r=>{
+        const ym=r.stmt.slice(0,7), headRow=ym!==lastYm?`<tr><td colspan="8" class="eyebrow" style="background:var(--surface2)">${ymLabel(ym)} statement</td></tr>`:"";
+        lastYm=ym; const oth=r2(r.oil+r.other);
+        return headRow+`<tr><td class="num">${fmtShort(r.date)}</td><td>${esc(r.location)}<div class="mini">${esc(r.city)} ${esc(r.prov)}</div></td>
+          <td class="sm2">${esc(r.product)}</td><td class="num" style="text-align:right">${r.litres?lit(r.litres):"—"}</td>
+          <td class="num" style="text-align:right">${r.fuel?cad(r.fuel):"—"}</td><td class="num ${oth?"oth":""}" style="text-align:right">${oth?cad(oth):"—"}</td>
+          <td class="num" style="text-align:right">${cad(r.total)}</td><td class="num sm2">${last4(r.card)}</td></tr>`;}).join("")}
+      </tbody></table></div></div>`,
+    `<button class="btn" onclick="closeModal()">Close</button>`,true);
+}
+
+/* ---------- cards, in Settings ---------- */
+function fuelSettingsCard(){
+  const v=db.settings.fuelVisibility||"managers";
+  const cards=fuelCards().slice().sort((a,b)=>fuelWhoName(a).localeCompare(fuelWhoName(b)));
+  const opt=(k,l)=>`<option value="${k}"${v===k?" selected":""}>${l}</option>`;
+  return `<div class="card"><div class="hd"><h3>Fuel cards</h3></div><div class="bd">
+    <label class="f"><span class="lb">Who can see fuel on the Vehicles page</span><select onchange="setS('fuelVisibility',this.value)">
+      ${opt("managers","Managers only")}${opt("own","Each person sees their own — managers see everyone")}${opt("all","Everyone sees everyone")}</select></label>
+    <div class="btnrow" style="margin-bottom:11px">
+      <button class="btn sm" onclick="openFuelCard()">Add card</button>
+      <button class="btn sm" onclick="document.getElementById('fcimp').click()">Import card list</button>
+      <input id="fcimp" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="fuelCardImport(this)"></div>
+    ${cards.length?`<table><tbody>${cards.map(c=>`<tr><td class="num nm" style="width:70px">${last4(c.card)}</td>
+        <td>${esc(fuelWhoName(c))}${c.empId?"":' <span class="tag t-grey">not on Team</span>'}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn sm" onclick="openFuelCard('${c.card}')">Change</button>
+          <button class="btn sm" onclick="fuelCardRemove('${c.card}')">Remove</button></td></tr>`).join("")}</tbody></table>`
+      :'<p class="mini">No cards yet. Import the card list, or they get added as statements are uploaded.</p>'}
+    <p class="mini" style="margin-top:10px">Changing who holds a card applies to statements uploaded from then on. Past fill-ups stay with whoever had the card at the time.</p>
+  </div></div>`;
+}
+function openFuelCard(card){
+  if(!isManager)return;
+  const c=card?fuelCardFor(card):null;
+  mo(c?"Card "+last4(c.card):"Add fuel card",`
+    <label class="f"><span class="lb">Card number</span><input type="text" id="fc_no" value="${c?esc(c.card):""}" ${c?"disabled":""} placeholder="7082118001102442975"></label>
+    <label class="f"><span class="lb">Belongs to</span>${fuelWhoSelect("fc_who",c)}</label>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveFuelCard('${c?c.card:""}')">Save</button>`);
+}
+function saveFuelCard(card){
+  if(!isManager)return;
+  const no=card||val("fc_no").replace(/\D/g,"");
+  if(!/^\d{15,19}$/.test(no)){toast("Enter the full card number from the statement");return;}
+  const who=fuelWhoRead("fc_who"); if(!who){toast("Choose who holds the card");return;}
+  fuelSetCard(no,who); modal=null; commit("Card saved");
+}
+function fuelCardRemove(card){
+  if(!isManager||!confirm("Remove card "+last4(card)+"? Fill-ups already saved are kept."))return;
+  db.settings.fuelCards=fuelCards().filter(c=>c.card!==card); commit("Card removed");
+}
+
+/* A sheet with card numbers in one column and names beside them, like Brian's Book1.
+   Rows without a card number are ignored. Names are matched to the Team list, allowing for
+   small spelling differences (Macdermid / MacDearmid); anything else keeps its name. */
+function matchEmployee(name){
+  const norm=s=>String(s).toLowerCase().replace(/[^a-z ]/g,"").trim();
+  const n=norm(name); if(!n) return null;
+  const exact=db.employees.find(e=>norm(e.name)===n); if(exact) return {e:exact,fuzzy:false};
+  const lev=(a,b)=>{const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;
+    for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length];};
+  const [f,...rest]=n.split(/\s+/), l=rest.join("");
+  if(!l) return null;
+  const hit=db.employees.find(e=>{const [ef,...er]=norm(e.name).split(/\s+/),el=er.join("");
+    return ef===f&&el&&l.length>=4&&lev(el,l)<=2;});
+  return hit?{e:hit,fuzzy:true}:null;
+}
+async function fuelCardImport(inp){
+  if(!isManager)return;
+  const f=inp.files&&inp.files[0]; inp.value=""; if(!f)return;
+  try{
+    await loadScript(SHEETJS,()=>window.XLSX);
+    const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
+    const found=[], seen=new Set();
+    for(const name of wb.SheetNames){
+      for(const row of XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:false,defval:""})){
+        const cells=row.map(c=>String(c).trim());
+        const ci=cells.findIndex(c=>/^\d{15,19}$/.test(c.replace(/\s/g,"")));
+        if(ci<0) continue;
+        const card=cells[ci].replace(/\s/g,"");
+        const nm=cells.find((c,i)=>i!==ci&&/[a-z]/i.test(c))||"";
+        if(!nm||seen.has(card)) continue;
+        seen.add(card); found.push({card,name:nm,match:matchEmployee(nm)});
+      }
+    }
+    if(!found.length){toast("No card numbers found in "+f.name);return;}
+    fuelImp=found;
+    mo("Import card list",`
+      <p class="lede">${found.length} cards found in ${esc(f.name)}. Check who each belongs to. Anyone not on the Team list is kept by name, so their fuel still shows. Set a card to "— choose —" to leave it out.</p>
+      <div class="card"><div class="bd tight"><table>
+        <thead><tr><th>Card</th><th>Name in the sheet</th><th>Belongs to</th></tr></thead>
+        <tbody>${found.map((x,i)=>`<tr><td class="num nm">${last4(x.card)}</td>
+          <td>${esc(x.name)}${x.match?(x.match.fuzzy?' <span class="tag t-warn">spelling differs</span>':' <span class="tag t-ok">on Team</span>'):""}</td>
+          <td style="min-width:200px">${fuelWhoSelect("fi_"+i,x.match?{empId:x.match.e.id}:{empId:"",label:x.name},x.match?"":x.name)}</td></tr>`).join("")}
+        </tbody></table></div></div>`,
+      `<button class="btn" onclick="fuelImp=null;closeModal()">Cancel</button><button class="btn pri" onclick="saveFuelImport()">Save cards</button>`,true);
+  }catch(e){ console.error(e); toast("Couldn't read "+f.name+": "+e.message); }
+}
+function saveFuelImport(){
+  if(!isManager||!fuelImp)return;
+  let n=0;
+  fuelImp.forEach((x,i)=>{ const w=fuelWhoRead("fi_"+i); if(w){ fuelSetCard(x.card,w); n++; } });
+  fuelImp=null; modal=null; commit(n+" card"+(n===1?"":"s")+" saved");
+}
+
+/* =========================================================================
    ACTIONS
    ========================================================================= */
 function go(v){ if(!isManager&&(v==="team"||v==="settings"))return; view=v;modal=null;window.scrollTo(0,0);render();}
@@ -1825,7 +2253,7 @@ function importJSON(inp){
   const f=inp.files[0]; if(!f)return;
   if(!confirm("This overwrites every list in SharePoint with the contents of this file — anything not in the file is deleted. Continue?")){ inp.value=""; return; }
   const r=new FileReader();
-  r.onload=()=>{try{db=JSON.parse(r.result);commit("Imported");}catch(e){toast("That file wouldn't parse");}};
+  r.onload=()=>{try{db=JSON.parse(r.result);for(const k of COLLECTIONS)db[k]=db[k]||[];commit("Imported");}catch(e){toast("That file wouldn't parse");}};
   r.readAsText(f);
 }
 function clearDemo(){
@@ -1833,7 +2261,7 @@ function clearDemo(){
   if(!confirm("Remove all sample data and start empty?"))return;
   const s=db.settings; s.demo=false;
   db={employees:[],timeOff:[],training:[],tools:[],toolLog:[],vehicles:[],service:[],incidents:[],
-      policies:db.policies,acks:[],settings:s};
+      policies:db.policies,acks:[],posAcks:db.posAcks||[],fuel:[],settings:s};
   commit("Cleared — add your crew on the Team page");
 }
 
@@ -1918,7 +2346,7 @@ function render(){
       <div class="wrap">${body}</div>
     </div>
   </div>
-  ${modal?`<div class="modal" onclick="if(event.target===this)closeModal()"><div class="box">
+  ${modal?`<div class="modal" onclick="if(event.target===this)closeModal()"><div class="box${modal.wide?" wide":""}">
       <div class="mh"><h3>${esc(modal.title)}</h3><button class="x" onclick="closeModal()">×</button></div>
       <div class="mb">${modal.body}</div><div class="mf">${modal.footer}</div></div></div>`:""}`;
 }
