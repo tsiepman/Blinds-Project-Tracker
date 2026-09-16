@@ -304,7 +304,8 @@ function render() {
     const all = segmentsFor(p, range);
     // Only a job with no dates at all belongs in the strip. One whose work sits wholly
     // outside the window -- finished, or not starting for months -- simply is not shown.
-    if (!all.length) { unscheduled.push({ p, segs: [] }); continue; }
+    // A finished job needs no dates, so it never belongs in the "no dates" strip.
+    if (!all.length) { if (!/^complete/i.test(String(p.progress).trim())) unscheduled.push({ p, segs: [] }); continue; }
     const segs = all.filter(s => inWindow(s, range));
     if (segs.length) scheduled.push({ p, segs });
   }
