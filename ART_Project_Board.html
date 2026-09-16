@@ -210,10 +210,31 @@ function shape(f) {
     name: f.ProjectName || '', number: f.ProjectNumber || f.Title || '',
     client: f.Client || '', builder: f.Builder || '', progress: f.Progress || '',
     start: f.StartDate || '',
-    days: { roughIn: Number(f.DaysRoughIn) || 0, finish: Number(f.DaysFinish) || 0 },
+    days: { roughIn: estDays(f.HoursRoughIn, f.DaysRoughIn), finish: estDays(f.HoursFinish, f.DaysFinish) },
     tasks
   };
 }
+
+// Labour hours per crew-day on site. Two installers, but travel, pickups and setup mean
+// nobody gets a full eight hours on the job. Same figure as the sync and Orders page.
+const HOURS_PER_DAY = 13;
+// Worked from the quoted hours here rather than the stored day count, so changing the
+// figure above takes effect without waiting for every project to re-sync. Older rows
+// without hours fall back to their stored days, which were worked at 16 h.
+function estDays(hours, storedDays) {
+  const h = Number(hours) > 0 ? Number(hours) : (Number(storedDays) || 0) * 16;
+  return h > 0 ? Math.max(1, Math.ceil(h / HOURS_PER_DAY)) : 0;
+}
+
+// Tasks up to this many days apart join into one bar. Three covers a weekend (Friday to
+// Monday) without turning a Friday and the following Friday into an eight-day block.
+const JOIN_GAP_DAYS = 3;
+// Same rules as the sync, applied here too so tasks saved before those rules read the same.
+function taskPhaseOf(t) {
+  const p = String(t.progress || '').trim().toLowerCase(), n = String(t.name || '').toLowerCase();
+  return (p.startsWith('prewire') || p.startsWith('rough') || /rough|pre-?wire/.test(n)) ? 'roughIn' : 'finish';
+}
+function isPlaceholder(t) { return t.placeholder === true || /placeholder|tentative/i.test(String(t.name || '')); }
 
 /* ---------- dates ----------
    Plain YYYY-MM-DD throughout with local-time parsing, matching the rest of the suite.
@@ -239,39 +260,43 @@ function windowRange() {
    Phases with no tasks yet are estimated from the project's quoted hours and drawn
    hatched, so a plan never reads as a commitment. */
 
+/* Per phase, in order of preference:
+     1. Real tasks -- drawn on their own dates, joined across gaps of up to JOIN_GAP_DAYS.
+        Any placeholder for that phase is ignored once a real task exists.
+     2. A placeholder task ("Rough in Placeholder") -- marks where the phase starts; the
+        block is as long as the quoted hours say, drawn as an estimate.
+     3. Nothing -- estimated from the project start date, a week after the previous phase.
+   A phase with no hours and no tasks is not drawn. */
 function segmentsFor(p, range) {
   const segs = [];
-  const byPhase = { roughIn: [], finish: [] };
-  for (const t of p.tasks) if (t.phase && t.start) byPhase[t.phase].push(t);
+  let cursor = p.start ? parseD(p.start) : null;   // where the next estimated block may begin
 
   for (const phase of ['roughIn', 'finish']) {
-    const ts = byPhase[phase].slice().sort((a, b) => a.start.localeCompare(b.start));
-    if (ts.length) {
-      let s = ts[0].start, e = ts[0].end || ts[0].start;
-      for (let i = 1; i < ts.length; i++) {
-        const t = ts[i];
-        // More than a week apart is a real break in the work, not one continuous block.
-        if (dayDiff(parseD(e), parseD(t.start)) > 7) { segs.push({ phase, from: s, to: e, est: false, label: labelOf(ts, s, e) }); s = t.start; e = t.end || t.start; }
-        else if ((t.end || t.start) > e) e = t.end || t.start;
-      }
-      segs.push({ phase, from: s, to: e, est: false, label: labelOf(ts, s, e) });
-    }
-  }
+    const ts = p.tasks.filter(t => t.start && taskPhaseOf(t) === phase).sort((a, b) => a.start.localeCompare(b.start));
+    const real = ts.filter(t => !isPlaceholder(t)), held = ts.filter(isPlaceholder);
+    const days = p.days[phase];
 
-  // Estimated blocks for phases with nothing scheduled, anchored on the project start.
-  let cursor = p.start ? parseD(p.start) : null;
-  if (cursor) {
-    for (const phase of ['roughIn', 'finish']) {
-      if (byPhase[phase].length) {                       // already real; move past it
-        const last = segs.filter(s => s.phase === phase).map(s => s.to).sort().pop();
-        if (last && parseD(last) > cursor) cursor = addDays(parseD(last), 1);
-        continue;
+    if (real.length) {
+      let s = real[0].start, e = real[0].end || real[0].start;
+      for (let i = 1; i < real.length; i++) {
+        const t = real[i], te = t.end || t.start;
+        if (dayDiff(parseD(e), parseD(t.start)) > JOIN_GAP_DAYS) {
+          segs.push({ phase, from: s, to: e, est: false, label: labelOf(real, s, e) });
+          s = t.start; e = te;
+        } else if (te > e) e = te;
       }
-      const days = Math.max(1, Math.ceil(p.days[phase] || 0));
-      if (!p.days[phase]) continue;
+      segs.push({ phase, from: s, to: e, est: false, label: labelOf(real, s, e) });
+      cursor = addDays(parseD(e), 7);
+    } else if (held.length) {
+      const from = held[0].start;
+      const len = days || (dayDiff(parseD(from), parseD(held[0].end || from)) + 1);
+      const to = iso(addDays(parseD(from), len - 1));
+      segs.push({ phase, from, to, est: true, label: (days ? days + 'd' : '') + ' planned' });
+      cursor = addDays(parseD(to), 7);
+    } else if (cursor && days) {
       const from = iso(cursor), to = iso(addDays(cursor, days - 1));
       segs.push({ phase, from, to, est: true, label: days + 'd est' });
-      cursor = addDays(cursor, days + 6);                // nominal gap between phases
+      cursor = addDays(cursor, days + 6);            // nominal gap between phases
     }
   }
 

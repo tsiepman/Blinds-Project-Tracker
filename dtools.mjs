@@ -92,8 +92,10 @@ export function phaseOf(rawPhase) {
   return null;
 }
 
-// Standard crew is two installers, eight hours -- so 16 labour hours is one day on site.
-const HOURS_PER_DAY = 16;
+// Standard crew is two installers, but nobody gets a full eight hours on the job once
+// travel, pickups and setup come out -- so 13 labour hours is one day on site.
+// The board and Orders pages use the same figure (HOURS_PER_DAY in each).
+const HOURS_PER_DAY = 13;
 
 /** Labour hours and estimated day-length per phase, from the project's line items. */
 export function phaseEstimate(detail) {
@@ -113,14 +115,21 @@ export function phaseEstimate(detail) {
 
 // Tasks carry their own Progress, which ART uses to colour the SI calendar. The values
 // mix three ideas -- phase (Prewire, Installing), work type (Security, Service,
-// Lighting/Shades) and status (Not started). Only the phase ones are reliable enough to
-// drive colour; the rest ride along as a label.
-export function taskPhase(progress) {
+// Lighting/Shades) and status (Not started). Rough-in is anything marked Prewire, or
+// named for rough-in ("Rough in Placeholder"); everything else is finish work, so a
+// Lighting/Shades or Security day still shows and still drives ordering.
+// The board and Orders pages repeat this rule so older saved tasks read the same way.
+export function taskPhase(progress, name) {
   const p = String(progress || '').trim().toLowerCase();
-  if (p.startsWith('prewire') || p.startsWith('rough')) return 'roughIn';
-  if (p.startsWith('install') || p.startsWith('trim') || p.startsWith('finish')) return 'finish';
-  return null;
+  const n = String(name || '').toLowerCase();
+  if (p.startsWith('prewire') || p.startsWith('rough') || /rough|pre-?wire/.test(n)) return 'roughIn';
+  return 'finish';
 }
+
+// Salespeople add "Rough in Placeholder" / "Finish Placeholder" tasks when a quote is
+// approved. They mark roughly when a phase starts; the length comes from quoted hours.
+// Once a phase has any real task, its placeholder is ignored.
+export function isPlaceholder(name) { return /placeholder|tentative/i.test(String(name || '')); }
 
 /** Collapse a project's day-tasks into real date spans. */
 export function taskSpans(tasks) {
@@ -135,7 +144,8 @@ export function taskSpans(tasks) {
       start: dayOf(start),
       end: dayOf(end),
       progress: t.Progress || '',
-      phase: taskPhase(t.Progress),
+      phase: taskPhase(t.Progress, t.Name),
+      placeholder: isPlaceholder(t.Name),
       pct: Number(t.PercentComplete) || 0,
       crew: (t.Resources ?? []).map(r => r.Name).filter(Boolean),
     });

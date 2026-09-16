@@ -321,19 +321,43 @@ function leadWeeks(vendor, model, desc) {
    vendor, not one per job. The per-job split rides underneath so the number can be
    sanity-checked before it is keyed into a supplier's site. */
 
+// Labour hours per crew-day on site -- the same figure as the sync and the project board.
+const HOURS_PER_DAY = 13;
+function estDays(p, phase) {
+  const hours = Number(phase === 'roughIn' ? p.HoursRoughIn : p.HoursFinish);
+  const h = hours > 0 ? hours : (Number(phase === 'roughIn' ? p.DaysRoughIn : p.DaysFinish) || 0) * 16;
+  return h > 0 ? Math.max(1, Math.ceil(h / HOURS_PER_DAY)) : 0;
+}
+// Same task rules as the board: rough-in is Prewire or named for rough-in, everything else
+// is finish, and "… Placeholder" tasks only count until a phase has a real task.
+function taskPhaseOf(t) {
+  const p = String(t.progress || '').trim().toLowerCase(), n = String(t.name || '').toLowerCase();
+  return (p.startsWith('prewire') || p.startsWith('rough') || /rough|pre-?wire/.test(n)) ? 'roughIn' : 'finish';
+}
+function isPlaceholder(t) { return t.placeholder === true || /placeholder|tentative/i.test(String(t.name || '')); }
+
+/* When a phase starts, for counting order-by dates back from it:
+     real tasks        -> the first real task
+     only a placeholder -> the placeholder's date
+     nothing           -> rough-in on the project start; finish a week after rough-in
+                          ends, rough-in's length coming from its quoted hours */
 function phaseDate(p, phase) {
   let tasks = [];
   try { tasks = JSON.parse(p.TasksJson || '[]'); } catch {}
-  const mine = tasks.filter(t => t.phase === phase && t.start).sort((a, b) => a.start.localeCompare(b.start));
-  if (mine.length) return mine[0].start;
-
-  // Nothing scheduled: fall back to the project start plus the estimated day-lengths,
-  // which come from the quoted labour hours divided by a 16-hour crew day.
-  if (!p.StartDate) return null;
-  const start = parseD(p.StartDate);
-  if (phase === 'roughIn') return iso(start);
-  const rough = Math.ceil(Number(p.DaysRoughIn) || 0);
-  return iso(addDays(start, rough + 6));      // nominal gap between phases
+  const span = ph => {
+    const ts = tasks.filter(t => t.start && taskPhaseOf(t) === ph).sort((a, b) => a.start.localeCompare(b.start));
+    const real = ts.filter(t => !isPlaceholder(t));
+    if (real.length) return { from: real[0].start, to: real.map(t => t.end || t.start).sort().pop() };
+    if (ts.length) return { from: ts[0].start, to: iso(addDays(parseD(ts[0].start), Math.max(1, estDays(p, ph)) - 1)) };
+    return null;
+  };
+  const rough = span('roughIn');
+  if (phase === 'roughIn') return rough ? rough.from : (p.StartDate || null);
+  const fin = span('finish');
+  if (fin) return fin.from;
+  const roughEnd = rough ? rough.to
+    : p.StartDate ? iso(addDays(parseD(p.StartDate), Math.max(1, estDays(p, 'roughIn')) - 1)) : null;
+  return roughEnd ? iso(addDays(parseD(roughEnd), 7)) : null;   // nominal gap between phases
 }
 
 // A job marked Completed in D-Tools has nothing left to buy, but it stays approved, so the
