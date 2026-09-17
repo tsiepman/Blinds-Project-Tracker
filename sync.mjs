@@ -6,7 +6,8 @@
 // Runs on a schedule in GitHub Actions. The wall board reads the SharePoint list it
 // writes; nothing in the browser ever sees the D-Tools key.
 
-import { DTools, phaseEstimate, taskSpans, orderLines, catalogVendors } from './dtools.mjs';
+import { DTools, phaseEstimate, taskSpans, orderLines, catalogVendors,
+         visitFromTask, visitFromServiceOrder, visitInWindow } from './dtools.mjs';
 import { Graph } from './graph.mjs';
 import { createHash } from 'node:crypto';
 
@@ -16,6 +17,10 @@ const LIST = 'SchedProjects';
 // The Orders page's small shared list. Its "vendors" row holds every supplier name in the
 // catalog, for the lead-time picker; the page itself owns the "stock" row.
 const STOCK_LIST = 'StockSnapshot';
+// Who was scheduled where, written down as it happens -- see "field visits" in dtools.mjs.
+// Rows are never deleted here: a visit that disappears from D-Tools is exactly the thing
+// worth still having a record of.
+const VISIT_LIST = 'FieldVisits';
 
 // Every approved project is synced, whatever its price. The Orders page reads this list and
 // needs every job that has product to buy; the wall board applies its own $10k cut when it
@@ -82,6 +87,7 @@ async function main() {
 
   let created = 0, updated = 0, unchanged = 0;
   const failed = [];
+  const visits = [];
   const stats = { withStart: 0, withTasks: 0, board: 0, active: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
   const noVendorModels = new Map();                 // model -> number of jobs it is on
 
@@ -126,7 +132,16 @@ async function main() {
     // starts refreshing again.)
     const active = !String(p.Progress || '').trim().toLowerCase().startsWith('complete');
     let spans;
-    if (active || !prior) spans = taskSpans(await si.tasks(p.Id));
+    if (active || !prior) {
+      const tasks = await si.tasks(p.Id);
+      spans = taskSpans(tasks);
+      // The same fetch feeds the field-visit log: who was scheduled where, recorded while
+      // the task still exists.
+      for (const t of tasks ?? []) {
+        const v = visitFromTask(t, p);
+        if (v && visitInWindow(v)) visits.push(v);
+      }
+    }
     else { try { spans = JSON.parse(prior.TasksJson || '[]'); } catch { spans = []; } }
 
     const fields = {
@@ -185,6 +200,71 @@ async function main() {
     } catch (e) {
       failed.push(fields.Title);
       console.log(`  ! ${fields.Title} not saved: ${e.message.slice(0, 200)}`);
+    }
+  }
+
+  /* ---------- field visits ----------
+     Service calls come from their own feed; project work came out of the task fetch above.
+     Rows are matched on the D-Tools id, updated while the visit still exists, and left
+     alone once it stops appearing -- a deleted or rescheduled visit keeps its record. */
+  try {
+    for (const s of await si.serviceOrders()) {
+      const v = visitFromServiceOrder(await si.getServiceOrder(s.Id));
+      if (v && visitInWindow(v)) visits.push(v);
+    }
+  } catch (e) {
+    console.log(`  ! service orders not read: ${e.message.slice(0, 160)}`);
+  }
+
+  let visitsNew = 0, visitsChanged = 0;
+  if (visits.length) {
+    try {
+      const have = new Map();
+      for (const it of await graph.items(VISIT_LIST)) {
+        const f = it.fields ?? {};
+        if (f.VisitId) have.set(f.VisitId, { itemId: it.id, ...f });
+      }
+      for (const v of visits) {
+        const prior = have.get(v.visitId);
+        const fields = {
+          Title: `${v.date} ${v.jobNumber || v.client || v.name}`.slice(0, 250),
+          VisitId: v.visitId,
+          Kind: v.kind,
+          Number: v.number,
+          JobNumber: v.jobNumber,
+          JobName: String(v.jobName).slice(0, 250),
+          Client: String(v.client).slice(0, 250),
+          Site: String(v.site).slice(0, 250),
+          VisitName: String(v.name).slice(0, 250),
+          SchedDate: v.date,
+          SchedFrom: v.from,
+          SchedTo: v.to,
+          Crew: v.crew.join(', ').slice(0, 250),
+          Progress: v.progress,
+          PercentComplete: String(v.pct),
+          Instructions: v.instructions,
+          SourceUpdatedOn: v.updatedOn,
+          SourceUpdatedBy: v.updatedBy,
+          SyncedAt: new Date().toISOString(),
+        };
+        try {
+          if (!prior) { if (!dryRun) await graph.create(VISIT_LIST, { ...fields, FirstSeen: new Date().toISOString() }); visitsNew++; }
+          else {
+            // Only the fields that can move -- so a re-run doesn't rewrite every row, and
+            // the write-up columns the field log fills in later are never touched.
+            const moved = ['SchedDate', 'SchedFrom', 'SchedTo', 'Crew', 'Progress', 'PercentComplete', 'Instructions', 'SourceUpdatedOn']
+              .some(k => String(prior[k] ?? '') !== String(fields[k] ?? ''));
+            if (moved) { if (!dryRun) await graph.update(VISIT_LIST, prior.itemId, fields); visitsChanged++; }
+          }
+        } catch (e) {
+          failed.push('visit ' + v.number);
+          console.log(`  ! visit ${v.jobNumber} ${v.date} not saved: ${e.message.slice(0, 160)}`);
+        }
+      }
+      console.log(`\nfield visits: ${visits.length} in the window  ${visitsNew} new  ${visitsChanged} changed`);
+    } catch (e) {
+      // The list may not exist yet. Say so once; everything else still syncs.
+      console.log(`\nField visits not saved -- is the ${VISIT_LIST} list created? (${e.message.slice(0, 120)})`);
     }
   }
 

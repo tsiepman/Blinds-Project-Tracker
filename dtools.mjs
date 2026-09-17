@@ -77,6 +77,96 @@ export class DTools {
 
   /** One catalog message with its products. */
   getCatalog(id) { return this.#get(`/Subscribe/ProductCatalogs/${encodeURIComponent(id)}`); }
+
+  /** Service order messages in the queue (service calls, and the crew's day rows). */
+  async serviceOrders({ pageSize = 200 } = {}) {
+    const all = [];
+    for (let page = 1; ; page++) {
+      const d = await this.#get(`/Subscribe/ServiceOrders?pageNumber=${page}&pageSize=${pageSize}&includeImported=true`);
+      const rows = d.ServiceOrders ?? [];
+      all.push(...rows);
+      if (all.length >= (d.TotalCount ?? 0) || rows.length === 0) break;
+    }
+    const newest = new Map();
+    for (const s of all) newest.set(s.Id, s);
+    return [...newest.values()];
+  }
+
+  /** One service order with its crew, dates and notes. */
+  getServiceOrder(id) { return this.#get(`/Subscribe/ServiceOrders/${encodeURIComponent(id)}`); }
+}
+
+/* ---------- field visits ----------
+
+   A record of who was scheduled where, written down as it happens. The API only ever
+   shows the CURRENT state: reschedule a task and yesterday's version is gone, so there
+   would be nothing left to check a work-order write-up against. This captures each
+   visit while it is still there.
+
+   Both sources look the same once shaped: a task on a project, or a service order.   */
+
+function day(s) { return s ? String(s).slice(0, 10) : ''; }
+function clock(s) { return s ? String(s).slice(11, 16) : ''; }
+function crewOf(x) { return (x.Resources ?? []).map(r => r.Name).filter(Boolean); }
+function addressOf(a) {
+  if (!a) return '';
+  return [a.Street1, a.City].filter(Boolean).join(', ');
+}
+
+export function visitFromTask(t, project) {
+  if (!t.ScheduledStart) return null;
+  return {
+    visitId: t.Id,
+    kind: 'task',
+    number: String(t.Number ?? ''),
+    jobNumber: project?.Number || t.ProjectNumber || '',
+    jobName: project?.Name || t.Project || '',
+    client: t.Client || project?.Client || '',
+    site: addressOf(t.SiteAddress),
+    name: t.Name || '',
+    date: day(t.ScheduledStart),
+    from: clock(t.ScheduledStart),
+    to: clock(t.ScheduledEnd),
+    crew: crewOf(t),
+    progress: t.Progress || '',
+    pct: Number(t.PercentComplete) || 0,
+    instructions: t.Description || '',
+    updatedOn: t.UpdatedOn || '',
+    updatedBy: t.UpdatedBy || '',
+  };
+}
+
+export function visitFromServiceOrder(s) {
+  if (!s.ScheduledStart) return null;
+  return {
+    visitId: s.Id,
+    kind: 'service',
+    number: String(s.Number ?? ''),
+    jobNumber: s.ProjectNumber || '',
+    jobName: s.Project || '',
+    client: s.Client || '',
+    site: addressOf(s.SiteAddress),
+    name: s.Name || '',
+    date: day(s.ScheduledStart),
+    from: clock(s.ScheduledStart),
+    to: clock(s.ScheduledEnd),
+    crew: crewOf(s),
+    progress: s.Progress || '',
+    pct: Number(s.PercentComplete) || 0,
+    // Service orders carry both: Description is why it was raised, Notes is what to do.
+    instructions: [s.Description, s.Notes].filter(Boolean).join('\n'),
+    updatedOn: s.UpdatedOn || '',
+    updatedBy: s.UpdatedBy || '',
+  };
+}
+
+/** Keep visits scheduled from `back` days ago to `ahead` days out. */
+export function visitInWindow(v, back = 30, ahead = 14) {
+  if (!v?.date) return false;
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const d = new Date(v.date + 'T00:00:00');
+  const diff = Math.round((d - t) / 86400000);
+  return diff >= -back && diff <= ahead;
 }
 
 /* ---------- shaping ---------- */

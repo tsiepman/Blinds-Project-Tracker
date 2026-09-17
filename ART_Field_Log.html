@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART — Field Log</title>
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; height: 52px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 40; }
+  .mark { background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 12px; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px; }
+  .hname { font-size: 14px; font-weight: 600; }
+  .hname span { color: var(--text3); font-weight: 400; }
+  .spacer { margin-left: auto; }
+  .sp-status { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; display: none; }
+  .sp-status.connected { display: inline; background: var(--green-dim); color: var(--green); }
+  .sp-status.error { display: inline; background: var(--red-dim); color: var(--red); }
+  .sp-status.loading { display: inline; background: var(--accent-dim); color: var(--accent); }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 80px; }
+  h1.page { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  p.page-sub { color: var(--text2); font-size: 13px; margin-bottom: 18px; }
+
+  .controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
+  label.fld { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); margin-bottom: 5px; font-weight: 600; }
+  select, input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 9px 11px; font-size: 14px; font-family: inherit; }
+  .btn { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn:hover { border-color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .seg button { background: var(--bg); color: var(--text2); border: none; padding: 9px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--surface2); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+  .seg button:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .totals { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .tot { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 11px 15px; min-width: 112px; }
+  .tot-n { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tot-l { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 600; }
+  .tot.miss .tot-n { color: var(--yellow); }
+  .tot.late .tot-n { color: var(--accent); }
+
+  .group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden; }
+  .group-head { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: var(--surface2); flex-wrap: wrap; }
+  .group-name { font-size: 14.5px; font-weight: 700; }
+  .group-meta { font-size: 12px; color: var(--text3); margin-left: auto; }
+
+  .row { display: flex; gap: 12px; align-items: flex-start; padding: 11px 16px; border-top: 1px solid var(--border); }
+  .row:first-of-type { border-top: none; }
+  .when { min-width: 5.5em; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums; }
+  .what { flex: 1; min-width: 0; }
+  .job { font-weight: 600; }
+  .job .num { font-family: var(--mono); font-size: 12.5px; color: var(--text3); margin-right: 6px; }
+  .sub { font-size: 12px; color: var(--text3); }
+  .crew { font-size: 12.5px; color: var(--text2); margin-top: 3px; }
+  .note { font-size: 12.5px; color: var(--text2); margin-top: 6px; white-space: pre-wrap; border-left: 2px solid var(--border); padding-left: 9px; }
+  .status { min-width: 9em; text-align: right; }
+
+  .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; display: inline-block; }
+  .t-ok { background: var(--green-dim); color: var(--green); }
+  .t-miss { background: var(--yellow-dim); color: var(--yellow); }
+  .t-late { background: var(--accent-dim); color: var(--accent); }
+  .t-grey { background: var(--surface2); color: var(--text3); }
+  .t-svc { background: var(--surface2); color: var(--text2); }
+
+  .banner { background: var(--yellow-dim); color: var(--yellow); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+  .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
+  .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
+  .card h2 { font-size: 20px; margin-bottom: 8px; }
+  .card p { color: var(--text2); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+  .card .btn { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+  @media (max-width: 720px) {
+    .row { flex-wrap: wrap; }
+    .status { text-align: left; min-width: 0; }
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+</head>
+<body>
+
+<div class="header">
+  <span class="mark">ART</span><span class="hname">Field Log <span>who was where</span></span>
+  <span id="spStatus" class="sp-status"></span>
+  <span class="spacer"></span>
+  <a class="art-back" href="index.html">← All tools</a>
+</div>
+
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   ART Field Log
+   Every visit D-Tools had scheduled, written down by the sync as it happened.
+
+   Why it is recorded rather than read live: the D-Tools API only shows the
+   CURRENT schedule. Reschedule or delete a task and yesterday's version is
+   gone -- and with it any way to ask whether that visit was ever written up.
+
+   Work-order write-ups (the emails installers generate) are matched onto
+   these rows later; until then every past visit reads "no write-up yet".
+   ============================================================ */
+
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
+const LIST = 'FieldVisits';
+
+let msal_ = null, siteId = null, listIds = {};
+let visits = [], usingSample = false;
+let view = (() => { try { return localStorage.getItem('field.view') === 'person' ? 'person' : 'day'; } catch { return 'day'; } })();
+let days = 14, search = '';
+
+/* ---------- auth / graph ---------- */
+
+async function init() {
+  if (location.search.includes('demo')) { loadSample(); render(); return; }
+  msal_ = new msal.PublicClientApplication({
+    auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/' + TENANT_ID, redirectUri: location.href.split('?')[0].split('#')[0] },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msal_.initialize();
+  await msal_.handleRedirectPromise();
+  if (!msal_.getAllAccounts().length) { renderSignIn(); return; }
+  await load();
+}
+function signIn() { msal_.loginRedirect({ scopes: SCOPES }); }
+
+async function token() {
+  const a = msal_.getAllAccounts();
+  if (!a.length) return null;
+  try { return (await msal_.acquireTokenSilent({ scopes: SCOPES, account: a[0] })).accessToken; }
+  catch { await msal_.acquireTokenRedirect({ scopes: SCOPES, account: a[0] }); return null; }
+}
+async function graph(path) {
+  const t = await token();
+  if (!t) return null;
+  const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
+    headers: { Authorization: 'Bearer ' + t, Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' }
+  });
+  if (!res.ok) throw new Error('Graph ' + res.status);
+  return res.json();
+}
+async function items(name) {
+  if (!siteId) siteId = (await graph('/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
+  if (!listIds[name]) listIds[name] = (await graph('/sites/' + siteId + '/lists/' + name)).id;
+  const out = [];
+  let url = '/sites/' + siteId + '/lists/' + listIds[name] + '/items?expand=fields&$top=999';
+  for (;;) {
+    const d = await graph(url);
+    if (!d) return out;
+    out.push(...(d.value || []));
+    if (!d['@odata.nextLink']) break;
+    url = d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '');
+  }
+  return out;
+}
+function setStatus(cls, txt) { const e = document.getElementById('spStatus'); e.className = 'sp-status ' + cls; e.textContent = txt; }
+
+async function load() {
+  setStatus('loading', 'Loading…');
+  try {
+    visits = (await items(LIST)).map(i => i.fields || {});
+    usingSample = false;
+    if (!visits.length) loadSample();
+    setStatus('connected', 'SharePoint');
+  } catch (e) {
+    setStatus('error', 'Error');
+    console.error(e);
+    if (!visits.length) loadSample();
+  }
+  render();
+}
+
+/* ---------- dates ---------- */
+function parseD(s) { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); }
+function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function dayDiff(a, b) { return Math.round((parseD(b) - parseD(a)) / 86400000); }
+function today() { return iso(new Date()); }
+function dayLabel(s) {
+  const d = dayDiff(s, today());
+  const name = parseD(s).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
+  return d === 0 ? 'Today · ' + name : d === 1 ? 'Yesterday · ' + name : name;
+}
+
+/* ---------- shaping ----------
+   A visit needs a write-up once the day is over. Today's and future work is simply
+   pending, so it is never flagged. */
+function shape(f) {
+  const date = f.SchedDate || '';
+  const age = date ? dayDiff(date, today()) : 0;
+  const done = !!f.WriteUpAt;
+  return {
+    id: f.VisitId || '', kind: f.Kind || 'task', number: f.Number || '',
+    jobNumber: f.JobNumber || '', jobName: f.JobName || '', client: f.Client || '',
+    site: f.Site || '', name: f.VisitName || '',
+    date, from: f.SchedFrom || '', to: f.SchedTo || '',
+    crew: String(f.Crew || '').split(',').map(s => s.trim()).filter(Boolean),
+    progress: f.Progress || '', instructions: f.Instructions || '',
+    writeUpAt: f.WriteUpAt || '', writeUpBy: f.WriteUpBy || '', summary: f.Summary || '',
+    age, done,
+    state: !date ? 'none' : age <= 0 ? 'upcoming' : done ? 'ok' : age >= 3 ? 'late' : 'missing'
+  };
+}
+function inWindow(v) {
+  if (!v.date) return false;
+  if (v.age > days) return false;
+  if (!search) return true;
+  const hay = [v.jobNumber, v.jobName, v.client, v.site, v.name, v.crew.join(' ')].join(' ').toLowerCase();
+  return hay.includes(search.toLowerCase());
+}
+
+/* ---------- render ---------- */
+
+function renderSignIn() {
+  document.getElementById('app').innerHTML =
+    '<div class="centre"><div class="card"><h2>ART Field Log</h2>' +
+    '<p>Sign in with your Advance Electronics account.</p>' +
+    '<button class="btn" onclick="signIn()">Sign in with Microsoft</button></div></div>';
+}
+
+function statusTag(v) {
+  if (v.state === 'upcoming') return '<span class="tag t-grey">' + (v.age === 0 ? 'today' : 'upcoming') + '</span>';
+  if (v.state === 'ok') return '<span class="tag t-ok">written up</span>' +
+    (v.writeUpBy ? '<div class="sub">' + esc(v.writeUpBy) + '</div>' : '');
+  if (v.state === 'late') return '<span class="tag t-late">no write-up · ' + v.age + ' days</span>';
+  return '<span class="tag t-miss">no write-up</span>';
+}
+
+function rowHtml(v, showDate) {
+  const time = v.from ? v.from + (v.to ? '–' + v.to : '') : '—';
+  return '<div class="row">' +
+    '<div class="when">' + (showDate ? parseD(v.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '<br>' : '') + time + '</div>' +
+    '<div class="what">' +
+      '<div class="job">' + (v.jobNumber ? '<span class="num">' + esc(v.jobNumber) + '</span>' : '') + esc(v.jobName || v.name || v.client) +
+        (v.kind === 'service' ? ' <span class="tag t-svc">service</span>' : '') + '</div>' +
+      '<div class="sub">' + esc([v.client, v.site].filter(Boolean).join(' · ')) + '</div>' +
+      (v.crew.length ? '<div class="crew">' + esc(v.crew.join(', ')) + '</div>' : '<div class="crew"><span class="tag t-grey">nobody assigned</span></div>') +
+      (v.instructions ? '<div class="note">' + esc(v.instructions.slice(0, 400)) + (v.instructions.length > 400 ? '…' : '') + '</div>' : '') +
+      (v.summary ? '<div class="note">' + esc(v.summary) + '</div>' : '') +
+    '</div>' +
+    '<div class="status">' + statusTag(v) + '</div>' +
+  '</div>';
+}
+
+function render() {
+  const all = visits.map(shape).filter(inWindow);
+  const past = all.filter(v => v.state !== 'upcoming');
+  const missing = past.filter(v => !v.done);
+  const late = past.filter(v => v.state === 'late');
+
+  let body;
+  if (!all.length) {
+    body = '<div class="empty">Nothing scheduled in the last ' + days + ' days' + (search ? ' matching “' + esc(search) + '”' : '') + '.</div>';
+  } else if (view === 'day') {
+    const byDay = new Map();
+    for (const v of all) { if (!byDay.has(v.date)) byDay.set(v.date, []); byDay.get(v.date).push(v); }
+    body = [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([date, vs]) => {
+      vs.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
+      const miss = vs.filter(v => v.state === 'missing' || v.state === 'late').length;
+      return '<div class="group"><div class="group-head"><span class="group-name">' + dayLabel(date) + '</span>' +
+        '<span class="group-meta">' + vs.length + ' visit' + (vs.length === 1 ? '' : 's') +
+        (miss ? ' · ' + miss + ' without a write-up' : '') + '</span></div>' +
+        vs.map(v => rowHtml(v, false)).join('') + '</div>';
+    }).join('');
+  } else {
+    const byPerson = new Map();
+    for (const v of all) {
+      const names = v.crew.length ? v.crew : ['(nobody assigned)'];
+      for (const n of names) { if (!byPerson.has(n)) byPerson.set(n, []); byPerson.get(n).push(v); }
+    }
+    body = [...byPerson.entries()].sort((a, b) => {
+      const m = x => x[1].filter(v => v.state === 'missing' || v.state === 'late').length;
+      return m(b) - m(a) || a[0].localeCompare(b[0]);
+    }).map(([name, vs]) => {
+      vs.sort((a, b) => (b.date + b.from).localeCompare(a.date + a.from));
+      const miss = vs.filter(v => v.state === 'missing' || v.state === 'late').length;
+      const done = vs.filter(v => v.done).length;
+      return '<div class="group"><div class="group-head"><span class="group-name">' + esc(name) + '</span>' +
+        (miss ? '<span class="tag t-miss">' + miss + ' to write up</span>' : '') +
+        '<span class="group-meta">' + vs.length + ' visit' + (vs.length === 1 ? '' : 's') + ' · ' + done + ' written up</span></div>' +
+        vs.map(v => rowHtml(v, true)).join('') + '</div>';
+    }).join('');
+  }
+
+  document.getElementById('app').innerHTML =
+    (usingSample ? '<div class="banner" style="text-align:center">Sample data — the sync has not written to SharePoint yet</div>' : '') +
+    '<div class="wrap"><h1 class="page">Field Log</h1>' +
+    '<p class="page-sub">Every visit D-Tools had scheduled, recorded as it happened. Rescheduled or deleted work keeps its record here.</p>' +
+    '<div class="banner"><b>Write-ups aren\'t being matched yet.</b> Once the work-order emails reach the shared mailbox, each visit will show whether its write-up came in and what it said. Until then every past visit reads “no write-up”.</div>' +
+    '<div class="controls">' +
+      '<div><label class="fld">View</label><div class="seg" role="tablist">' +
+        '<button role="tab" aria-selected="' + (view === 'day') + '" class="' + (view === 'day' ? 'on' : '') + '" onclick="setView(\'day\')">By day</button>' +
+        '<button role="tab" aria-selected="' + (view === 'person') + '" class="' + (view === 'person' ? 'on' : '') + '" onclick="setView(\'person\')">By installer</button>' +
+      '</div></div>' +
+      '<div><label class="fld">Show</label><select onchange="setDays(this.value)">' +
+        [7, 14, 30].map(d => '<option value="' + d + '"' + (d === days ? ' selected' : '') + '>last ' + d + ' days</option>').join('') +
+      '</select></div>' +
+      '<div style="flex:1 1 200px"><label class="fld" for="q">Find</label><input id="q" style="width:100%" placeholder="Job, client, site or installer" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
+      '<div><button class="btn" onclick="load()">Refresh</button></div>' +
+    '</div>' +
+    '<div class="totals">' +
+      tot('', all.length, 'visits') +
+      tot('', past.filter(v => v.done).length, 'written up') +
+      tot('miss', missing.length, 'to write up') +
+      tot('late', late.length, '3 days or more') +
+    '</div>' + body + '</div>';
+}
+
+function tot(cls, n, label) { return '<div class="tot ' + cls + '"><div class="tot-n">' + n + '</div><div class="tot-l">' + label + '</div></div>'; }
+function setView(v) { view = v; try { localStorage.setItem('field.view', v); } catch {} render(); }
+function setDays(d) { days = Number(d); render(); }
+function setSearch(v) {
+  search = v; render();
+  const el = document.getElementById('q');
+  if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- sample ----------
+   Shown only when FieldVisits is empty, and banner-marked. Shapes taken from real
+   scheduled work. */
+function loadSample() {
+  usingSample = true;
+  const d = n => iso(addDays(new Date(), n));
+  visits = [
+    { VisitId: 's1', Kind: 'task', Number: '4850', JobNumber: 'ADVAN-4168', JobName: '11 Harvest Way System Upgrades', Client: 'Guffei, Greg',
+      Site: '11 Harvest Way, East St. Paul', VisitName: '11 Harvest Way', SchedDate: d(-1), SchedFrom: '09:00', SchedTo: '17:00',
+      Crew: 'Andrew Lindquist, Barry Keeper', Progress: 'Prewire', Instructions: 'Rough-in second floor and outdoor AP. Builder on site after 2.' },
+    { VisitId: 's2', Kind: 'service', Number: '6299', JobNumber: '', JobName: '', Client: 'Chomiak, Bonnie',
+      Site: 'PH12-139 Tuxedo Ave', VisitName: 'PH12-139 Tuxedo Ave', SchedDate: d(-1), SchedFrom: '11:00', SchedTo: '12:00',
+      Crew: 'Chris MacDearmid', Progress: 'Service', Instructions: 'Hunter Douglas shades in master bedroom are reversed on the app.' },
+    { VisitId: 's3', Kind: 'task', Number: '4841', JobNumber: 'ADVAN-3853', JobName: 'Maric Show Home 7 Ash Cove', Client: 'Maric Homes',
+      Site: '7 Ash Cove', VisitName: '7 Ash Cove', SchedDate: d(-4), SchedFrom: '14:00', SchedTo: '17:00',
+      Crew: 'Colin Tibbs', Progress: 'Installing', Instructions: '' },
+    { VisitId: 's4', Kind: 'task', Number: '4852', JobNumber: 'ADVAN-3346', JobName: 'New Maric Home, 5925 Southboine Dr', Client: 'Maric Homes',
+      Site: '5925 Southboine Dr', VisitName: '5925 Southboine Dr', SchedDate: d(0), SchedFrom: '09:00', SchedTo: '17:00',
+      Crew: 'Colin Tibbs, Kevin Muir', Progress: 'Installing', Instructions: 'Trim out theatre and set shades.' }
+  ];
+}
+
+init().catch(e => { console.error(e); renderSignIn(); });
+</script>
+</body>
+</html>
