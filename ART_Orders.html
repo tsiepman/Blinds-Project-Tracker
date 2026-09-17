@@ -120,8 +120,13 @@
   .stock { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; overflow: hidden; }
   .stock.stale .lt-head { background: var(--yellow-dim); }
   .stock textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 9px; font-family: var(--mono); font-size: 11.5px; }
-  .line-stock { font-size: 11.5px; color: var(--text3); min-width: 6em; text-align: right; }
-  .line-stock b { color: var(--green); font-size: 13px; }
+  .line-num { min-width: 4.6em; text-align: right; font-variant-numeric: tabular-nums; }
+  .line-num .lbl { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); font-weight: 600; }
+  .line-num b { font-size: 14px; font-weight: 600; }
+  .line-num b.dim { color: var(--text3); font-weight: 500; }
+  .line-num.order b { font-family: var(--mono); font-size: 19px; font-weight: 700; }
+  .fix-hits { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; }
+  .fix-hits .btn { justify-content: flex-start; text-align: left; }
 
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
@@ -270,7 +275,12 @@ async function load() {
         const f = srow.fields || {};
         const saved = JSON.parse(f.DataJson || '{}');
         // v2 carries which products the report was checked against; older saves are a bare map.
-        if (saved && saved.v === 2) { stockMap = saved.m || {}; stockModels = new Set(saved.models || []); }
+        if (saved && saved.v >= 2) {
+          stockMap = saved.m || {};
+          stockModels = new Set(saved.models || []);
+          stockUnknown = new Set(saved.unknown || []);
+          stockOverrides = saved.overrides || {};
+        }
         else { stockMap = saved || {}; stockModels = null; }
         stockAsOf = f.AsOf || '';
       }
@@ -536,7 +546,7 @@ function render() {
       tot('', toBuy.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
     '</div>' +
     (covered.length ? '<div style="margin:-6px 0 14px"><button class="btn btn-ghost btn-sm" onclick="toggleCovered()">' + (showCovered ? 'Hide' : 'Show') + ' ' + covered.length + ' line' + (covered.length === 1 ? '' : 's') + ' covered by stock</button></div>' : '') +
-    stockPanel() + leadPanel() + body + '</div>';
+    stockPanel() + fixPanel(built) + leadPanel() + body + '</div>';
 }
 
 /* ---------- by job ----------
@@ -724,6 +734,17 @@ let ltOpen = false, ltDirty = false, ltDeleted = [];
    no match genuinely have no stock, because the report only lists what you hold. */
 
 let stockMap = {}, stockAsOf = '', stockOpen = false;
+/* Products whose keys matched nothing in the report AND which have no RepairQ SKU in the
+   catalog to match on. For those, "not in the report" cannot be read as "none held" --
+   Sonos ARC Ultra sits in RQ as AVHASS001632 while the catalog offers only the part
+   number "ARCUltraBlack". They show "?" instead of a wrong 0. */
+let stockUnknown = new Set();
+/* model -> report key, set by hand in the "couldn't match" panel and kept for good. */
+let stockOverrides = {};
+/* Every product in the report just loaded: {key, sku, name, qty}. Held in memory only --
+   6,800 rows is far too much to save, and it is only needed to fix matches by hand right
+   after a load. */
+let stockIndex = [];
 // Products (normalised model) that were on open jobs when the report was loaded. Only
 // their stock is kept -- the full report is ~6,800 SKUs, too big to save -- so a product
 // outside this set was never looked up and reads as unknown, not as zero. null = old save.
@@ -755,7 +776,96 @@ function stockPanel() {
 }
 
 function stockToggle() { stockOpen = !stockOpen; render(); }
-function stockClear() { stockMap = {}; stockModels = null; stockAsOf = ''; saveStock(); render(); }
+
+/* ---------- products the report couldn't be matched to ----------
+   The catalog is the weak side: Sonos ARC Ultra has no RepairQ SKU on it, so nothing in
+   the report can be found for it. Rather than call that zero, it shows "?" and lands
+   here, where it can be pointed at the right RepairQ item once. The answer is saved with
+   the stock, so it holds for every future report until someone clears it. */
+let fixOpen = false, fixRefs = [], fixHits = {};
+
+function fixPanel(rows) {
+  if (!stockAsOf) return '';
+  // Biggest first, by what it would cost to buy: nobody is going to work through 244
+  // products, but the dozen worth real money are worth five minutes.
+  const all = rows.filter(r => r.stock === null).sort((a, b) => (b.qty * b.cost) - (a.qty * a.cost));
+  const q = fixFind.trim().toLowerCase();
+  const found = q ? all.filter(r => (r.model + ' ' + r.desc).toLowerCase().includes(q)) : all;
+  fixRefs = found.slice(0, 20);
+  const overrides = Object.keys(stockOverrides);
+  if (!all.length && !overrides.length) return '';
+  const canSearch = stockIndex.length > 0;
+
+  const row = (r, i) => {
+    const hits = fixHits[i] || [];
+    return '<div class="lt-row" style="align-items:flex-start">' +
+      '<span style="flex:1 1 220px;min-width:0"><b>' + esc(r.model) + '</b>' +
+        '<div class="mini">' + esc(r.desc || '') + '</div></span>' +
+      (canSearch
+        ? '<span style="flex:1 1 260px;min-width:0"><input id="fx' + i + '" placeholder="Search the RepairQ report" ' +
+            'value="' + esc(fixQ[i] || '') + '" oninput="fixSearch(' + i + ',this.value)" style="width:100%">' +
+            (hits.length ? '<div class="fix-hits">' + hits.map(h =>
+              '<button class="btn btn-ghost btn-sm" onclick="fixPick(' + i + ',\'' + h.key + '\')">' +
+              esc(h.name.slice(0, 54)) + ' <span class="sm2">' + esc(h.sku) + ' · ' + h.qty + ' held</span></button>').join('') + '</div>' : '') +
+          '</span>'
+        : '<span class="sm2" style="flex:1 1 200px">Load the report again to search it</span>') +
+      '</div>';
+  };
+
+  return '<div class="lt' + (fixOpen ? ' open' : '') + '">' +
+    '<div class="lt-head" onclick="fixToggle()">' +
+      '<span class="panel-title">Couldn\'t match to stock</span>' +
+      '<span class="vendor-meta">' + (all.length ? all.length + ' product' + (all.length === 1 ? '' : 's') + ' showing “?”' : 'all matched') +
+        (overrides.length ? ' · ' + overrides.length + ' matched by hand' : '') + '</span>' +
+      '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">' + (fixOpen ? 'hide' : 'fix') + '</span>' +
+    '</div><div class="lt-body">' +
+      '<p class="lt-hint">These products have no RepairQ SKU in the D-Tools catalog, so nothing in the report can be found for them. ' +
+      'That is why they show <b>?</b> rather than 0 — it isn\'t a claim that you hold none. Point one at the right RepairQ item and it is remembered for future reports. ' +
+      'The lasting fix is to put the RepairQ SKU on the product in the D-Tools catalog.</p>' +
+      '<div class="lt-row"><input id="fixFind" style="flex:1" placeholder="Filter these products" value="' + esc(fixFind) + '" oninput="setFixFind(this.value)">' +
+        '<span class="sm2">' + (found.length > fixRefs.length ? 'showing the ' + fixRefs.length + ' biggest of ' + found.length : found.length + ' shown') +
+        ', most expensive first</span></div>' +
+      fixRefs.map(row).join('') +
+      (overrides.length ? '<p class="lt-hint" style="margin-top:12px"><b>Matched by hand</b></p>' +
+        overrides.map(m => '<div class="lt-row"><span style="flex:1">' + esc(m) + ' → <span class="sm2">' + esc(stockOverrides[m]) + '</span></span>' +
+          '<button class="lt-del" title="Remove" onclick="fixClear(\'' + esc(m) + '\')">×</button></div>').join('') : '') +
+    '</div></div>';
+}
+
+let fixQ = {}, fixFind = '';
+function fixToggle() { fixOpen = !fixOpen; render(); }
+function setFixFind(v) {
+  fixFind = v; fixHits = {}; fixQ = {}; render();
+  const el = document.getElementById('fixFind');
+  if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
+}
+function fixSearch(i, q) {
+  fixQ[i] = q;
+  const needle = q.trim().toLowerCase();
+  fixHits[i] = needle.length < 2 ? [] :
+    stockIndex.filter(x => (x.name + ' ' + x.sku).toLowerCase().includes(needle)).slice(0, 6);
+  render();
+  const el = document.getElementById('fx' + i);
+  if (el) { el.focus(); el.setSelectionRange(q.length, q.length); }
+}
+function fixPick(i, key) {
+  const r = fixRefs[i]; if (!r) return;
+  stockOverrides[norm(r.model)] = key;
+  stockUnknown.delete(norm(r.model));
+  // The saved stock only holds keys the products matched, so carry this one across too --
+  // otherwise the match would read as zero until the next report is loaded.
+  const hit = stockIndex.find(x => x.key === key);
+  if (hit) stockMap[key] = hit.qty;
+  fixQ[i] = ''; fixHits[i] = [];
+  saveStock();
+  toast('✓ ' + r.model + ' matched — ' + (stockMap[key] ?? 0) + ' in stock');
+  render();
+}
+function fixClear(model) {
+  delete stockOverrides[model];
+  saveStock(); toast('Match removed'); render();
+}
+function stockClear() { stockMap = {}; stockModels = null; stockUnknown = new Set(); stockIndex = []; stockAsOf = ''; saveStock(); render(); }
 
 // RQ exports a genuine old-format .xls, which a browser cannot read on its own. SheetJS
 // can; it is ~900 KB, so it loads only when someone actually picks a spreadsheet.
@@ -820,7 +930,7 @@ function stockLoadText(raw) {
   if (hIdx < 0) { toast('No "Product SKU" column found — is that the inventory listing?', true); return; }
   const head = rows[hIdx].map(h => h.trim().toLowerCase());
   const cSku = head.indexOf('product sku'), cMfr = head.indexOf('manufacturer sku');
-  const cStatus = head.indexOf('status');
+  const cStatus = head.indexOf('status'), cName = head.indexOf('product name');
   // RQ names the quantity differently per report: the Inventory Listing (one row per unit)
   // says "Quantity", the Inventory Availability Summary says "In Stock". Missing it used to
   // read every row as zero and save an empty stock list with no warning.
@@ -854,15 +964,44 @@ function stockLoadText(raw) {
       for (const k of [l.rq, l.mfr, l.model]) { const n = norm(k); if (n) wanted.add(n); }
     }
   }
+  // Keys matched by hand count as wanted too, or a saved match would be lost on the next load.
+  for (const k of Object.values(stockOverrides)) if (k) wanted.add(k);
   const kept = {};
   for (const k of wanted) if (map[k] != null) kept[k] = map[k];
+
+  // A product with no RepairQ SKU in the catalog, whose other keys match nothing in the
+  // report, cannot be called zero -- we simply could not look it up.
+  const unknown = new Set();
+  for (const p of projects) {
+    if (isCompleted(p)) continue;
+    for (const l of linesOf(p)) {
+      const model = norm(l.model);
+      if (stockOverrides[model]) continue;
+      const matched = [norm(l.rq), norm(l.mfr), model].some(k => k && map[k] != null);
+      if (!matched && !norm(l.rq)) unknown.add(model);
+    }
+  }
+
+  // Kept for this session only, so a mismatch can be pointed at the right RepairQ item.
+  const index = new Map();
+  for (const r of rows.slice(hIdx + 1)) {
+    const sku = String(r[cSku] ?? '').trim();
+    if (!sku) continue;
+    const k = norm(sku);
+    if (!index.has(k)) index.set(k, { key: k, sku, name: String(r[cName] ?? '').trim(), qty: 0 });
+    index.get(k).qty = map[k] ?? index.get(k).qty;
+  }
+  stockIndex = [...index.values()].filter(x => x.qty > 0).sort((a, b) => a.name.localeCompare(b.name));
+
   stockMap = kept;
   stockModels = models;
+  stockUnknown = unknown;
   stockAsOf = new Date().toISOString();
   saveStock();
   stockOpen = false;
   const held = build().filter(r => r.stock > 0).length;
-  toast('✓ Stock loaded — ' + held + ' product' + (held === 1 ? ' on the list is' : 's on the list are') + ' on the shelf');
+  toast('✓ Stock loaded — ' + held + ' product' + (held === 1 ? ' on the list is' : 's on the list are') + ' on the shelf' +
+    (unknown.size ? ' · ' + unknown.size + " couldn't be matched" : ''));
   render();
 }
 
@@ -872,12 +1011,18 @@ function norm(s) { return String(s ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCa
 // manufacturer part number against the report's Manufacturer SKU column.
 function stockFor(r) {
   if (!stockAsOf) return null;
+  const model = norm(r.model);
+  // Matched by hand in the "couldn't match" panel: that answer wins.
+  const ov = stockOverrides[model];
+  if (ov) return stockMap[ov] ?? 0;
   // Not on an open job when the report was loaded, so never looked up: unknown, not zero.
-  if (stockModels && !stockModels.has(norm(r.model))) return null;
-  for (const k of [norm(r.rq), norm(r.mfr), norm(r.model)]) {
+  if (stockModels && !stockModels.has(model)) return null;
+  for (const k of [norm(r.rq), norm(r.mfr), model]) {
     if (k && stockMap[k] != null) return stockMap[k];
   }
-  return 0;                       // absent from the report means none held
+  // No usable key: "not in the report" would be a guess, so say so instead.
+  if (stockUnknown.has(model)) return null;
+  return 0;                       // has a RepairQ SKU and it isn't in the report: none held
 }
 
 async function saveStock() {
@@ -887,7 +1032,8 @@ async function saveStock() {
     const all = await items(LIST.stock);
     // Never truncate: a cut-off JSON string fails to parse on the next load and the stock
     // silently disappears. The filtering in stockLoadText keeps this well inside the limit.
-    const data = JSON.stringify({ v: 2, m: stockMap, models: stockModels ? [...stockModels] : [] });
+    const data = JSON.stringify({ v: 3, m: stockMap, models: stockModels ? [...stockModels] : [],
+      unknown: [...stockUnknown], overrides: stockOverrides });
     if (data.length > 60000) { toast('Stock is too large to save — it works until the page is reloaded', true); return; }
     const fields = { Title: 'stock', DataJson: data, AsOf: stockAsOf };
     const mine = all.find(i => (i.fields || {}).Title !== 'vendors');   // never overwrite the sync's supplier row
@@ -961,10 +1107,13 @@ function lineHtml(r) {
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
     '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) +
       (j.have > 0 ? ' <span class="had">(' + qty(j.have, r.bulk) + ' already marked)</span>' : '') + '</span></div>').join('') + '</div></div>' +
-    (r.stock === null
-      ? (stockAsOf ? '<div class="line-stock" title="Not on an open job when stock was last loaded — load the report again">have<br><b style="color:var(--text3)">?</b></div>' : '')
-      : '<div class="line-stock">have<br><b' + (r.stock > 0 ? '' : ' style="color:var(--text3)"') + '>' + qty(r.stock, r.bulk) + '</b></div>') +
-    '<div class="line-qty">' + qty(r.stock === null ? r.qty : r.order, r.bulk) + '</div>' +
+    // Three plain numbers, because "have 12 / 16" read as a fraction to everyone who saw it.
+    '<div class="line-num"><span class="lbl">in stock</span>' +
+      (!stockAsOf ? '<b class="dim" title="No stock report loaded">—</b>'
+        : r.stock === null ? '<b class="dim" title="Could not be matched to anything in the RepairQ report, so this is not a zero">?</b>'
+        : '<b' + (r.stock > 0 ? '' : ' class="dim"') + '>' + qty(r.stock, r.bulk) + '</b>') + '</div>' +
+    '<div class="line-num"><span class="lbl">needed</span><b>' + qty(r.qty, r.bulk) + '</b></div>' +
+    '<div class="line-num order"><span class="lbl">to order</span><b>' + qty(r.stock === null ? r.qty : r.order, r.bulk) + '</b></div>' +
     '<div class="line-by">' + by + '</div></div>';
 }
 
