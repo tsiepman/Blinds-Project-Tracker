@@ -47,7 +47,11 @@ export function parseNotice({ subject = '', body = '', receivedAt = '' } = {}) {
   // A forwarded copy (Terry's mailbox rule) keeps D-Tools' original send time in the
   // quoted header -- that is when the installer actually wrote the note, so it wins over
   // the forward's own arrival time. A note sent straight to the mailbox has no such line.
-  const fwd = /^Sent:[ \t]*([^\n]+)$/mi.exec(text);
+  // Forwarded twice (someone forwarding Terry's copy) there are several; the original is
+  // the last one before the notice itself.
+  const at = text.search(/has been added to (Task|Service Order)/i);
+  const sents = [...text.slice(0, at < 0 ? undefined : at).matchAll(/^Sent:[ \t]*([^\n]+)$/gmi)];
+  const fwd = sents[sents.length - 1];
   const sentAt = fwd && !isNaN(Date.parse(fwd[1].trim())) ? new Date(fwd[1].trim()).toISOString() : '';
   const arrived = sentAt || receivedAt;
 
