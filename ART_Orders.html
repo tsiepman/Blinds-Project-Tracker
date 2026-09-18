@@ -759,11 +759,16 @@ function stockPanel() {
     ? 'as of ' + new Date(stockAsOf).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) +
       (age > 0 ? ' · ' + age + ' day' + (age === 1 ? '' : 's') + ' old' : '')
     : 'not loaded — quantities below are what the jobs need, not what to buy';
+  // Saved stock holding only RepairQ SKUs means it came from a report with no Manufacturer
+  // SKU column (the Availability Summary), so part-number matches were impossible.
+  const keys = Object.keys(stockMap);
+  const noPartNumbers = stockAsOf && keys.length > 0 && keys.every(k => /^[A-Z]{6}\d{6}$/.test(k));
+  const warn = noPartNumbers ? '<span class="tag t-soon" style="margin-left:6px">wrong report — load the Inventory Listing</span>' : '';
 
-  return '<div class="stock' + (stale ? ' stale' : '') + (stockOpen ? ' open lt' : ' lt') + '">' +
+  return '<div class="stock' + (stale || noPartNumbers ? ' stale' : '') + (stockOpen ? ' open lt' : ' lt') + '">' +
     '<div class="lt-head" onclick="stockToggle()">' +
       '<span class="panel-title">Stock on hand</span>' +
-      '<span class="vendor-meta">' + esc(label) + '</span>' +
+      '<span class="vendor-meta">' + esc(label) + '</span>' + warn +
       '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">' + (stockOpen ? 'hide' : 'update') + '</span>' +
     '</div><div class="lt-body">' +
       '<p class="lt-hint">Export the <b>Inventory Listing</b> from RQ and choose the file — the .xls straight out of RQ works. ' +
@@ -1002,8 +1007,14 @@ function stockLoadText(raw) {
   saveStock();
   stockOpen = false;
   const held = build().filter(r => r.stock > 0).length;
-  toast('✓ Stock loaded — ' + held + ' product' + (held === 1 ? ' on the list is' : 's on the list are') + ' on the shelf' +
-    (unknown.size ? ' · ' + unknown.size + " couldn't be matched" : ''));
+  if (cMfr < 0) {
+    // The Availability Summary has no Manufacturer SKU column, so every product that can
+    // only be matched by its part number reads "?". Worth being loud about.
+    toast('Loaded, but this report has no Manufacturer SKU column — use the Inventory Listing report or part numbers can\'t be matched', true);
+  } else {
+    toast('✓ Stock loaded — ' + held + ' product' + (held === 1 ? ' on the list is' : 's on the list are') + ' on the shelf' +
+      (unknown.size ? ' · ' + unknown.size + " couldn't be matched" : ''));
+  }
   render();
 }
 
