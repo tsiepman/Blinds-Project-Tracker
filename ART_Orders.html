@@ -120,6 +120,7 @@
   .stock { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; overflow: hidden; }
   .stock.stale .lt-head { background: var(--yellow-dim); }
   .stock textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 9px; font-family: var(--mono); font-size: 11.5px; }
+  .mini { font-size: 11px; color: var(--text3); margin-top: 2px; line-height: 1.45; }
   .line-num { min-width: 4.6em; text-align: right; font-variant-numeric: tabular-nums; }
   .line-num .lbl { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); font-weight: 600; }
   .line-num b { font-size: 14px; font-weight: 600; }
@@ -420,7 +421,8 @@ function build() {
   for (const r of byKey.values()) {
     // Net off stock when a report has been pasted. Without one, order is the gross
     // requirement and the banner says so.
-    r.stock = stockFor(r);
+    const look = stockLookup(r);
+    r.stock = look.stock; r.stockKey = look.key; r.stockWhy = look.why;
     r.order = r.stock === null ? r.qty : Math.max(0, r.qty - r.stock);
     if (r.needBy) {
       const wk = leadWeeks(r.vendor, r.model, r.desc);
@@ -1009,21 +1011,25 @@ function norm(s) { return String(s ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCa
 
 // Catalog RQ SKU first (blank when shared across products and so meaningless), then the
 // manufacturer part number against the report's Manufacturer SKU column.
-function stockFor(r) {
-  if (!stockAsOf) return null;
+/* Stock for one product, and the key it was found under, so a line can show its working.
+   Worked out here rather than when a report is loaded -- the old saved stock has no record
+   of what failed to match, and a wrong 0 should not survive until someone reloads. */
+function stockLookup(r) {
+  if (!stockAsOf) return { stock: null, key: '', why: 'no report' };
   const model = norm(r.model);
-  // Matched by hand in the "couldn't match" panel: that answer wins.
   const ov = stockOverrides[model];
-  if (ov) return stockMap[ov] ?? 0;
-  // Not on an open job when the report was loaded, so never looked up: unknown, not zero.
-  if (stockModels && !stockModels.has(model)) return null;
-  for (const k of [norm(r.rq), norm(r.mfr), model]) {
-    if (k && stockMap[k] != null) return stockMap[k];
+  if (ov) return { stock: stockMap[ov] ?? 0, key: ov, why: 'matched by hand' };
+  // Not on an open job when the report was loaded, so it was never looked up.
+  if (stockModels && !stockModels.has(model)) return { stock: null, key: '', why: 'not checked' };
+  for (const [k, src] of [[norm(r.rq), 'RepairQ SKU'], [norm(r.mfr), 'part number'], [model, 'model']]) {
+    if (k && stockMap[k] != null) return { stock: stockMap[k], key: k, why: src };
   }
-  // No usable key: "not in the report" would be a guess, so say so instead.
-  if (stockUnknown.has(model)) return null;
-  return 0;                       // has a RepairQ SKU and it isn't in the report: none held
+  // With a RepairQ SKU on the product, absence from the report really does mean none held.
+  if (norm(r.rq)) return { stock: 0, key: norm(r.rq), why: 'RepairQ SKU, none held' };
+  // Without one, there is nothing to look up: say so rather than call it zero.
+  return { stock: null, key: '', why: 'no RepairQ SKU on the product' };
 }
+function stockFor(r) { return stockLookup(r).stock; }
 
 async function saveStock() {
   if (usingSample) return;
@@ -1105,6 +1111,10 @@ function lineHtml(r) {
     '<div class="line-box"><input type="checkbox" aria-label="' + esc(r.model) + ' ordered"' + (done ? ' checked' : '') + (busy ? ' disabled' : '') + ' onchange="toggleRow(' + ref + ', this.checked)"></div>' +
     '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + (done ? ' <span class="tag t-done">marked ordered</span>' : '') + (cov ? ' <span class="tag t-done">covered by stock</span>' : '') + '</div>' +
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
+    // Show the working: which RepairQ item the stock figure came from, or why there isn't one.
+    (stockAsOf ? '<div class="mini">' + (r.stockKey
+        ? 'stock matched on ' + esc(r.stockKey) + ' <span style="color:var(--text3)">(' + esc(r.stockWhy) + ')</span>'
+        : '<span class="oth">' + esc(r.stockWhy) + '</span>') + '</div>' : '') +
     '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) +
       (j.have > 0 ? ' <span class="had">(' + qty(j.have, r.bulk) + ' already marked)</span>' : '') + '</span></div>').join('') + '</div></div>' +
     // Three plain numbers, because "have 12 / 16" read as a fraction to everyone who saw it.
