@@ -9,6 +9,7 @@
 import { DTools, phaseEstimate, taskSpans, orderLines, catalogVendors,
          visitFromTask, visitFromServiceOrder, visitInWindow } from './dtools.mjs';
 import { Graph } from './graph.mjs';
+import { processWriteups } from './writeups.mjs';
 import { createHash } from 'node:crypto';
 
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
@@ -267,6 +268,11 @@ async function main() {
       console.log(`\nField visits not saved -- is the ${VISIT_LIST} list created? (${e.message.slice(0, 120)})`);
     }
   }
+
+  // Installer write-ups: notes the Power Automate flow copied into WorkOrderNotes are
+  // summarised once and attached to their field visit. See writeups.mjs.
+  try { await processWriteups(graph, { dryRun }); }
+  catch (e) { failed.push('write-ups'); console.log(`  ! write-ups: ${e.message.slice(0, 200)}`); }
 
   // Supplier names for the lead-time picker, refreshed only when the catalog feed has moved.
   // AsOf carries the catalog fingerprint on this row, not a date, so the check is one compare.

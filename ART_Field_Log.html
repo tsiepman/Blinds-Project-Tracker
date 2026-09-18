@@ -59,6 +59,18 @@
 
   .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; display: inline-block; }
   .t-ok { background: var(--green-dim); color: var(--green); }
+  .wu { margin-top: 8px; padding: 8px 10px; background: var(--surface2, rgba(127,127,127,.06)); border-radius: 8px; font-size: 13px; }
+  .wu-sum { font-weight: 500; margin-bottom: 4px; }
+  .wu-sec { margin-top: 5px; }
+  .wu-sec b { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text2); }
+  .wu-sec ul { margin: 2px 0 0; padding-left: 18px; }
+  .wu-out b { color: var(--yellow); }
+  .wu-act b { color: var(--accent); }
+  .why { color: var(--text2); }
+  .wu details, details.fu { margin-top: 6px; }
+  .wu summary { cursor: pointer; font-size: 12px; color: var(--text2); }
+  details.fu > summary { cursor: pointer; list-style: none; }
+  details.fu > summary::-webkit-details-marker { display: none; }
   .t-miss { background: var(--yellow-dim); color: var(--yellow); }
   .t-late { background: var(--accent-dim); color: var(--accent); }
   .t-grey { background: var(--surface2); color: var(--text3); }
@@ -113,7 +125,7 @@ const LIST = 'FieldVisits';
 let msal_ = null, siteId = null, listIds = {};
 let visits = [], usingSample = false;
 let view = (() => { try { return localStorage.getItem('field.view') === 'person' ? 'person' : 'day'; } catch { return 'day'; } })();
-let days = 14, search = '';
+let days = 14, search = '', showInternal = false;
 
 /* ---------- auth / graph ---------- */
 
@@ -191,9 +203,22 @@ function dayLabel(s) {
 /* ---------- shaping ----------
    A visit needs a write-up once the day is over. Today's and future work is simply
    pending, so it is never flagged. */
+/* The service feed also carries the crew's own day rows -- "A-team", "Off", "Sick",
+   "Darwin Off Medical". They are scheduling entries against Advance Electronics itself,
+   not customer visits, so they are shown quietly and never asked for a write-up. */
+function isInternal(f) {
+  const client = String(f.Client || '').trim().toLowerCase();
+  const name = String(f.VisitName || '').trim().toLowerCase();
+  const progress = String(f.Progress || '').trim().toLowerCase();
+  return client === 'advance electronics'
+    || ['holiday', 'sick', 'vacation'].includes(progress)
+    || /^(a-?\s?team|off\b|shop\b)/.test(name);
+}
+
 function shape(f) {
   const date = f.SchedDate || '';
   const age = date ? dayDiff(date, today()) : 0;
+  const internal = isInternal(f);
   const done = !!f.WriteUpAt;
   return {
     id: f.VisitId || '', kind: f.Kind || 'task', number: f.Number || '',
@@ -202,11 +227,21 @@ function shape(f) {
     date, from: f.SchedFrom || '', to: f.SchedTo || '',
     crew: String(f.Crew || '').split(',').map(s => s.trim()).filter(Boolean),
     progress: f.Progress || '', instructions: f.Instructions || '',
-    writeUpAt: f.WriteUpAt || '', writeUpBy: f.WriteUpBy || '', summary: f.Summary || '',
-    age, done,
-    state: !date ? 'none' : age <= 0 ? 'upcoming' : done ? 'ok' : age >= 3 ? 'late' : 'missing'
+    writeUpAt: f.WriteUpAt || '', writeUpBy: f.WriteUpBy || '', writeUpText: f.WriteUpText || '',
+    summaries: parseSummaries(f.Summary),
+    // Visit day to the day the note was written, from the note's own D-Tools send time.
+    late: f.WriteUpAt && date ? Math.max(0, dayDiff(date, String(f.WriteUpAt).slice(0, 10))) : null,
+    age, done, internal,
+    state: !date ? 'none' : internal ? 'internal' : age <= 0 ? 'upcoming' : done ? 'ok' : age >= 3 ? 'late' : 'missing'
   };
 }
+// The sync stores Claude's reading of each write-up as JSON: summary, completed,
+// outstanding (with reasons), returnVisit, officeActions, clientBuilderNotes.
+function parseSummaries(s) {
+  if (!s) return [];
+  try { const x = JSON.parse(s); return Array.isArray(x) ? x : [x]; } catch { return [{ summary: String(s) }]; }
+}
+
 function inWindow(v) {
   if (!v.date) return false;
   if (v.age > days) return false;
@@ -225,9 +260,15 @@ function renderSignIn() {
 }
 
 function statusTag(v) {
+  if (v.state === 'internal') return '<span class="tag t-grey">not a job</span>';
   if (v.state === 'upcoming') return '<span class="tag t-grey">' + (v.age === 0 ? 'today' : 'upcoming') + '</span>';
-  if (v.state === 'ok') return '<span class="tag t-ok">written up</span>' +
-    (v.writeUpBy ? '<div class="sub">' + esc(v.writeUpBy) + '</div>' : '');
+  if (v.state === 'ok') {
+    // Same day or next is on time; after that the lateness is the point.
+    const tag = v.late != null && v.late > 1
+      ? '<span class="tag ' + (v.late >= 3 ? 't-late' : 't-miss') + '">written up ' + v.late + ' days late</span>'
+      : '<span class="tag t-ok">written up</span>';
+    return tag + (v.writeUpBy ? '<div class="sub">' + esc(v.writeUpBy) + '</div>' : '');
+  }
   if (v.state === 'late') return '<span class="tag t-late">no write-up · ' + v.age + ' days</span>';
   return '<span class="tag t-miss">no write-up</span>';
 }
@@ -242,15 +283,58 @@ function rowHtml(v, showDate) {
       '<div class="sub">' + esc([v.client, v.site].filter(Boolean).join(' · ')) + '</div>' +
       (v.crew.length ? '<div class="crew">' + esc(v.crew.join(', ')) + '</div>' : '<div class="crew"><span class="tag t-grey">nobody assigned</span></div>') +
       (v.instructions ? '<div class="note">' + esc(v.instructions.slice(0, 400)) + (v.instructions.length > 400 ? '…' : '') + '</div>' : '') +
-      (v.summary ? '<div class="note">' + esc(v.summary) + '</div>' : '') +
+      writeUpHtml(v) +
     '</div>' +
     '<div class="status">' + statusTag(v) + '</div>' +
   '</div>';
 }
 
+// What the installer wrote, read. Claude's summary up front; the note itself one click away.
+function writeUpHtml(v) {
+  if (!v.writeUpText && !v.summaries.length) return '';
+  const list = (label, xs, cls) => xs && xs.length
+    ? '<div class="wu-sec' + (cls ? ' ' + cls : '') + '"><b>' + label + '</b><ul>' + xs.map(x => '<li>' + x + '</li>').join('') + '</ul></div>' : '';
+  const parts = v.summaries.map(s =>
+    (s.summary ? '<div class="wu-sum">' + esc(s.summary) + (s.returnVisit ? ' <span class="tag t-miss">return visit</span>' : '') + '</div>' : '') +
+    list('Outstanding', (s.outstanding || []).map(o => esc(o.item) + (o.reason ? ' <span class="why">— ' + esc(o.reason) + '</span>' : '')), 'wu-out') +
+    list('Office to do', (s.officeActions || []).map(esc), 'wu-act') +
+    list('Client / builder', (s.clientBuilderNotes || []).map(esc)) +
+    list('Done', (s.completed || []).map(esc))
+  ).join('');
+  return '<div class="wu">' + parts +
+    (v.writeUpText ? '<details><summary>Installer\'s note</summary><div class="note">' + esc(v.writeUpText) + '</div></details>' : '') +
+  '</div>';
+}
+
+// Everything left hanging across the window: unfinished work, return visits, office to-dos
+// and what clients or builders said. This is the part Terry and the salespeople read.
+function followUpsHtml(vs) {
+  const rows = [];
+  for (const v of vs) for (const s of v.summaries) {
+    const out = s.outstanding || [], act = s.officeActions || [], cb = s.clientBuilderNotes || [];
+    if (!out.length && !act.length && !cb.length && !s.returnVisit) continue;
+    rows.push({ v, s, out, act, cb });
+  }
+  if (!rows.length) return '';
+  rows.sort((a, b) => b.v.date.localeCompare(a.v.date));
+  return '<details class="group fu" open><summary class="group-head"><span class="group-name">Follow-ups</span>' +
+    '<span class="group-meta">' + rows.length + ' visit' + (rows.length === 1 ? '' : 's') + ' left something to do</span></summary>' +
+    rows.map(({ v, s, out, act, cb }) =>
+      '<div class="row"><div class="when">' + parseD(v.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '</div>' +
+      '<div class="what"><div class="job">' + (v.jobNumber ? '<span class="num">' + esc(v.jobNumber) + '</span>' : '') + esc(v.jobName || v.name || v.client) +
+        (s.returnVisit ? ' <span class="tag t-miss">return visit</span>' : '') + '</div>' +
+        '<div class="sub">' + esc([v.client, s.by || v.writeUpBy].filter(Boolean).join(' · ')) + '</div>' +
+        (out.length ? '<div class="wu-sec wu-out"><b>Outstanding</b><ul>' + out.map(o => '<li>' + esc(o.item) + (o.reason ? ' <span class="why">— ' + esc(o.reason) + '</span>' : '') + '</li>').join('') + '</ul></div>' : '') +
+        (act.length ? '<div class="wu-sec wu-act"><b>Office to do</b><ul>' + act.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+        (cb.length ? '<div class="wu-sec"><b>Client / builder</b><ul>' + cb.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+      '</div></div>').join('') +
+  '</details>';
+}
+
 function render() {
-  const all = visits.map(shape).filter(inWindow);
-  const past = all.filter(v => v.state !== 'upcoming');
+  const all = visits.map(shape).filter(inWindow).filter(v => showInternal || !v.internal);
+  const hiddenInternal = showInternal ? 0 : visits.map(shape).filter(inWindow).filter(v => v.internal).length;
+  const past = all.filter(v => v.state !== 'upcoming' && v.state !== 'internal');
   const missing = past.filter(v => !v.done);
   const late = past.filter(v => v.state === 'late');
 
@@ -292,7 +376,8 @@ function render() {
     (usingSample ? '<div class="banner" style="text-align:center">Sample data — the sync has not written to SharePoint yet</div>' : '') +
     '<div class="wrap"><h1 class="page">Field Log</h1>' +
     '<p class="page-sub">Every visit D-Tools had scheduled, recorded as it happened. Rescheduled or deleted work keeps its record here.</p>' +
-    '<div class="banner"><b>Write-ups aren\'t being matched yet.</b> Once the work-order emails reach the shared mailbox, each visit will show whether its write-up came in and what it said. Until then every past visit reads “no write-up”.</div>' +
+    (visits.some(f => f.WriteUpAt) ? '' :
+      '<div class="banner"><b>Write-ups aren\'t being matched yet.</b> Once the work-order emails reach the shared mailbox, each visit will show whether its write-up came in and what it said. Until then every past visit reads “no write-up”.</div>') +
     '<div class="controls">' +
       '<div><label class="fld">View</label><div class="seg" role="tablist">' +
         '<button role="tab" aria-selected="' + (view === 'day') + '" class="' + (view === 'day' ? 'on' : '') + '" onclick="setView(\'day\')">By day</button>' +
@@ -302,19 +387,22 @@ function render() {
         [7, 14, 30].map(d => '<option value="' + d + '"' + (d === days ? ' selected' : '') + '>last ' + d + ' days</option>').join('') +
       '</select></div>' +
       '<div style="flex:1 1 200px"><label class="fld" for="q">Find</label><input id="q" style="width:100%" placeholder="Job, client, site or installer" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
-      '<div><button class="btn" onclick="load()">Refresh</button></div>' +
+      '<div style="display:flex;gap:6px"><button class="btn" onclick="toggleInternal()">' +
+        (showInternal ? 'Hide' : 'Show') + ' A-team &amp; time off' + (hiddenInternal ? ' (' + hiddenInternal + ')' : '') + '</button>' +
+        '<button class="btn" onclick="load()">Refresh</button></div>' +
     '</div>' +
     '<div class="totals">' +
       tot('', all.length, 'visits') +
       tot('', past.filter(v => v.done).length, 'written up') +
       tot('miss', missing.length, 'to write up') +
       tot('late', late.length, '3 days or more') +
-    '</div>' + body + '</div>';
+    '</div>' + followUpsHtml(all) + body + '</div>';
 }
 
 function tot(cls, n, label) { return '<div class="tot ' + cls + '"><div class="tot-n">' + n + '</div><div class="tot-l">' + label + '</div></div>'; }
 function setView(v) { view = v; try { localStorage.setItem('field.view', v); } catch {} render(); }
 function setDays(d) { days = Number(d); render(); }
+function toggleInternal() { showInternal = !showInternal; render(); }
 function setSearch(v) {
   search = v; render();
   const el = document.getElementById('q');
@@ -334,10 +422,19 @@ function loadSample() {
       Crew: 'Andrew Lindquist, Barry Keeper', Progress: 'Prewire', Instructions: 'Rough-in second floor and outdoor AP. Builder on site after 2.' },
     { VisitId: 's2', Kind: 'service', Number: '6299', JobNumber: '', JobName: '', Client: 'Chomiak, Bonnie',
       Site: 'PH12-139 Tuxedo Ave', VisitName: 'PH12-139 Tuxedo Ave', SchedDate: d(-1), SchedFrom: '11:00', SchedTo: '12:00',
-      Crew: 'Chris MacDearmid', Progress: 'Service', Instructions: 'Hunter Douglas shades in master bedroom are reversed on the app.' },
+      Crew: 'Chris MacDearmid', Progress: 'Service', Instructions: 'Hunter Douglas shades in master bedroom are reversed on the app.',
+      WriteUpAt: d(0) + 'T14:10:00Z', WriteUpBy: 'Chris MacDearmid',
+      WriteUpText: 'Chris MacDearmid · ' + d(0) + '\nCM ' + d(-1) + ' 1hr\nSwapped open/close on master bedroom shades in the app. Left sheer still stalls halfway - needs a new motor. Client asked for a quote on the ensuite blind too.',
+      Summary: JSON.stringify([{ summary: 'Fixed reversed controls on the master bedroom shades; one sheer still stalls.', completed: ['Swapped open/close on master bedroom shades'],
+        outstanding: [{ item: 'Replace left sheer motor', reason: 'motor stalls halfway' }], returnVisit: true,
+        officeActions: ['Order replacement motor', 'Quote ensuite blind'], clientBuilderNotes: ['Asked for a quote on the ensuite blind'], by: 'Chris MacDearmid' }]) },
     { VisitId: 's3', Kind: 'task', Number: '4841', JobNumber: 'ADVAN-3853', JobName: 'Maric Show Home 7 Ash Cove', Client: 'Maric Homes',
       Site: '7 Ash Cove', VisitName: '7 Ash Cove', SchedDate: d(-4), SchedFrom: '14:00', SchedTo: '17:00',
-      Crew: 'Colin Tibbs', Progress: 'Installing', Instructions: '' },
+      Crew: 'Colin Tibbs', Progress: 'Installing', Instructions: '',
+      WriteUpAt: d(0) + 'T09:00:00Z', WriteUpBy: 'Colin Tibbs',
+      WriteUpText: 'Colin Tibbs · ' + d(0) + '\nCT - ' + d(-4) + ' - 3hr\nMounted and programmed kitchen keypads. All done.',
+      Summary: JSON.stringify([{ summary: 'Mounted and programmed the kitchen keypads.', completed: ['Kitchen keypads mounted and programmed'],
+        outstanding: [], returnVisit: false, officeActions: [], clientBuilderNotes: [], by: 'Colin Tibbs' }]) },
     { VisitId: 's4', Kind: 'task', Number: '4852', JobNumber: 'ADVAN-3346', JobName: 'New Maric Home, 5925 Southboine Dr', Client: 'Maric Homes',
       Site: '5925 Southboine Dr', VisitName: '5925 Southboine Dr', SchedDate: d(0), SchedFrom: '09:00', SchedTo: '17:00',
       Crew: 'Colin Tibbs, Kevin Muir', Progress: 'Installing', Instructions: 'Trim out theatre and set shades.' }
