@@ -4,6 +4,7 @@ on:
   schedule:
     # Every 20 minutes during working hours, Winnipeg (UTC-5 CDT / UTC-6 CST).
     # The board is a working-hours tool, and there is nothing to refresh overnight.
+    # Off the hour on purpose: GitHub delays or drops scheduled runs at :00 when it is busy.
     - cron: '7,27,47 12-23 * * 1-5'
   workflow_dispatch:
     inputs:
@@ -21,11 +22,21 @@ jobs:
         with:
           node-version: '20'
 
+      # Anthropic's SDK, for summarising installer write-ups. Installed fresh each run so
+      # the repository needs no package.json. If this ever fails, the sync still runs --
+      # notes are saved and matched, just without summaries.
+      - name: Install the Claude SDK
+        run: npm install --no-save @anthropic-ai/sdk
+        continue-on-error: true
+
       - name: Sync D-Tools projects to SharePoint
         env:
           DTOOLS_API_KEY: ${{ secrets.DTOOLS_API_KEY }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Optional repository variable: claude-sonnet-5 or claude-haiku-4-5 to spend less.
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
         # Scheduled runs have no inputs, so this is empty and they always write.
         run: node sync.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
