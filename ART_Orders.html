@@ -128,7 +128,7 @@
   .line-num b.dim { color: var(--text3); font-weight: 500; }
   .line-num.order b { font-family: var(--mono); font-size: 19px; font-weight: 700; }
   .line-num.later b { font-family: var(--mono); font-size: 15px; color: var(--text2); }
-  .line-num .onord { display: block; font-size: 10.5px; color: var(--text3); white-space: nowrap; }
+  .line-num { min-width: 4.2em; }
   .jobs .jnum { font-family: var(--mono); color: var(--text3); }
   .jobs .jcl { color: var(--text3); }
   .jobs .jnow { color: var(--accent); font-weight: 600; }
@@ -1208,8 +1208,13 @@ function lineHtml(r) {
     '<div class="line-num"><span class="lbl">in stock</span>' +
       (!stockAsOf ? '<b class="dim" title="No stock report loaded">—</b>'
         : r.stock === null ? '<b class="dim" title="Could not be matched to anything in the RepairQ report, so this is not a zero">?</b>'
-        : '<b' + (r.stock > 0 ? '' : ' class="dim"') + '>' + qty(r.stock, r.bulk) + '</b>') +
-      (r.onOrder > 0 ? '<span class="onord" title="Already on a purchase order in RepairQ">+' + qty(r.onOrder, r.bulk) + ' on order</span>' : '') + '</div>' +
+        : '<b' + (r.stock > 0 ? '' : ' class="dim"') + '>' + qty(r.stock, r.bulk) + '</b>') + '</div>' +
+    // Bought but not yet on the shelf, from the report's own status. Its own column so it
+    // is never mistaken for stock, and never ordered twice.
+    '<div class="line-num"><span class="lbl">on order</span>' +
+      (!stockAsOf ? '<b class="dim">—</b>'
+        : r.stock === null ? '<b class="dim">?</b>'
+        : '<b' + (r.onOrder > 0 ? '' : ' class="dim"') + ' title="Already on a purchase order in RepairQ">' + qty(r.onOrder, r.bulk) + '</b>') + '</div>' +
     '<div class="line-num"><span class="lbl">needed</span><b>' + qty(r.qty, r.bulk) + '</b></div>' +
     // Split so a supplier order can be placed for what is actually due, and the rest is
     // still visible rather than hidden until it is late.
