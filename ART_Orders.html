@@ -286,6 +286,7 @@ async function load() {
           stockMap = saved.m || {};
           stockOrder = saved.o || {};          // v4 and later; before that nothing was on order
           stockStatuses = saved.statuses || [];
+          stockOrderSource = saved.osrc || '';
           stockModels = new Set(saved.models || []);
           stockUnknown = new Set(saved.unknown || []);
           stockOverrides = saved.overrides || {};
@@ -779,6 +780,7 @@ let stockMap = {}, stockAsOf = '', stockOpen = false;
 // Transit"). Already paid for, so they come off what still has to be ordered.
 let stockOrder = {};
 let stockStatuses = [];             // the statuses this report used, for the stock panel
+let stockOrderSource = '';          // where the on-order figures came from in that report
 /* Products whose keys matched nothing in the report AND which have no RepairQ SKU in the
    catalog to match on. For those, "not in the report" cannot be read as "none held" --
    Sonos ARC Ultra sits in RQ as AVHASS001632 while the catalog offers only the part
@@ -818,6 +820,11 @@ function stockPanel() {
       'Or open it in Excel, select all and paste below. ' +
       'Anything the report does not list is treated as zero, which is correct — it only lists what you hold. ' +
       'Units the report shows as on order or in transit are counted separately, so they are not bought twice.</p>' +
+      // Where on-order came from, so a report that carries none can be told from a genuine
+      // nothing-on-order.
+      (stockAsOf ? '<p class="lt-hint"><b>On order</b> in the last report came from ' +
+        (stockOrderSource ? esc(stockOrderSource) + ' · ' + Object.keys(stockOrder).length + ' product' + (Object.keys(stockOrder).length === 1 ? '' : 's')
+          : 'nowhere — that report has no On Order column and no unit statuses, so every on-order figure reads 0') + '.</p>' : '') +
       // What was done with each status, so a status RQ words differently can be spotted.
       (stockStatuses.length ? '<p class="lt-hint">Statuses in the last report: ' + stockStatuses.map(([s, n]) =>
         '<b>' + esc(s) + '</b> ' + n + ' <span style="color:var(--text3)">(' +
@@ -998,6 +1005,11 @@ function stockLoadText(raw) {
   const cQty = ['quantity', 'in stock', 'on hand', 'qty on hand', 'available', 'qty']
     .map(n => head.indexOf(n)).find(i => i >= 0) ?? -1;
   if (cQty < 0) { toast('Found "Product SKU" but no Quantity or In Stock column — is that an inventory report?', true); return; }
+  // Two shapes of report. The Availability Summary has a column of its own for what is on
+  // a purchase order; the Inventory Listing has a row per unit with a status instead, and
+  // units on a PO may not be listed at all.
+  const cOnOrder = ['on order', 'onorder', 'incoming', 'in transit', 'on po', 'ordered']
+    .map(n => head.indexOf(n)).find(i => i >= 0) ?? -1;
 
   const map = {}, onOrder = {};
   const seenStatus = new Map();          // every status in the file, for the "what I did with it" note
@@ -1010,19 +1022,24 @@ function stockLoadText(raw) {
     const held = !status || /^in stock$/i.test(status);
     const coming = !held && /(on\s*order|ordered|in\s*transit|incoming|back\s*order|pending|reserved|allocated)/i.test(status);
     if (status) seenStatus.set(status, (seenStatus.get(status) || 0) + 1);
-    if (!held && !coming) continue;
     // Accounting format: the summary report shows oversold stock as "(20.00)".
-    const rawQ = String(r[cQty] ?? '').trim();
-    const q = (/^\(.*\)$/.test(rawQ) ? -1 : 1) * (parseFloat(rawQ.replace(/[^0-9.]/g, '')) || 0);
-    if (q <= 0) continue;
+    const num = raw => (/^\(.*\)$/.test(raw) ? -1 : 1) * (parseFloat(String(raw).replace(/[^0-9.]/g, '')) || 0);
+    const q = num(String(r[cQty] ?? '').trim());
+    // A report with its own column carries on-order on the same row as the stock. A product
+    // with none on the shelf but five on a PO still matters, so the row is not skipped for
+    // a zero quantity until both are zero.
+    const qo = cOnOrder >= 0 ? num(String(r[cOnOrder] ?? '').trim()) : 0;
+    if ((!held && !coming) || (q <= 0 && qo <= 0)) continue;
     const into = held ? map : onOrder;
     for (const idx of [cSku, cMfr]) {
       if (idx < 0) continue;
       const k = norm(r[idx]);
-      if (k) { into[k] = (into[k] || 0) + q; if (held) used++; else orderedRows++; }
+      if (!k) continue;
+      if (q > 0) { into[k] = (into[k] || 0) + q; if (held) used++; else orderedRows++; }
+      if (qo > 0) { onOrder[k] = (onOrder[k] || 0) + qo; orderedRows++; }
     }
   }
-  if (!used) { toast('Found the header but no in-stock rows with a quantity', true); return; }
+  if (!used && !orderedRows) { toast('Found the header but no rows with a quantity', true); return; }
 
   // Keep only stock for products on open jobs. The whole report is too big to save
   // (~105,000 characters against the list's limit), and nothing else is ever looked up.
@@ -1069,6 +1086,7 @@ function stockLoadText(raw) {
   stockMap = kept;
   stockOrder = keptOrder;
   stockStatuses = [...seenStatus.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+  stockOrderSource = cOnOrder >= 0 ? 'the "' + rows[hIdx][cOnOrder].trim() + '" column' : (cStatus >= 0 ? 'unit statuses' : '');
   stockModels = models;
   stockUnknown = unknown;
   stockAsOf = new Date().toISOString();
@@ -1120,7 +1138,7 @@ async function saveStock() {
     const all = await items(LIST.stock);
     // Never truncate: a cut-off JSON string fails to parse on the next load and the stock
     // silently disappears. The filtering in stockLoadText keeps this well inside the limit.
-    const data = JSON.stringify({ v: 4, m: stockMap, o: stockOrder, statuses: stockStatuses,
+    const data = JSON.stringify({ v: 4, m: stockMap, o: stockOrder, statuses: stockStatuses, osrc: stockOrderSource,
       models: stockModels ? [...stockModels] : [], unknown: [...stockUnknown], overrides: stockOverrides });
     if (data.length > 60000) { toast('Stock is too large to save — it works until the page is reloaded', true); return; }
     const fields = { Title: 'stock', DataJson: data, AsOf: stockAsOf };
