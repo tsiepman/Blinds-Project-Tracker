@@ -44,5 +44,12 @@ jobs:
           # that has already been pushed.
           STOCK_PUSH_LIMIT: ${{ vars.STOCK_PUSH_LIMIT }}
           STOCK_PUSH_FORCE: ${{ vars.STOCK_PUSH_FORCE }}
+          # STOCK_PUSH_PROBE=<model> writes 111/222/333 to that one product, to prove which
+          # CustomField each label in SI actually is. The three below then record the answer.
+          STOCK_PUSH_PROBE: ${{ vars.STOCK_PUSH_PROBE }}
+          STOCK_FIELD_STOCK: ${{ vars.STOCK_FIELD_STOCK }}
+          STOCK_FIELD_COMMITTED: ${{ vars.STOCK_FIELD_COMMITTED }}
+          STOCK_FIELD_ONORDER: ${{ vars.STOCK_FIELD_ONORDER }}
         # Scheduled runs have no inputs, so this is empty and they always write.
         run: node sync.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
+
