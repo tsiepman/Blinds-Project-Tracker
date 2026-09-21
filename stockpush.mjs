@@ -51,11 +51,17 @@ export async function pushStock(si, graph, getVendorMap, { dryRun = false } = {}
   const rows = file.rows ?? [];
   if (!rows.length) return;
 
+  // The probe answers "which CustomField is which", so it must run whatever the state of
+  // the report -- including a report already pushed, which is exactly when it is needed.
+  const probe = (process.env.STOCK_PUSH_PROBE || '').trim();
+
   // Already done for this report? The row carries the report's own timestamp.
   const items = await graph.items(STOCK_LIST).catch(() => []);
   const pushRow = items.find(i => (i.fields ?? {}).Title === 'pushed');
-  if (pushRow && String(pushRow.fields?.AsOf || '') === String(file.asOf || '') && !process.env.STOCK_PUSH_FORCE) {
-    return;                                          // same report as last time
+  if (!probe && pushRow && String(pushRow.fields?.AsOf || '') === String(file.asOf || '') && !process.env.STOCK_PUSH_FORCE) {
+    // Said out loud: silence here looked like the push was broken when it was up to date.
+    console.log('\nstock push: nothing to do — this report has already been pushed');
+    return;
   }
 
   // Catalog, with each product's full record. Matching is by RepairQ SKU (CustomField1),
@@ -73,7 +79,6 @@ export async function pushStock(si, graph, getVendorMap, { dryRun = false } = {}
   }
 
   // The probe runs instead of the push, on one named product.
-  const probe = (process.env.STOCK_PUSH_PROBE || '').trim();
   if (probe) {
     const v = cat.get(probe.toLowerCase()) || [...cat.values()].find(x => norm(x.model) === norm(probe));
     if (!v?.full) { console.log(`\nstock probe: no catalog product called "${probe}"`); return; }
