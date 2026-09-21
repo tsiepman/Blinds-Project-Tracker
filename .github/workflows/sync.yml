@@ -38,5 +38,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Optional repository variable: claude-sonnet-5 or claude-haiku-4-5 to spend less.
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          # Stock push into the D-Tools catalog. Set the repository variable
+          # STOCK_PUSH_LIMIT to 1 for the first real run, check that product in SI, then
+          # delete the variable to let the rest go. STOCK_PUSH_FORCE re-sends a report
+          # that has already been pushed.
+          STOCK_PUSH_LIMIT: ${{ vars.STOCK_PUSH_LIMIT }}
+          STOCK_PUSH_FORCE: ${{ vars.STOCK_PUSH_FORCE }}
         # Scheduled runs have no inputs, so this is empty and they always write.
         run: node sync.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
