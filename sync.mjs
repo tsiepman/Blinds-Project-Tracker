@@ -75,7 +75,7 @@ async function main() {
   };
 
   const existing = new Map();
-  let vendorsRow = null;
+  let vendorsRow = null, dupesRow = null;
   try {
     await graph.siteId(SITE_HOSTNAME, SITE_PATH);
     for (const it of await graph.items(LIST)) {
@@ -84,7 +84,9 @@ async function main() {
     }
     console.log(`Already in SchedProjects: ${existing.size}`);
     for (const it of await graph.items(STOCK_LIST)) {
-      if ((it.fields ?? {}).Title === 'vendors') vendorsRow = it;
+      const t = (it.fields ?? {}).Title;
+      if (t === 'vendors') vendorsRow = it;
+      else if (t === 'dupes') dupesRow = it;
     }
   } catch (e) {
     // A real run must not continue blind -- it would create duplicates of everything.
@@ -296,6 +298,20 @@ async function main() {
     } catch (e) {
       failed.push('supplier list');
       console.log(`  ! supplier list not saved: ${e.message.slice(0, 200)}`);
+    }
+
+    // The RepairQ SKUs sitting on more than one product, so the Orders page can name the
+    // clash on the product it affects instead of leaving it as an unexplained "?".
+    const shared = (await getVendorMap()).sharedRq ?? [];
+    const dupeFields = { Title: 'dupes', DataJson: JSON.stringify(shared).slice(0, 60000), AsOf: catalogPrint };
+    try {
+      if (!dryRun) {
+        if (dupesRow) await graph.update(STOCK_LIST, dupesRow.id, dupeFields);
+        else await graph.create(STOCK_LIST, dupeFields);
+      }
+    } catch (e) {
+      failed.push('duplicate SKU list');
+      console.log(`  ! duplicate SKU list not saved: ${e.message.slice(0, 200)}`);
     }
   }
 

@@ -195,6 +195,18 @@ let showCovered = false;          // lines fully covered by stock are hidden unl
 let openVendors = (() => { try { return new Set(JSON.parse(localStorage.getItem('orders.openVendors') || '[]')); } catch { return new Set(); } })();
 let vendorRefs = [];
 let catalogVendors = [];         // every supplier in the D-Tools catalog, saved by the sync (StockSnapshot row "vendors")
+// model (lower case) -> { sku, others } for products whose RepairQ SKU is shared. The sync
+// blanks a shared SKU rather than return another product's stock, which is right but looks
+// like a missing SKU; this says which product it clashes with, so it can be fixed once.
+let dupeByModel = new Map();
+function setDupes(list) {
+  dupeByModel = new Map();
+  for (const d of list || []) {
+    for (const m of d.models || []) {
+      dupeByModel.set(String(m).trim().toLowerCase(), { sku: d.sku, others: d.models.filter(x => x !== m) });
+    }
+  }
+}
 let view = (() => { try { return localStorage.getItem('orders.view') === 'job' ? 'job' : 'supplier'; } catch { return 'supplier'; } })();
 let jobSearch = '', openJobs = new Set(), busy = false;
 let rowRefs = [], jobRefs = [];     // what the onclick indexes in the current render point at
@@ -277,7 +289,11 @@ async function load() {
       // The list holds two rows: "stock" (written here) and "vendors" (written by the sync).
       const vrow = st.find(i => (i.fields || {}).Title === 'vendors');
       if (vrow) { try { catalogVendors = JSON.parse(vrow.fields.DataJson || '[]'); } catch { catalogVendors = []; } }
-      const srow = st.find(i => (i.fields || {}).Title !== 'vendors');
+      // RepairQ SKUs the sync found on more than one catalog product. Each one costs both
+      // products their stock figure until the catalog is corrected.
+      const drow = st.find(i => (i.fields || {}).Title === 'dupes');
+      if (drow) { try { setDupes(JSON.parse(drow.fields.DataJson || '[]')); } catch { setDupes([]); } }
+      const srow = st.find(i => !['vendors', 'dupes'].includes((i.fields || {}).Title));
       if (srow) {
         const f = srow.fields || {};
         const saved = JSON.parse(f.DataJson || '{}');
@@ -432,7 +448,7 @@ function build() {
     // Net off stock when a report has been pasted. Without one, order is the gross
     // requirement and the banner says so.
     const look = stockLookup(r);
-    r.stock = look.stock; r.onOrder = look.onOrder || 0; r.stockKey = look.key; r.stockWhy = look.why;
+    r.stock = look.stock; r.onOrder = look.onOrder || 0; r.stockKey = look.key; r.stockWhy = look.why; r.dup = look.dup || null;
 
     // Each job on the row has its own order-by date, so the quantity splits: what is
     // already due, and what is only needed later. A row can read "overdue" on the
@@ -864,7 +880,12 @@ function fixPanel(rows) {
     const hits = fixHits[i] || [];
     return '<div class="lt-row" style="align-items:flex-start">' +
       '<span style="flex:1 1 220px;min-width:0"><b>' + esc(r.model) + '</b>' +
-        '<div class="mini">' + esc(r.desc || '') + '</div></span>' +
+        '<div class="mini">' + esc(r.desc || '') + '</div>' +
+        // A shared SKU is a catalog fix, not a match to make here -- say so on the row.
+        (r.dup ? '<div class="mini"><span class="tag t-soon">shared SKU</span> ' + esc(r.dup.sku) +
+          ' is also on <b>' + esc(r.dup.others.slice(0, 2).join(', ')) + '</b>' +
+          (r.dup.others.length > 2 ? ' and ' + (r.dup.others.length - 2) + ' more' : '') +
+          ' — correct one of them in the D-Tools catalog</div>' : '') + '</span>' +
       (canSearch
         ? '<span style="flex:1 1 260px;min-width:0"><input id="fx' + i + '" placeholder="Search the RepairQ report" ' +
             'value="' + esc(fixQ[i] || '') + '" oninput="fixSearch(' + i + ',this.value)" style="width:100%">' +
@@ -880,6 +901,7 @@ function fixPanel(rows) {
     '<div class="lt-head" onclick="fixToggle()">' +
       '<span class="panel-title">Couldn\'t match to stock</span>' +
       '<span class="vendor-meta">' + (all.length ? all.length + ' product' + (all.length === 1 ? '' : 's') + ' showing “?”' : 'all matched') +
+        (all.filter(r => r.dup).length ? ' · ' + all.filter(r => r.dup).length + ' from a shared SKU' : '') +
         (overrides.length ? ' · ' + overrides.length + ' matched by hand' : '') + '</span>' +
       '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">' + (fixOpen ? 'hide' : 'fix') + '</span>' +
     '</div><div class="lt-body">' +
@@ -1128,7 +1150,10 @@ function stockLookup(r) {
   }
   // With a RepairQ SKU on the product, absence from the report really does mean none held.
   if (norm(r.rq)) return { stock: 0, onOrder: 0, key: norm(r.rq), why: 'RepairQ SKU, none held' };
-  // Without one, there is nothing to look up: say so rather than call it zero.
+  // Without one, there is nothing to look up: say so rather than call it zero. When the
+  // reason is a shared SKU, name the product it clashes with -- that is the catalog fix.
+  const dup = dupeByModel.get(String(r.model).trim().toLowerCase());
+  if (dup) return { stock: null, onOrder: null, key: '', why: 'RepairQ SKU ' + dup.sku + ' is also on ' + dup.others.slice(0, 2).join(', ') + (dup.others.length > 2 ? ' and ' + (dup.others.length - 2) + ' more' : '') + ' — fix one in the D-Tools catalog', dup };
   return { stock: null, onOrder: null, key: '', why: 'no RepairQ SKU on the product' };
 }
 function stockFor(r) { return stockLookup(r).stock; }
@@ -1144,7 +1169,8 @@ async function saveStock() {
       models: stockModels ? [...stockModels] : [], unknown: [...stockUnknown], overrides: stockOverrides });
     if (data.length > 60000) { toast('Stock is too large to save — it works until the page is reloaded', true); return; }
     const fields = { Title: 'stock', DataJson: data, AsOf: stockAsOf };
-    const mine = all.find(i => (i.fields || {}).Title !== 'vendors');   // never overwrite the sync's supplier row
+    // Never overwrite either of the sync's own rows.
+    const mine = all.find(i => !['vendors', 'dupes'].includes((i.fields || {}).Title));
     if (mine) await graph('PATCH', '/sites/' + siteId + '/lists/' + lid + '/items/' + mine.id + '/fields', fields);
     else await graph('POST', '/sites/' + siteId + '/lists/' + lid + '/items', { fields });
   } catch (e) { console.warn('stock not saved:', e.message); }
