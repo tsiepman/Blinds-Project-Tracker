@@ -1008,8 +1008,10 @@ function stockLoadText(raw) {
   // Two shapes of report. The Availability Summary has a column of its own for what is on
   // a purchase order; the Inventory Listing has a row per unit with a status instead, and
   // units on a PO may not be listed at all.
-  const cOnOrder = ['on order', 'onorder', 'incoming', 'in transit', 'on po', 'ordered']
-    .map(n => head.indexOf(n)).find(i => i >= 0) ?? -1;
+  // Matched loosely: RQ words it "On Order" in one report and "Qty On Order" or
+  // "On Order Qty" elsewhere. Anything with a money word in it is a value, not a count.
+  const onOrderRe = /(on\s*-?\s*order|on\s*po|incoming|in\s*transit|due\s*in)/;
+  const cOnOrder = head.findIndex(h => onOrderRe.test(h) && !/(cost|value|price|amount|total\s*\$)/.test(h));
 
   const map = {}, onOrder = {};
   const seenStatus = new Map();          // every status in the file, for the "what I did with it" note
