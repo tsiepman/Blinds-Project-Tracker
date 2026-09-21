@@ -22,10 +22,20 @@
 const STOCK_FILE = 'ARTStock/rq-stock.json';
 const STOCK_LIST = 'StockSnapshot';
 
-// Which custom fields hold what, as set up in SI. 6, 7 and 8 are the numeric ones.
-const F_STOCK = 'CustomField6';
-const F_COMMITTED = 'CustomField7';
-const F_ONORDER = 'CustomField8';
+// Which custom fields hold what, as set up in SI. The numeric ones are 6-8 and 50-58, and
+// the number SI shows beside a label is not always the number the API uses -- so these are
+// repository variables, changed without touching code:
+//   STOCK_FIELD_STOCK / STOCK_FIELD_COMMITTED / STOCK_FIELD_ONORDER
+const fieldOf = (envName, fallback) => 'CustomField' + (Number(process.env[envName]) || fallback);
+const F_STOCK = fieldOf('STOCK_FIELD_STOCK', 6);
+const F_COMMITTED = fieldOf('STOCK_FIELD_COMMITTED', 7);
+const F_ONORDER = fieldOf('STOCK_FIELD_ONORDER', 8);
+
+/* Which field is which, settled by experiment rather than argument. STOCK_PUSH_PROBE=<model>
+   writes three numbers nobody could mistake for stock -- 111 to the stock field, 222 to
+   committed, 333 to on order -- to that one product. Whichever label in SI reads 111 is the
+   stock field. Nothing else is sent, and the report is left unpushed. */
+const PROBE = { [F_STOCK]: 111, [F_COMMITTED]: 222, [F_ONORDER]: 333 };
 
 // A whole catalog in one POST would be megabytes; SI takes them in messages anyway.
 const CHUNK = 250;
@@ -60,6 +70,20 @@ export async function pushStock(si, graph, getVendorMap, { dryRun = false } = {}
       // A part number on two products identifies neither, same rule as the RQ SKU.
       byPart.set(k, byPart.has(k) ? null : v);
     }
+  }
+
+  // The probe runs instead of the push, on one named product.
+  const probe = (process.env.STOCK_PUSH_PROBE || '').trim();
+  if (probe) {
+    const v = cat.get(probe.toLowerCase()) || [...cat.values()].find(x => norm(x.model) === norm(probe));
+    if (!v?.full) { console.log(`\nstock probe: no catalog product called "${probe}"`); return; }
+    console.log(`\nstock probe on ${v.model}: ${F_STOCK}=111  ${F_COMMITTED}=222  ${F_ONORDER}=333` +
+      '\n  In SI, whichever field reads 111 is the stock field, 222 committed, 333 on order.');
+    if (dryRun) { console.log('  (dry run -- nothing sent)'); return; }
+    await si.publishCatalog({ Name: file.catalogName || 'RepairQ Stock', IsMetric: false,
+      TotalProductsCount: 1, Products: [{ ...v.full, ...PROBE }] });
+    console.log('  sent -- check the product in the D-Tools catalog');
+    return;
   }
 
   const send = [];
