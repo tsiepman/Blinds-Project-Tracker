@@ -83,6 +83,7 @@
   .job-chev { color: var(--text3); width: 12px; font-size: 11px; }
   .job-num { font-family: var(--mono); font-size: 12.5px; color: var(--text3); }
   .job-name { font-weight: 600; font-size: 14px; min-width: 0; }
+  .job-client { font-size: 12.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .job-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
   .job-body { border-top: 1px solid var(--border); }
   .job-phase { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 700; padding: 9px 16px 4px; background: var(--surface2); }
@@ -126,6 +127,11 @@
   .line-num b { font-size: 14px; font-weight: 600; }
   .line-num b.dim { color: var(--text3); font-weight: 500; }
   .line-num.order b { font-family: var(--mono); font-size: 19px; font-weight: 700; }
+  .line-num.later b { font-family: var(--mono); font-size: 15px; color: var(--text2); }
+  .line-num .onord { display: block; font-size: 10.5px; color: var(--text3); white-space: nowrap; }
+  .jobs .jnum { font-family: var(--mono); color: var(--text3); }
+  .jobs .jcl { color: var(--text3); }
+  .jobs .jnow { color: var(--accent); font-weight: 600; }
   .fix-hits { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; }
   .fix-hits .btn { justify-content: flex-start; text-align: left; }
 
@@ -278,6 +284,8 @@ async function load() {
         // v2 carries which products the report was checked against; older saves are a bare map.
         if (saved && saved.v >= 2) {
           stockMap = saved.m || {};
+          stockOrder = saved.o || {};          // v4 and later; before that nothing was on order
+          stockStatuses = saved.statuses || [];
           stockModels = new Set(saved.models || []);
           stockUnknown = new Set(saved.unknown || []);
           stockOverrides = saved.overrides || {};
@@ -411,7 +419,8 @@ function build() {
         cost: Number(l.cost) || 0, qty: 0, jobs: [], needBy: null, orderBy: null
       };
       row.qty += need - have;
-      row.jobs.push({ name: p.ProjectName || p.ProjectNumber || '', qty: need - have, have, need, key: lkey, needBy });
+      row.jobs.push({ name: p.ProjectName || p.ProjectNumber || '', number: p.ProjectNumber || '',
+        client: p.Client || '', qty: need - have, have, need, key: lkey, needBy });
       if (needBy && (!row.needBy || needBy < row.needBy)) row.needBy = needBy;
       byKey.set(key, row);
     }
@@ -422,11 +431,31 @@ function build() {
     // Net off stock when a report has been pasted. Without one, order is the gross
     // requirement and the banner says so.
     const look = stockLookup(r);
-    r.stock = look.stock; r.stockKey = look.key; r.stockWhy = look.why;
-    r.order = r.stock === null ? r.qty : Math.max(0, r.qty - r.stock);
+    r.stock = look.stock; r.onOrder = look.onOrder || 0; r.stockKey = look.key; r.stockWhy = look.why;
+
+    // Each job on the row has its own order-by date, so the quantity splits: what is
+    // already due, and what is only needed later. A row can read "overdue" on the
+    // earliest job while most of the quantity is months out -- ordering all of it now
+    // would tie up money and shelf space in the shop.
+    const wk = leadWeeks(r.vendor, r.model, r.desc);
+    const lead = (wk + BUFFER_WEEKS) * 7;
+    for (const j of r.jobs) {
+      j.orderBy = j.needBy ? iso(addDays(parseD(j.needBy), -lead)) : '';
+      j.days = j.orderBy ? dayDiff(today, parseD(j.orderBy)) : null;
+      j.now = j.days !== null && j.days <= 0;        // due today or already past due
+    }
+    r.jobs.sort((a, b) => (a.orderBy || '9999').localeCompare(b.orderBy || '9999'));
+    r.qtyNow = r.jobs.filter(j => j.now).reduce((n, j) => n + j.qty, 0);
+    r.qtyLater = r.qty - r.qtyNow;
+
+    // Stock and anything already on a purchase order cover the soonest jobs first.
+    const covers = r.stock === null ? 0 : r.stock + r.onOrder;
+    r.orderNow = r.stock === null ? r.qtyNow : Math.max(0, r.qtyNow - covers);
+    r.orderLater = r.stock === null ? r.qtyLater : Math.max(0, r.qtyLater - Math.max(0, covers - r.qtyNow));
+    r.order = r.orderNow + r.orderLater;
+
     if (r.needBy) {
-      const wk = leadWeeks(r.vendor, r.model, r.desc);
-      r.orderBy = iso(addDays(parseD(r.needBy), -((wk + BUFFER_WEEKS) * 7)));
+      r.orderBy = iso(addDays(parseD(r.needBy), -lead));
       r.days = dayDiff(today, parseD(r.orderBy));
       r.urgency = r.days < 0 ? 'late' : r.days <= 7 ? 'soon' : 'ok';
       // Outside the horizon and not yet urgent -- leave it off.
@@ -482,6 +511,10 @@ function render() {
   const soon = toBuy.filter(r => r.urgency === 'soon');
   // What is left to buy: net of stock once a report is loaded, the gross need before.
   const value = toBuy.reduce((n, r) => n + r.order * r.cost, 0);
+  // And of that, the part whose order-by date has arrived -- what a buying session today
+  // is actually worth.
+  const nowLines = toBuy.filter(r => r.orderNow > 0);
+  const nowValue = nowLines.reduce((n, r) => n + r.orderNow * r.cost, 0);
   // Rows ticked since the last load stay on screen, greyed, so a mis-tick can be undone.
   const live = new Set(rows.map(r => r.key));
   const doneRows = [...sessionDone.values()].filter(d => !live.has(d.key));
@@ -504,7 +537,8 @@ function render() {
   const body = vendorOrder.length ? vendorOrder.map(([v, g], vi) => {
     const open = g.filter(r => !r.done);
     const buy = open.filter(r => !(r.stock !== null && r.order <= 0));
-    const val = buy.reduce((n, r) => n + r.order * r.cost, 0);
+    const val = buy.reduce((n, r) => n + r.orderNow * r.cost, 0);
+    const nNow = buy.filter(r => r.orderNow > 0).length;
     const nLate = buy.filter(r => r.urgency === 'late').length, nSoon = buy.filter(r => r.urgency === 'soon').length;
     const isOpen = openVendors.has(v);
     // Collapsed by default so the whole week reads as one list of suppliers; the tags keep
@@ -517,7 +551,8 @@ function render() {
         '<span class="vendor-name">' + esc(v) + '</span>' +
         (nLate ? '<span class="tag t-late">' + nLate + ' overdue</span>' : '') +
         (nSoon ? '<span class="tag t-soon">' + nSoon + ' this week</span>' : '') +
-        '<span class="vendor-meta">' + buy.length + ' line' + (buy.length === 1 ? '' : 's') + ' · ~$' + Math.round(val).toLocaleString() +
+        '<span class="vendor-meta">' + (nNow ? nNow + ' to order now · ~$' + Math.round(val).toLocaleString() + ' · ' : '') +
+        buy.length + ' line' + (buy.length === 1 ? '' : 's') + ' in the window' +
         (g.length > open.length ? ' · ' + (g.length - open.length) + ' just marked' : '') + '</span></div>' +
       (isOpen ? [...open, ...g.filter(r => r.done)].map(lineHtml).join('') : '') + '</div>';
   }).join('') : '<div class="empty">Nothing to order in the next ' + horizonWeeks + ' weeks.</div>';
@@ -543,8 +578,10 @@ function render() {
     '<div class="totals">' +
       tot('late', late.length, 'overdue') +
       tot('soon', soon.length, 'this week') +
-      tot('', toBuy.length, 'lines to buy') +
-      tot('', '$' + Math.round(value).toLocaleString(), stockAsOf ? 'est. cost to buy, after stock' : 'est. cost if all bought') +
+      tot('', nowLines.length, 'lines to order now') +
+      tot('', '$' + Math.round(nowValue).toLocaleString(), 'est. cost to order now') +
+      tot('', toBuy.length, 'lines in the window') +
+      tot('', '$' + Math.round(value).toLocaleString(), stockAsOf ? 'est. cost, now and later' : 'est. cost if all bought') +
       tot('', toBuy.filter(r => !r.vendor || r.vendorSource === 'project').length, 'vendor to fix') +
     '</div>' +
     (covered.length ? '<div style="margin:-6px 0 14px"><button class="btn btn-ghost btn-sm" onclick="toggleCovered()">' + (showCovered ? 'Hide' : 'Show') + ' ' + covered.length + ' line' + (covered.length === 1 ? '' : 's') + ' covered by stock</button></div>' : '') +
@@ -617,6 +654,8 @@ function jobCard(j, i) {
       '<span class="job-chev">' + (open ? '▾' : '▸') + '</span>' +
       '<span class="job-num">' + esc(j.p.ProjectNumber || '') + '</span>' +
       '<span class="job-name">' + esc(j.p.ProjectName || '') + '</span>' +
+      // Project names alone don't say whose house it is; the client does.
+      (j.p.Client ? '<span class="job-client">' + esc(j.p.Client) + '</span>' : '') +
       (j.p.Progress ? '<span class="tag t-ok">' + esc(j.p.Progress) + '</span>' : '') + state +
       '<span class="job-acts">' +
         btn('Rough-in ordered', 'jobMark(' + i + ',\'rough\')', !rough.length || roughDone) +
@@ -736,6 +775,10 @@ let ltOpen = false, ltDirty = false, ltDeleted = [];
    no match genuinely have no stock, because the report only lists what you hold. */
 
 let stockMap = {}, stockAsOf = '', stockOpen = false;
+// Units the report shows as bought but not yet on the shelf (status "On Order", "In
+// Transit"). Already paid for, so they come off what still has to be ordered.
+let stockOrder = {};
+let stockStatuses = [];             // the statuses this report used, for the stock panel
 /* Products whose keys matched nothing in the report AND which have no RepairQ SKU in the
    catalog to match on. For those, "not in the report" cannot be read as "none held" --
    Sonos ARC Ultra sits in RQ as AVHASS001632 while the catalog offers only the part
@@ -773,7 +816,14 @@ function stockPanel() {
     '</div><div class="lt-body">' +
       '<p class="lt-hint">Export the <b>Inventory Listing</b> from RQ and choose the file — the .xls straight out of RQ works. ' +
       'Or open it in Excel, select all and paste below. ' +
-      'Anything the report does not list is treated as zero, which is correct — it only lists what you hold.</p>' +
+      'Anything the report does not list is treated as zero, which is correct — it only lists what you hold. ' +
+      'Units the report shows as on order or in transit are counted separately, so they are not bought twice.</p>' +
+      // What was done with each status, so a status RQ words differently can be spotted.
+      (stockStatuses.length ? '<p class="lt-hint">Statuses in the last report: ' + stockStatuses.map(([s, n]) =>
+        '<b>' + esc(s) + '</b> ' + n + ' <span style="color:var(--text3)">(' +
+        (/^in stock$/i.test(s) ? 'in stock'
+          : /(on\s*order|ordered|in\s*transit|incoming|back\s*order|pending|reserved|allocated)/i.test(s) ? 'on order'
+          : 'ignored') + ')</span>').join(' · ') + '</p>' : '') +
       '<div style="margin-bottom:10px"><label class="btn btn-sm" style="display:inline-block">Choose file…' +
         '<input type="file" accept=".xls,.xlsx,.csv,.txt" hidden onchange="stockFile(this)"></label></div>' +
       '<textarea id="stockPaste" rows="3" placeholder="…or paste the report here"></textarea>' +
@@ -872,7 +922,7 @@ function fixClear(model) {
   delete stockOverrides[model];
   saveStock(); toast('Match removed'); render();
 }
-function stockClear() { stockMap = {}; stockModels = null; stockUnknown = new Set(); stockIndex = []; stockAsOf = ''; saveStock(); render(); }
+function stockClear() { stockMap = {}; stockOrder = {}; stockStatuses = []; stockModels = null; stockUnknown = new Set(); stockIndex = []; stockAsOf = ''; saveStock(); render(); }
 
 // RQ exports a genuine old-format .xls, which a browser cannot read on its own. SheetJS
 // can; it is ~900 KB, so it loads only when someone actually picks a spreadsheet.
@@ -908,8 +958,12 @@ async function stockFile(input) {
 
 // Excel copies as tab-separated; a saved .csv is comma-separated. Sniff rather than ask.
 function parseDelimited(text) {
-  const firstLine = text.slice(0, text.indexOf('\n') + 1 || text.length);
-  const delim = firstLine.includes('\t') ? '\t' : ',';
+  // Judged over the first lines, not the first one: the RQ export opens with a title and a
+  // date stamp, neither of which has a separator in it, and reading a tab-separated paste
+  // as CSV puts the whole report into one column.
+  const sample = text.split('\n').slice(0, 20);
+  const count = ch => sample.reduce((n, l) => n + (l.split(ch).length - 1), 0);
+  const delim = count('\t') >= count(',') ? '\t' : ',';
   const rows = []; let row = [], cell = '', q = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -945,18 +999,27 @@ function stockLoadText(raw) {
     .map(n => head.indexOf(n)).find(i => i >= 0) ?? -1;
   if (cQty < 0) { toast('Found "Product SKU" but no Quantity or In Stock column — is that an inventory report?', true); return; }
 
-  const map = {};
-  let used = 0;
+  const map = {}, onOrder = {};
+  const seenStatus = new Map();          // every status in the file, for the "what I did with it" note
+  let used = 0, orderedRows = 0;
   for (const r of rows.slice(hIdx + 1)) {
-    if (cStatus >= 0 && (r[cStatus] || '').trim() && (r[cStatus] || '').trim().toLowerCase() !== 'in stock') continue;
+    const status = (cStatus >= 0 ? String(r[cStatus] ?? '') : '').trim();
+    // The listing has a row per unit, each with a status. Held stock is what is on the
+    // shelf; a unit on a purchase order is already bought and must not be bought twice,
+    // so it is counted separately rather than ignored.
+    const held = !status || /^in stock$/i.test(status);
+    const coming = !held && /(on\s*order|ordered|in\s*transit|incoming|back\s*order|pending|reserved|allocated)/i.test(status);
+    if (status) seenStatus.set(status, (seenStatus.get(status) || 0) + 1);
+    if (!held && !coming) continue;
     // Accounting format: the summary report shows oversold stock as "(20.00)".
     const rawQ = String(r[cQty] ?? '').trim();
     const q = (/^\(.*\)$/.test(rawQ) ? -1 : 1) * (parseFloat(rawQ.replace(/[^0-9.]/g, '')) || 0);
     if (q <= 0) continue;
+    const into = held ? map : onOrder;
     for (const idx of [cSku, cMfr]) {
       if (idx < 0) continue;
       const k = norm(r[idx]);
-      if (k) { map[k] = (map[k] || 0) + q; used++; }
+      if (k) { into[k] = (into[k] || 0) + q; if (held) used++; else orderedRows++; }
     }
   }
   if (!used) { toast('Found the header but no in-stock rows with a quantity', true); return; }
@@ -973,8 +1036,11 @@ function stockLoadText(raw) {
   }
   // Keys matched by hand count as wanted too, or a saved match would be lost on the next load.
   for (const k of Object.values(stockOverrides)) if (k) wanted.add(k);
-  const kept = {};
-  for (const k of wanted) if (map[k] != null) kept[k] = map[k];
+  const kept = {}, keptOrder = {};
+  for (const k of wanted) {
+    if (map[k] != null) kept[k] = map[k];
+    if (onOrder[k] != null) keptOrder[k] = onOrder[k];
+  }
 
   // A product with no RepairQ SKU in the catalog, whose other keys match nothing in the
   // report, cannot be called zero -- we simply could not look it up.
@@ -984,7 +1050,7 @@ function stockLoadText(raw) {
     for (const l of linesOf(p)) {
       const model = norm(l.model);
       if (stockOverrides[model]) continue;
-      const matched = [norm(l.rq), norm(l.mfr), model].some(k => k && map[k] != null);
+      const matched = [norm(l.rq), norm(l.mfr), model].some(k => k && (map[k] != null || onOrder[k] != null));
       if (!matched && !norm(l.rq)) unknown.add(model);
     }
   }
@@ -1001,6 +1067,8 @@ function stockLoadText(raw) {
   stockIndex = [...index.values()].filter(x => x.qty > 0).sort((a, b) => a.name.localeCompare(b.name));
 
   stockMap = kept;
+  stockOrder = keptOrder;
+  stockStatuses = [...seenStatus.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
   stockModels = models;
   stockUnknown = unknown;
   stockAsOf = new Date().toISOString();
@@ -1012,7 +1080,9 @@ function stockLoadText(raw) {
     // only be matched by its part number reads "?". Worth being loud about.
     toast('Loaded, but this report has no Manufacturer SKU column — use the Inventory Listing report or part numbers can\'t be matched', true);
   } else {
+    const coming = build().filter(r => r.onOrder > 0).length;
     toast('✓ Stock loaded — ' + held + ' product' + (held === 1 ? ' on the list is' : 's on the list are') + ' on the shelf' +
+      (coming ? ' · ' + coming + ' already on order' : '') +
       (unknown.size ? ' · ' + unknown.size + " couldn't be matched" : ''));
   }
   render();
@@ -1026,19 +1096,20 @@ function norm(s) { return String(s ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCa
    Worked out here rather than when a report is loaded -- the old saved stock has no record
    of what failed to match, and a wrong 0 should not survive until someone reloads. */
 function stockLookup(r) {
-  if (!stockAsOf) return { stock: null, key: '', why: 'no report' };
+  if (!stockAsOf) return { stock: null, onOrder: null, key: '', why: 'no report' };
   const model = norm(r.model);
+  const at = (k, src) => ({ stock: stockMap[k] ?? 0, onOrder: stockOrder[k] ?? 0, key: k, why: src });
   const ov = stockOverrides[model];
-  if (ov) return { stock: stockMap[ov] ?? 0, key: ov, why: 'matched by hand' };
+  if (ov) return at(ov, 'matched by hand');
   // Not on an open job when the report was loaded, so it was never looked up.
-  if (stockModels && !stockModels.has(model)) return { stock: null, key: '', why: 'not checked' };
+  if (stockModels && !stockModels.has(model)) return { stock: null, onOrder: null, key: '', why: 'not checked' };
   for (const [k, src] of [[norm(r.rq), 'RepairQ SKU'], [norm(r.mfr), 'part number'], [model, 'model']]) {
-    if (k && stockMap[k] != null) return { stock: stockMap[k], key: k, why: src };
+    if (k && (stockMap[k] != null || stockOrder[k] != null)) return at(k, src);
   }
   // With a RepairQ SKU on the product, absence from the report really does mean none held.
-  if (norm(r.rq)) return { stock: 0, key: norm(r.rq), why: 'RepairQ SKU, none held' };
+  if (norm(r.rq)) return { stock: 0, onOrder: 0, key: norm(r.rq), why: 'RepairQ SKU, none held' };
   // Without one, there is nothing to look up: say so rather than call it zero.
-  return { stock: null, key: '', why: 'no RepairQ SKU on the product' };
+  return { stock: null, onOrder: null, key: '', why: 'no RepairQ SKU on the product' };
 }
 function stockFor(r) { return stockLookup(r).stock; }
 
@@ -1049,8 +1120,8 @@ async function saveStock() {
     const all = await items(LIST.stock);
     // Never truncate: a cut-off JSON string fails to parse on the next load and the stock
     // silently disappears. The filtering in stockLoadText keeps this well inside the limit.
-    const data = JSON.stringify({ v: 3, m: stockMap, models: stockModels ? [...stockModels] : [],
-      unknown: [...stockUnknown], overrides: stockOverrides });
+    const data = JSON.stringify({ v: 4, m: stockMap, o: stockOrder, statuses: stockStatuses,
+      models: stockModels ? [...stockModels] : [], unknown: [...stockUnknown], overrides: stockOverrides });
     if (data.length > 60000) { toast('Stock is too large to save — it works until the page is reloaded', true); return; }
     const fields = { Title: 'stock', DataJson: data, AsOf: stockAsOf };
     const mine = all.find(i => (i.fields || {}).Title !== 'vendors');   // never overwrite the sync's supplier row
@@ -1120,21 +1191,30 @@ function lineHtml(r) {
   const cov = !done && r.stock !== null && r.order <= 0;
   return '<div class="line' + (done || cov ? ' done' : '') + '">' +
     '<div class="line-box"><input type="checkbox" aria-label="' + esc(r.model) + ' ordered"' + (done ? ' checked' : '') + (busy ? ' disabled' : '') + ' onchange="toggleRow(' + ref + ', this.checked)"></div>' +
-    '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + (done ? ' <span class="tag t-done">marked ordered</span>' : '') + (cov ? ' <span class="tag t-done">covered by stock</span>' : '') + '</div>' +
+    '<div class="line-main"><div class="line-model">' + esc(r.model) + stale + (done ? ' <span class="tag t-done">marked ordered</span>' : '') + (cov ? ' <span class="tag t-done">' + (r.stock > 0 ? 'covered by stock' : 'already on order') + '</span>' : '') + '</div>' +
     '<div class="line-desc">' + esc(r.desc) + '</div>' +
     // Show the working: which RepairQ item the stock figure came from, or why there isn't one.
     (stockAsOf ? '<div class="mini">' + (r.stockKey
         ? 'stock matched on ' + esc(r.stockKey) + ' <span style="color:var(--text3)">(' + esc(r.stockWhy) + ')</span>'
         : '<span class="oth">' + esc(r.stockWhy) + '</span>') + '</div>' : '') +
-    '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' + esc(j.name) +
+    // Which jobs, and whether each one is due now -- so a big "later" figure can be read
+    // back to the job it belongs to without opening anything.
+    '<div class="jobs">' + r.jobs.map(j => '<div><span class="jq">' + qty(j.qty, r.bulk) + '</span><span>' +
+      (j.number ? '<span class="jnum">' + esc(j.number) + '</span> ' : '') + esc(j.name) +
+      (j.client ? ' <span class="jcl">' + esc(j.client) + '</span>' : '') +
+      (j.orderBy ? ' <span class="' + (j.now ? 'jnow' : 'had') + '">' + (j.now ? 'order now' : 'order by ' + fmt(parseD(j.orderBy))) + '</span>' : '') +
       (j.have > 0 ? ' <span class="had">(' + qty(j.have, r.bulk) + ' already marked)</span>' : '') + '</span></div>').join('') + '</div></div>' +
-    // Three plain numbers, because "have 12 / 16" read as a fraction to everyone who saw it.
+    // Plain numbers, because "have 12 / 16" read as a fraction to everyone who saw it.
     '<div class="line-num"><span class="lbl">in stock</span>' +
       (!stockAsOf ? '<b class="dim" title="No stock report loaded">—</b>'
         : r.stock === null ? '<b class="dim" title="Could not be matched to anything in the RepairQ report, so this is not a zero">?</b>'
-        : '<b' + (r.stock > 0 ? '' : ' class="dim"') + '>' + qty(r.stock, r.bulk) + '</b>') + '</div>' +
+        : '<b' + (r.stock > 0 ? '' : ' class="dim"') + '>' + qty(r.stock, r.bulk) + '</b>') +
+      (r.onOrder > 0 ? '<span class="onord" title="Already on a purchase order in RepairQ">+' + qty(r.onOrder, r.bulk) + ' on order</span>' : '') + '</div>' +
     '<div class="line-num"><span class="lbl">needed</span><b>' + qty(r.qty, r.bulk) + '</b></div>' +
-    '<div class="line-num order"><span class="lbl">to order</span><b>' + qty(r.stock === null ? r.qty : r.order, r.bulk) + '</b></div>' +
+    // Split so a supplier order can be placed for what is actually due, and the rest is
+    // still visible rather than hidden until it is late.
+    '<div class="line-num order"><span class="lbl">order now</span><b' + (r.orderNow > 0 ? '' : ' class="dim"') + '>' + qty(r.orderNow, r.bulk) + '</b></div>' +
+    '<div class="line-num later"><span class="lbl">later</span><b' + (r.orderLater > 0 ? '' : ' class="dim"') + '>' + qty(r.orderLater, r.bulk) + '</b></div>' +
     '<div class="line-by">' + by + '</div></div>';
 }
 
@@ -1278,7 +1358,7 @@ function loadSample() {
     { Vendor: 'Trends', Match: '', Weeks: '2' }
   ];
   projects = [
-    { ProjectName: 'New Harris Home, 220 Handsart Blvd', ProjectNumber: 'ADVAN-3401', StartDate: d(18),
+    { ProjectName: 'New Harris Home, 220 Handsart Blvd', ProjectNumber: 'ADVAN-3401', Client: 'Harris, Dave', StartDate: d(18),
       DaysRoughIn: '6', DaysFinish: '3', TasksJson: '[]',
       OrderLinesJson: JSON.stringify([
         { model: 'RJ45 Cat6 Ends', desc: 'Cat6e Ends', vendor: 'ADI', cost: 0.42, qty: 62, phase: 'finish' },
@@ -1289,7 +1369,7 @@ function loadSample() {
         { model: 'MP1S', desc: 'Single gang low voltage stud bracket', vendor: 'Trends', cost: 1.55, qty: 12, phase: 'roughIn' },
         { model: 'SIVOIA QS Triathlon Shade', desc: 'Lutron motorised roller shade', vendor: 'Lutron', cost: 980, qty: 4, phase: 'finish' }
       ]) },
-    { ProjectName: 'New Maric Home, 5925 Southboine Dr', ProjectNumber: 'ADVAN-3346', StartDate: d(-30),
+    { ProjectName: 'New Maric Home, 5925 Southboine Dr', ProjectNumber: 'ADVAN-3346', Client: 'Maric Homes', StartDate: d(-30),
       DaysRoughIn: '7.5', DaysFinish: '3.5',
       TasksJson: JSON.stringify([{ start: d(9), end: d(9), phase: 'finish', progress: 'Lighting/Shades' }]),
       OrderLinesJson: JSON.stringify([
@@ -1297,7 +1377,7 @@ function loadSample() {
         { model: 'LUM-820-IP-TFHB', desc: 'Luma X20 8MP turret camera', vendor: 'SnapAV', cost: 490, qty: 8, phase: 'finish' },
         { model: 'QN85QN82HA', desc: 'Samsung 85" Neo QLED', vendor: '', cost: 3200, qty: 1, phase: 'finish' }
       ]) },
-    { ProjectName: 'Show Home — Sage Creek', ProjectNumber: 'ADVAN-3455', StartDate: '',
+    { ProjectName: 'Show Home — Sage Creek', ProjectNumber: 'ADVAN-3455', Client: 'Qualico', StartDate: '',
       DaysRoughIn: '9', DaysFinish: '4', TasksJson: '[]',
       OrderLinesJson: JSON.stringify([
         { model: 'AN-220-RT', desc: 'Araknis 220 single-WAN router', vendor: 'SnapAV', cost: 305, qty: 2, phase: 'finish' }
