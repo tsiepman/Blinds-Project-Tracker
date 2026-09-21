@@ -268,16 +268,31 @@ function round1(n) { return Math.round(n * 10) / 10; }
 export async function catalogVendors(si, catalogs) {
   const ordered = catalogs ?? (await si.listCatalogs()).Catalogs;   // oldest first
   const map = new Map();
+  const byId = new Map();                           // product id -> the key it lives under
   for (const cat of ordered) {
     const full = await si.getCatalog(cat.Id);
+    // Deletions come as ids on the message that removed them. Ignoring them leaves
+    // products that no longer exist in D-Tools sitting in the map for ever -- which is
+    // how a discontinued product went on holding a RepairQ SKU and got the live product
+    // sharing it blanked, showing "?" instead of its stock.
+    for (const id of full.DeletedProductIds ?? []) {
+      const key = byId.get(id);
+      if (key && map.get(key)?.id === id) map.delete(key);
+      byId.delete(id);
+    }
     for (const p of full.Products ?? []) {
       if (!p.Model) continue;
       const key = p.Model.trim().toLowerCase();
+      // A product that was renamed leaves its old model key behind, so drop that too.
+      const wasAt = p.Id ? byId.get(p.Id) : null;
+      if (wasAt && wasAt !== key) map.delete(wasAt);
+      if (p.Id) byId.set(p.Id, key);
       // CustomField1 holds the RepairQ SKU. It is the only bridge to the RQ stock
       // report, and it is heavily polluted -- one dead value, AVARNS000635, sits on 162
       // catalog products and does not exist in RQ at all.
       const rq = String(p.CustomField1 || '').trim();
       map.set(key, {
+        id: p.Id || '',
         model: p.Model,
         vendor: (p.Vendor && p.Vendor !== 'N/A') ? p.Vendor : '',
         cost: Number(p.UnitCost) || 0,
@@ -293,13 +308,20 @@ export async function catalogVendors(si, catalogs) {
   // ignored rather than silently returning another product's stock. Counted on the final
   // map, not while reading -- a SKU someone has since corrected must not still count
   // against the product it used to be on.
-  const rqUse = new Map();                          // RQ SKU -> number of models using it
+  const rqUse = new Map();                          // RQ SKU -> the models using it
   for (const v of map.values()) {
-    if (v.rq) rqUse.set(v.rq.toUpperCase(), (rqUse.get(v.rq.toUpperCase()) ?? 0) + 1);
+    if (!v.rq) continue;
+    const k = v.rq.toUpperCase();
+    if (!rqUse.has(k)) rqUse.set(k, []);
+    rqUse.get(k).push(v.model);
   }
   for (const v of map.values()) {
-    if (v.rq && rqUse.get(v.rq.toUpperCase()) > 1) v.rq = '';
+    if (v.rq && rqUse.get(v.rq.toUpperCase()).length > 1) v.rq = '';
   }
+  // Named in the sync log: each one is a catalog fix that gives a product its stock back.
+  map.sharedRq = [...rqUse.entries()].filter(([, ms]) => ms.length > 1)
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([sku, ms]) => ({ sku, models: ms }));
   return map;
 }
 

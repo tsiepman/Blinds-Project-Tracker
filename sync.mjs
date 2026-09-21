@@ -63,6 +63,13 @@ async function main() {
     if (!vendorMap) {
       vendorMap = await catalogVendors(si, catalogs);
       console.log(`  (catalog read: ${vendorMap.size} products)`);
+      // A RepairQ SKU on two products can't identify either, so both lose their stock
+      // figure on the Orders page. Each line here is one catalog edit that fixes it.
+      const shared = vendorMap.sharedRq ?? [];
+      if (shared.length) {
+        console.log(`  ${shared.length} RepairQ SKU${shared.length === 1 ? '' : 's'} on more than one product (stock can't be matched for these):`);
+        for (const s of shared.slice(0, 15)) console.log(`    ${s.sku}  ${s.models.slice(0, 4).join(' · ')}${s.models.length > 4 ? ` · +${s.models.length - 4} more` : ''}`);
+      }
     }
     return vendorMap;
   };
