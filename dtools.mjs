@@ -78,6 +78,22 @@ export class DTools {
   /** One catalog message with its products. */
   getCatalog(id) { return this.#get(`/Subscribe/ProductCatalogs/${encodeURIComponent(id)}`); }
 
+  /* The only write in this file. Publishing a catalog is how an integration sends product
+     changes back to SI, and it writes the WHOLE product record -- so a product must be
+     sent as it was read, with only the fields we mean to change altered, or cost, vendor
+     and labour would be blanked. SI Control Panel -> Manage Integrations must have catalog
+     updates enabled; with it off the call is accepted and quietly does nothing. */
+  async publishCatalog(catalog) {
+    const res = await fetch(BASE + '/Publish/ProductCatalogs', {
+      method: 'POST',
+      headers: { 'X-DTSI-ApiKey': this.key, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(catalog),
+    });
+    const text = (await res.text()).slice(0, 300);
+    if (!res.ok) throw new Error(`POST /Publish/ProductCatalogs -> ${res.status} ${text}`);
+    return text;
+  }
+
   /** Service order messages in the queue (service calls, and the crew's day rows). */
   async serviceOrders({ pageSize = 200 } = {}) {
     const all = [];
@@ -293,6 +309,9 @@ export async function catalogVendors(si, catalogs) {
       const rq = String(p.CustomField1 || '').trim();
       map.set(key, {
         id: p.Id || '',
+        // The product exactly as SI published it. Kept so the stock push can send it back
+        // with three fields changed and nothing else touched.
+        full: p,
         model: p.Model,
         vendor: (p.Vendor && p.Vendor !== 'N/A') ? p.Vendor : '',
         cost: Number(p.UnitCost) || 0,

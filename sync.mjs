@@ -10,6 +10,7 @@ import { DTools, phaseEstimate, taskSpans, orderLines, catalogVendors,
          visitFromTask, visitFromServiceOrder, visitInWindow } from './dtools.mjs';
 import { Graph } from './graph.mjs';
 import { processWriteups } from './writeups.mjs';
+import { pushStock } from './stockpush.mjs';
 import { createHash } from 'node:crypto';
 
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
@@ -277,6 +278,11 @@ async function main() {
       console.log(`\nField visits not saved -- is the ${VISIT_LIST} list created? (${e.message.slice(0, 120)})`);
     }
   }
+
+  // RepairQ stock back into the catalog's custom fields, so a salesman speccing a job in
+  // SI sees what is on the shelf. Only runs when Brian has loaded a newer report.
+  try { await pushStock(si, graph, getVendorMap, { dryRun }); }
+  catch (e) { failed.push('stock push'); console.log(`  ! stock push: ${e.message.slice(0, 200)}`); }
 
   // Installer write-ups: notes the Power Automate flow copied into WorkOrderNotes are
   // summarised once and attached to their field visit. See writeups.mjs.

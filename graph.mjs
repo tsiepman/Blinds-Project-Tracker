@@ -63,6 +63,19 @@ export class Graph {
     }
   }
 
+  // A file in the site's document library, as text. Used for the RepairQ stock export,
+  // which is far too big for a list field -- the Orders page writes it, this reads it.
+  async fileText(path) {
+    const site = this.ids.site;
+    if (!site) throw new Error('Graph: site id not resolved yet');
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/sites/${site}/drive/root:/${path.split('/').map(encodeURIComponent).join('/')}:/content`,
+      { headers: { Authorization: 'Bearer ' + (await this.#accessToken()) } });
+    if (res.status === 404) return null;                  // nothing uploaded yet
+    if (!res.ok) throw new Error(`GET ${path} -> ${res.status} ${(await res.text()).slice(0, 200)}`);
+    return res.text();
+  }
+
   async siteId(hostname, sitePath) {
     if (this.ids.site) return this.ids.site;
     const d = await this.req('GET', `/sites/${hostname}:${sitePath}`);

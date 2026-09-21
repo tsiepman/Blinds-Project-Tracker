@@ -1034,8 +1034,12 @@ function stockLoadText(raw) {
   // "On Order Qty" elsewhere. Anything with a money word in it is a value, not a count.
   const onOrderRe = /(on\s*-?\s*order|on\s*po|incoming|in\s*transit|due\s*in)/;
   const cOnOrder = head.findIndex(h => onOrderRe.test(h) && !/(cost|value|price|amount|total\s*\$)/.test(h));
+  // Committed goes to the D-Tools catalog, not to the order figures: what is spoken for
+  // is already counted on the jobs themselves here.
+  const cCommitted = head.findIndex(h => /(committed|reserved|allocated)/.test(h) && !/(cost|value|price|amount)/.test(h));
 
   const map = {}, onOrder = {};
+  const forCatalog = new Map();          // RepairQ SKU -> the figures the sync pushes to D-Tools
   const seenStatus = new Map();          // every status in the file, for the "what I did with it" note
   let used = 0, orderedRows = 0;
   for (const r of rows.slice(hIdx + 1)) {
@@ -1054,6 +1058,18 @@ function stockLoadText(raw) {
     // a zero quantity until both are zero.
     const qo = cOnOrder >= 0 ? num(String(r[cOnOrder] ?? '').trim()) : 0;
     if ((!held && !coming) || (q <= 0 && qo <= 0)) continue;
+    // The whole report, product by product, for the sync to copy into the D-Tools catalog.
+    // Kept separate from the lookup maps above, which are keyed by every alias at once.
+    if (cSku >= 0) {
+      const sku = String(r[cSku] ?? '').trim();
+      if (sku) {
+        const e = forCatalog.get(norm(sku)) ?? { sku, mfr: String(r[cMfr] ?? '').trim(), name: String(r[cName] ?? '').trim(), stock: 0, onOrder: 0, committed: cCommitted >= 0 ? 0 : null };
+        if (held) e.stock += Math.max(0, q); else e.onOrder += Math.max(0, q);
+        if (qo > 0) e.onOrder += qo;
+        if (cCommitted >= 0) e.committed += Math.max(0, num(String(r[cCommitted] ?? '').trim()));
+        forCatalog.set(norm(sku), e);
+      }
+    }
     const into = held ? map : onOrder;
     for (const idx of [cSku, cMfr]) {
       if (idx < 0) continue;
@@ -1115,6 +1131,9 @@ function stockLoadText(raw) {
   stockUnknown = unknown;
   stockAsOf = new Date().toISOString();
   saveStock();
+  // The whole report goes to a file, for the sync to copy into the D-Tools catalog. Too
+  // big for a list field, and unrelated to the order figures, so it travels separately.
+  uploadStockFile([...forCatalog.values()]);
   stockOpen = false;
   const held = build().filter(r => r.stock > 0).length;
   if (cMfr < 0) {
@@ -1157,6 +1176,31 @@ function stockLookup(r) {
   return { stock: null, onOrder: null, key: '', why: 'no RepairQ SKU on the product' };
 }
 function stockFor(r) { return stockLookup(r).stock; }
+
+/* The full report, saved to the site's document library for the sync to read. It fills
+   Stock, Committed and On order on the matching D-Tools catalog product, so a salesman
+   speccing a job sees what is held. RepairQ stays the master -- this is a daily copy.
+   Failing to upload is not worth a scene: the Orders page itself is unaffected. */
+async function uploadStockFile(rows) {
+  if (usingSample || !rows.length) return;
+  try {
+    if (!siteId) siteId = (await graph('GET', '/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
+    const body = JSON.stringify({ asOf: stockAsOf, source: 'RepairQ', count: rows.length, rows });
+    const t = await token();
+    if (!t) return;
+    const res = await fetch('https://graph.microsoft.com/v1.0/sites/' + siteId +
+      '/drive/root:/ARTStock/rq-stock.json:/content', {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+      body
+    });
+    if (!res.ok) throw new Error('PUT ' + res.status);
+    console.log('stock file uploaded for the D-Tools push: ' + rows.length + ' products');
+  } catch (e) {
+    console.warn('stock file not uploaded:', e.message);
+    toast('Stock loaded, but the D-Tools copy could not be saved — the Orders page is unaffected', true);
+  }
+}
 
 async function saveStock() {
   if (usingSample) return;
