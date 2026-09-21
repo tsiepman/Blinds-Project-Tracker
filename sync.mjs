@@ -63,7 +63,8 @@ async function main() {
   const getVendorMap = async () => {
     if (!vendorMap) {
       vendorMap = await catalogVendors(si, catalogs);
-      console.log(`  (catalog read: ${vendorMap.size} products)`);
+      console.log(`  (catalog read: ${vendorMap.size} products` +
+        ((vendorMap.ignored ?? []).length ? `, ignoring ${vendorMap.ignored.join(', ')}` : '') + ')');
       // A RepairQ SKU on two products can't identify either, so both lose their stock
       // figure on the Orders page. Each line here is one catalog edit that fixes it.
       const shared = vendorMap.sharedRq ?? [];

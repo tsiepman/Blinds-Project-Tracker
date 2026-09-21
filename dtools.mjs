@@ -283,6 +283,19 @@ function round1(n) { return Math.round(n * 10) / 10; }
    edited since late April. */
 export async function catalogVendors(si, catalogs) {
   const ordered = catalogs ?? (await si.listCatalogs()).Catalogs;   // oldest first
+  // Ghosts: products that cannot be found anywhere in SI but are still in the feed, with
+  // no deletion message to explain it. CS-206 is one, and it cost the 16-2 speaker wire
+  // its stock figure by sharing a RepairQ SKU with it. Repository variable
+  // CATALOG_IGNORE, comma-separated models, so removing one needs no code change.
+  const ignore = new Set(String(process.env.CATALOG_IGNORE || '')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+  // Where two live products share a RepairQ SKU, both normally lose it -- neither can be
+  // trusted to mean the other's stock. CATALOG_SKU_OWNER says which product it really
+  // belongs to: "AVARAF000179=RG6, AVARCF000085=C4-T4IW10-WH". The named product keeps
+  // the SKU and the others lose it, which is the catalog fix without the catalog edit.
+  const owner = new Map(String(process.env.CATALOG_SKU_OWNER || '')
+    .split(/[,;]/).map(s => s.split('=').map(x => x.trim())).filter(([a, b]) => a && b)
+    .map(([sku, model]) => [sku.toUpperCase(), model.toLowerCase()]));
   const map = new Map();
   const byId = new Map();                           // product id -> the key it lives under
   for (const cat of ordered) {
@@ -299,6 +312,7 @@ export async function catalogVendors(si, catalogs) {
     for (const p of full.Products ?? []) {
       if (!p.Model) continue;
       const key = p.Model.trim().toLowerCase();
+      if (ignore.has(key)) continue;
       // A product that was renamed leaves its old model key behind, so drop that too.
       const wasAt = p.Id ? byId.get(p.Id) : null;
       if (wasAt && wasAt !== key) map.delete(wasAt);
@@ -334,11 +348,17 @@ export async function catalogVendors(si, catalogs) {
     if (!rqUse.has(k)) rqUse.set(k, []);
     rqUse.get(k).push(v.model);
   }
-  for (const v of map.values()) {
-    if (v.rq && rqUse.get(v.rq.toUpperCase()).length > 1) v.rq = '';
+  for (const [key, v] of map.entries()) {
+    if (!v.rq || rqUse.get(v.rq.toUpperCase()).length <= 1) continue;
+    const owns = owner.get(v.rq.toUpperCase());
+    // Named owner keeps it; everything else sharing that SKU still loses it.
+    if (owns && owns === key) continue;
+    v.rq = '';
   }
   // Named in the sync log: each one is a catalog fix that gives a product its stock back.
-  map.sharedRq = [...rqUse.entries()].filter(([, ms]) => ms.length > 1)
+  map.ignored = [...ignore];
+  // Settled ones drop off the list the Orders page shows -- they are no longer a problem.
+  map.sharedRq = [...rqUse.entries()].filter(([sku, ms]) => ms.length > 1 && !owner.has(sku))
     .sort((a, b) => b[1].length - a[1].length)
     .map(([sku, ms]) => ({ sku, models: ms }));
   return map;
