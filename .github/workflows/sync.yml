@@ -47,6 +47,11 @@ jobs:
           # STOCK_PUSH_PROBE=<model> writes 111/222/333 to that one product, to prove which
           # CustomField each label in SI actually is. The three below then record the answer.
           STOCK_PUSH_PROBE: ${{ vars.STOCK_PUSH_PROBE }}
+          # Models still in the catalog feed that no longer exist in SI, comma-separated.
+          # They hold RepairQ SKUs hostage from live products; CS-206 is the known one.
+          CATALOG_IGNORE: ${{ vars.CATALOG_IGNORE }}
+          # Who owns a RepairQ SKU two live products share: "SKU=Model, SKU=Model".
+          CATALOG_SKU_OWNER: ${{ vars.CATALOG_SKU_OWNER }}
           STOCK_FIELD_STOCK: ${{ vars.STOCK_FIELD_STOCK }}
           STOCK_FIELD_COMMITTED: ${{ vars.STOCK_FIELD_COMMITTED }}
           STOCK_FIELD_ONORDER: ${{ vars.STOCK_FIELD_ONORDER }}
