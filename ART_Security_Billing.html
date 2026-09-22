@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART — Security Billing</title>
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; height: 52px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 40; }
+  .mark { background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 12px; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px; }
+  .hname { font-size: 14px; font-weight: 600; }
+  .hname span { color: var(--text3); font-weight: 400; }
+  .spacer { margin-left: auto; }
+  .sp-status { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; display: none; }
+  .sp-status.connected { display: inline; background: var(--green-dim); color: var(--green); }
+  .sp-status.error { display: inline; background: var(--red-dim); color: var(--red); }
+  .sp-status.loading { display: inline; background: var(--accent-dim); color: var(--accent); }
+  .art-back { font-size: 12.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 11px; }
+  .art-back:hover { border-color: var(--accent); color: var(--accent); }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 80px; }
+  h1.page { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  p.page-sub { color: var(--text2); font-size: 13px; margin-bottom: 18px; }
+
+  .controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
+  label.fld { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); margin-bottom: 5px; font-weight: 600; }
+  select, input, textarea { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 9px 11px; font-size: 14px; font-family: inherit; }
+  textarea { width: 100%; resize: vertical; }
+  .btn { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn:hover { border-color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .btn-sm { padding: 6px 10px; font-size: 12px; }
+  .btn-ghost { background: transparent; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .seg button { background: var(--bg); color: var(--text2); border: none; padding: 9px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--surface2); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+  .seg button:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .totals { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .tot { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 11px 15px; min-width: 112px; }
+  .tot-n { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tot-l { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 600; }
+  .tot.miss .tot-n { color: var(--yellow); }
+  .tot.late .tot-n { color: var(--red); }
+  .tot.good .tot-n { color: var(--green); }
+
+  .group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden; }
+  .group-head { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: var(--surface2); flex-wrap: wrap; }
+  .group-name { font-size: 14.5px; font-weight: 700; }
+  .group-meta { font-size: 12px; color: var(--text3); margin-left: auto; }
+
+  .row { display: flex; gap: 12px; align-items: flex-start; padding: 11px 16px; border-top: 1px solid var(--border); cursor: pointer; }
+  .row:first-of-type { border-top: none; }
+  .row:hover { background: var(--surface2); }
+  .r-main { flex: 1; min-width: 0; }
+  .r-name { font-weight: 600; font-size: 14px; }
+  .r-name .num { font-family: var(--mono); font-size: 12px; color: var(--text3); margin-right: 6px; font-weight: 400; }
+  .r-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+  .r-amt { text-align: right; min-width: 8em; }
+  .r-amt b { font-size: 16px; font-variant-numeric: tabular-nums; }
+  .r-amt .lbl { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); font-weight: 600; margin-top: 2px; }
+
+  .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; display: inline-block; }
+  .t-ok { background: var(--green-dim); color: var(--green); }
+  .t-miss { background: var(--yellow-dim); color: var(--yellow); }
+  .t-late { background: var(--red-dim); color: var(--red); }
+  .t-grey { background: var(--surface2); color: var(--text3); }
+
+  .banner { background: var(--yellow-dim); color: var(--yellow); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+  .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
+  .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
+  .card h2 { font-size: 20px; margin-bottom: 8px; }
+  .card p { color: var(--text2); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+  .card .btn { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+  /* ── account detail drawer ── */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 90; display: flex; justify-content: flex-end; }
+  .drawer { background: var(--bg); width: min(560px, 100%); height: 100%; overflow-y: auto; padding: 20px 20px 60px; border-left: 1px solid var(--border); }
+  .drawer-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 18px; }
+  .drawer-head h2 { font-size: 19px; flex: 1; }
+  .close-x { background: none; border: none; color: var(--text3); font-size: 20px; cursor: pointer; padding: 2px 6px; }
+  .close-x:hover { color: var(--text); }
+  .fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin-bottom: 16px; }
+  .fgrid .full { grid-column: 1 / -1; }
+  .fgrid label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); margin-bottom: 4px; font-weight: 600; }
+  .fgrid input, .fgrid select { width: 100%; }
+  .sec-h { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 700; margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .sec-h:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .hist-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .hist-row:first-of-type { border-top: none; }
+  .hist-row .h-note { color: var(--text3); font-size: 12px; }
+  .drawer-actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+
+  @media (max-width: 720px) {
+    .row { flex-wrap: wrap; }
+    .r-amt { text-align: left; min-width: 0; }
+    .fgrid { grid-template-columns: 1fr; }
+    .drawer { width: 100%; }
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+</head>
+<body>
+
+<div class="header">
+  <span class="mark">ART</span><span class="hname">Security Billing <span>customer monitoring accounts</span></span>
+  <span id="spStatus" class="sp-status"></span>
+  <span class="spacer"></span>
+  <a class="art-back" href="index.html">← All tools</a>
+</div>
+
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   ART Security Billing
+   The register of monitored-security customers: who they are, what they
+   pay, when it's due, and whether it went through.
+
+   Built to sit next to the monitoring station relationship, not replace
+   it -- the station carries the actual monitoring. This tool is the
+   billing side: it doesn't care whether that's SecurTek, Ajax's monitoring
+   partner, or anyone else. Change stations and only the account's
+   "Station" field moves.
+
+   Payment collection (Stripe) is a second pass -- see the comment on
+   the Store object below. Until then this is a register plus a manual
+   chase queue: it tells you who owes what and how overdue they are, it
+   doesn't move money.
+   ============================================================ */
+
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
+const LIST = { accounts: 'SecurityAccounts', payments: 'SecurityPayments' };
+
+let msal_ = null, siteId = null, listIds = {};
+let accounts = [], payments = [], usingSample = false;
+let view = (() => { try { return localStorage.getItem('secbill.view') || 'chase'; } catch { return 'chase'; } })();
+let search = '', statusFilter = 'active', stationFilter = 'all';
+let openId = null;      // account currently shown in the drawer, or null
+let editBuf = null;     // a copy of the open account's fields, edited in the drawer
+let busy = false;
+
+/* ---------- auth / graph ---------- */
+
+async function init() {
+  if (location.search.includes('demo')) { loadSample(); render(); return; }
+  msal_ = new msal.PublicClientApplication({
+    auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/' + TENANT_ID, redirectUri: location.href.split('?')[0].split('#')[0] },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msal_.initialize();
+  await msal_.handleRedirectPromise();
+  if (!msal_.getAllAccounts().length) { renderSignIn(); return; }
+  await load();
+}
+function signIn() { msal_.loginRedirect({ scopes: SCOPES }); }
+
+async function token() {
+  const a = msal_.getAllAccounts();
+  if (!a.length) return null;
+  try { return (await msal_.acquireTokenSilent({ scopes: SCOPES, account: a[0] })).accessToken; }
+  catch { await msal_.acquireTokenRedirect({ scopes: SCOPES, account: a[0] }); return null; }
+}
+async function graph(method, path, body) {
+  const t = await token();
+  if (!t) return null;
+  const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
+    method,
+    headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json', Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  });
+  if (!res.ok) throw new Error(method + ' ' + path + ' -> ' + res.status);
+  return res.status === 204 ? null : res.json();
+}
+async function listId(name) {
+  if (listIds[name]) return listIds[name];
+  if (!siteId) siteId = (await graph('GET', '/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
+  listIds[name] = (await graph('GET', '/sites/' + siteId + '/lists/' + name)).id;
+  return listIds[name];
+}
+async function items(name) {
+  const lid = await listId(name);
+  const out = [];
+  let url = '/sites/' + siteId + '/lists/' + lid + '/items?expand=fields&$top=999';
+  for (;;) {
+    const d = await graph('GET', url);
+    if (!d) return out;
+    out.push(...(d.value || []));
+    if (!d['@odata.nextLink']) break;
+    url = d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '');
+  }
+  return out;
+}
+function setStatus(cls, txt) { const e = document.getElementById('spStatus'); e.className = 'sp-status ' + cls; e.textContent = txt; }
+
+async function load() {
+  setStatus('loading', 'Loading…');
+  try {
+    const [ac, pay] = await Promise.all([
+      items(LIST.accounts),
+      items(LIST.payments).catch(() => [])
+    ]);
+    accounts = ac.map(i => ({ itemId: i.id, ...(i.fields || {}) }));
+    payments = pay.map(i => ({ itemId: i.id, ...(i.fields || {}) }));
+    usingSample = false;
+    if (!accounts.length) loadSample();
+    setStatus('connected', 'SharePoint');
+  } catch (e) {
+    setStatus('error', 'Error');
+    console.error(e);
+    if (!accounts.length) loadSample();
+  }
+  render();
+}
+
+/* ---------- dates ---------- */
+
+function parseD(s) { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); }
+function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function dayDiff(a, b) { return Math.round((parseD(b) - parseD(a)) / 86400000); }
+function today() { return iso(new Date()); }
+function money(n) { return '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtDate(s) { return s ? parseD(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—'; }
+
+/* ---------- shaping ---------- */
+
+// Billing day (1, 15, 20 ...) -> the most recent cycle date on or before today,
+// and the next one after it. Matches SecurTek's own EFTCRD-1st/15th/20th habit,
+// so the same customers keep the same billing day when they move over.
+function cycleDates(billDay) {
+  const d = Number(billDay) || 1;
+  const now = new Date();
+  const thisMonth = new Date(now.getFullYear(), now.getMonth(), d);
+  const last = thisMonth > now ? new Date(now.getFullYear(), now.getMonth() - 1, d) : thisMonth;
+  const next = new Date(last.getFullYear(), last.getMonth() + 1, d);
+  return { last: iso(last), next: iso(next) };
+}
+
+function shape(a) {
+  const status = (a.Status || 'active').toLowerCase();
+  const rate = Number(a.MonthlyRate) || 0;
+  const owed = Number(a.Balance) || 0;
+  const { last, next } = cycleDates(a.BillDay);
+  const lastResult = String(a.LastResult || '').toLowerCase();   // paid / declined / expired / manual / ''
+  const lastAt = a.LastAttemptAt || '';
+  const daysSinceCycle = dayDiff(last, today());
+  // "behind" means the most recent cycle has passed and it wasn't marked paid --
+  // whether that's a real decline or just not yet run through, it needs a look.
+  const behind = status === 'active' && daysSinceCycle >= 0 && lastResult !== 'paid' &&
+    (!a.LastPaidCycle || a.LastPaidCycle < last);
+  return {
+    id: a.itemId, accountId: a.AccountId || '', name: a.CustomerName || '', address: a.Address || '',
+    phone: a.Phone || '', email: a.Email || '',
+    station: a.Station || '', stationAccountId: a.StationAccountId || '', panel: a.Panel || '',
+    rate, gst: !!a.Gst, pst: !!a.Pst,
+    billDay: Number(a.BillDay) || 1, status,
+    startDate: a.StartDate || '', cancelDate: a.CancelDate || '', cancelReason: a.CancelReason || '',
+    owed, lastResult, lastAt, lastPaidCycle: a.LastPaidCycle || '',
+    note: a.Note || '',
+    cycleLast: last, cycleNext: next, behind,
+    daysBehind: behind ? Math.max(0, daysSinceCycle) : 0,
+  };
+}
+
+function history(accountId) {
+  return payments.filter(p => p.AccountId === accountId)
+    .sort((a, b) => String(b.At || '').localeCompare(String(a.At || '')));
+}
+
+/* ---------- render: sign in ---------- */
+
+function renderSignIn() {
+  document.getElementById('app').innerHTML =
+    '<div class="centre"><div class="card"><h2>ART Security Billing</h2>' +
+    '<p>Sign in with your Advance Electronics account.</p>' +
+    '<button class="btn" onclick="signIn()">Sign in with Microsoft</button></div></div>';
+}
+
+/* ---------- render: main ---------- */
+
+function statusTag(v) {
+  if (v.status === 'cancelled') return '<span class="tag t-grey">cancelled</span>';
+  if (v.status === 'suspended') return '<span class="tag t-grey">suspended</span>';
+  if (v.owed > 0) return '<span class="tag ' + (v.daysBehind >= 30 ? 't-late' : 't-miss') + '">' + money(v.owed) + ' owing</span>';
+  if (v.behind) return '<span class="tag t-miss">not yet billed</span>';
+  return '<span class="tag t-ok">current</span>';
+}
+
+function rowHtml(v) {
+  return '<div class="row" tabindex="0" role="button" onclick="openDrawer(\'' + v.id + '\')" ' +
+    'onkeydown="if(event.key===\'Enter\'){openDrawer(\'' + v.id + '\')}">' +
+    '<div class="r-main">' +
+      '<div class="r-name">' + (v.accountId ? '<span class="num">' + esc(v.accountId) + '</span>' : '') + esc(v.name) + '</div>' +
+      '<div class="r-sub">' + esc([v.address, v.station, v.panel].filter(Boolean).join(' · ')) + '</div>' +
+    '</div>' +
+    '<div class="r-amt"><b>' + money(v.rate) + '</b><span class="lbl">/mo · day ' + v.billDay + '</span></div>' +
+    '<div class="r-amt">' + statusTag(v) + '</div>' +
+  '</div>';
+}
+
+function render() {
+  const all = accounts.map(shape);
+  const q = search.trim().toLowerCase();
+  const matches = v => !q || [v.name, v.accountId, v.address, v.station, v.stationAccountId].join(' ').toLowerCase().includes(q);
+
+  const active = all.filter(v => v.status === 'active');
+  const owingList = active.filter(v => v.owed > 0 || v.behind).filter(matches)
+    .sort((a, b) => (b.owed - a.owed) || (b.daysBehind - a.daysBehind));
+  const totalOwed = active.reduce((n, v) => n + v.owed, 0);
+  const monthlyBook = active.reduce((n, v) => n + v.rate, 0);
+
+  const shown = view === 'chase' ? owingList
+    : all.filter(v => statusFilter === 'all' || v.status === statusFilter)
+        .filter(v => stationFilter === 'all' || (v.station || '(not set)') === stationFilter)
+        .filter(matches)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Every monitoring company actually in use, so the filter always matches what's real --
+  // useful mainly for watching the SecurTek -> Lanvac migration move account by account.
+  const stationCounts = new Map();
+  for (const v of all) { const s = v.station || '(not set)'; stationCounts.set(s, (stationCounts.get(s) || 0) + 1); }
+
+  const body = !shown.length
+    ? '<div class="empty">' + (view === 'chase' ? 'Nothing owing — every active account is current.' : 'No accounts match.') + '</div>'
+    : '<div class="group">' + shown.map(rowHtml).join('') + '</div>';
+
+  document.getElementById('app').innerHTML =
+    (usingSample ? '<div class="banner" style="text-align:center">Sample data — the SecurityAccounts list is empty or not yet created</div>' : '') +
+    '<div class="wrap"><h1 class="page">Security Billing</h1>' +
+    '<p class="page-sub">Monitored-security customers: who they are, what they pay, and who\'s behind.</p>' +
+    '<div class="controls">' +
+      '<div><label class="fld">View</label><div class="seg" role="tablist">' +
+        '<button role="tab" aria-selected="' + (view === 'chase') + '" class="' + (view === 'chase' ? 'on' : '') + '" onclick="setView(\'chase\')">Chase queue</button>' +
+        '<button role="tab" aria-selected="' + (view === 'all') + '" class="' + (view === 'all' ? 'on' : '') + '" onclick="setView(\'all\')">All accounts</button>' +
+      '</div></div>' +
+      (view === 'all' ? '<div><label class="fld">Status</label><select onchange="setStatusFilter(this.value)">' +
+        ['active', 'suspended', 'cancelled', 'all'].map(s => '<option value="' + s + '"' + (s === statusFilter ? ' selected' : '') + '>' + s[0].toUpperCase() + s.slice(1) + '</option>').join('') +
+      '</select></div>' : '') +
+      (view === 'all' && stationCounts.size ? '<div><label class="fld">Monitoring company</label><select onchange="setStationFilter(this.value)">' +
+        '<option value="all"' + (stationFilter === 'all' ? ' selected' : '') + '>All (' + all.length + ')</option>' +
+        [...stationCounts.entries()].sort((a, b) => b[1] - a[1]).map(([s, n]) =>
+          '<option value="' + esc(s) + '"' + (s === stationFilter ? ' selected' : '') + '>' + esc(s) + ' (' + n + ')</option>').join('') +
+      '</select></div>' : '') +
+      '<div style="flex:1 1 220px"><label class="fld" for="q">Find</label><input id="q" style="width:100%" placeholder="Name, account #, address" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-primary btn-sm" onclick="openDrawer(null)">+ New account</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="load()">Refresh</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="totals">' +
+      tot('', active.length, 'active accounts') +
+      tot('good', money(monthlyBook), 'billed monthly') +
+      tot(totalOwed > 0 ? 'late' : 'good', money(totalOwed), 'owing right now') +
+      tot(owingList.length ? 'miss' : 'good', owingList.length, 'need a look') +
+    '</div>' + body +
+    (openId !== null || openId === '' ? drawerHtml() : '') +
+    '</div>';
+}
+
+function tot(cls, n, label) { return '<div class="tot ' + cls + '"><div class="tot-n">' + n + '</div><div class="tot-l">' + label + '</div></div>'; }
+function setView(v) { view = v; try { localStorage.setItem('secbill.view', v); } catch {} render(); }
+function setStatusFilter(v) { statusFilter = v; render(); }
+function setStationFilter(v) { stationFilter = v; render(); }
+function setSearch(v) {
+  search = v; render();
+  const el = document.getElementById('q');
+  if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- drawer: account detail + edit + payment history ---------- */
+
+function openDrawer(id) {
+  const acc = id ? accounts.find(a => a.itemId === id) : null;
+  editBuf = acc ? { ...acc } : {
+    CustomerName: '', Address: '', Phone: '', Email: '', Station: '', StationAccountId: '', Panel: '',
+    MonthlyRate: '', Gst: true, Pst: true, BillDay: '1', Status: 'active', StartDate: today(), Note: ''
+  };
+  openId = id || '';
+  render();
+  const el = document.getElementById('drawerName');
+  if (el) el.focus();
+}
+function closeDrawer() { openId = null; editBuf = null; render(); }
+function setField(k, v) { editBuf[k] = v; }
+// For the System/Station dropdowns: a normal pick just stores it; "Other" clears the field
+// so the reveal-a-text-box logic in pickField treats it as a custom, not-yet-typed value.
+// Re-renders (unlike setField) because picking from a <select> can't lose "focus" the way
+// typing in a text box can, and the Other text box has to appear or disappear immediately.
+function setPick(k, v) {
+  if (v === '__other__') { editBuf['_other_' + k] = true; editBuf[k] = ''; }
+  else { editBuf['_other_' + k] = false; editBuf[k] = v; }
+  render();
+}
+
+function drawerHtml() {
+  const isNew = !openId;
+  const acc = isNew ? null : shape(accounts.find(a => a.itemId === openId));
+  const hist = isNew ? [] : history(acc.accountId || openId);
+  const b = editBuf;
+
+  const field = (label, key, type = 'text', extra = '') =>
+    '<div><label>' + label + '</label><input id="drawer' + key + '" type="' + type + '" value="' + esc(b[key] ?? '') + '" ' + extra +
+    ' oninput="setField(\'' + key + '\',this.value)"></div>';
+
+  // A dropdown of the known options, plus "Other" with a text box that appears only when
+  // picked -- so the system type or monitoring company can be one of the couple of things
+  // we actually deal with, without a closed list blocking something new that shows up
+  // (a fifth panel brand, a monitoring company we haven't signed with yet).
+  const pickField = (label, key, options) => {
+    const cur = b[key] ?? '';
+    // "Other" mode is its own flag rather than inferred from the value, because the value
+    // while typing a custom entry can legitimately be empty (just cleared it) or can
+    // happen to match nothing yet -- inferring from content alone would flicker the box.
+    const otherOn = !!b['_other_' + key] || (cur && !options.includes(cur));
+    return '<div><label>' + label + '</label><select oninput="setPick(\'' + key + '\',this.value)">' +
+        '<option value=""' + (!cur && !otherOn ? ' selected' : '') + '>—</option>' +
+        options.map(o => '<option value="' + esc(o) + '"' + (o === cur && !otherOn ? ' selected' : '') + '>' + esc(o) + '</option>').join('') +
+        '<option value="__other__"' + (otherOn ? ' selected' : '') + '>Other…</option>' +
+      '</select>' +
+      (otherOn ? '<input style="margin-top:6px;width:100%" value="' + esc(cur) + '" placeholder="Type it in" oninput="setField(\'' + key + '\',this.value)">' : '') +
+    '</div>';
+  };
+
+  return '<div class="overlay" onclick="if(event.target===this)closeDrawer()"><div class="drawer">' +
+    '<div class="drawer-head"><h2>' + (isNew ? 'New account' : esc(acc.name)) + '</h2>' +
+      '<button class="close-x" onclick="closeDrawer()">✕</button></div>' +
+
+    '<div class="sec-h">Customer</div>' +
+    '<div class="fgrid">' +
+      '<div class="full">' + field('Name', 'CustomerName').replace('id="drawerCustomerName"', 'id="drawerName"') + '</div>' +
+      '<div class="full">' + field('Address', 'Address') + '</div>' +
+      field('Phone', 'Phone') + field('Email', 'Email', 'email') +
+    '</div>' +
+
+    '<div class="sec-h">Monitoring</div>' +
+    '<div class="fgrid">' +
+      // SecurTek is the incumbent; Lanvac is who Advance is moving to (Ajax-compatible).
+      // Not every account moves at once, so this has to say which one THIS account is on.
+      pickField('Monitoring company', 'Station', ['SecurTek', 'Lanvac']) +
+      field('Station account #', 'StationAccountId') +
+      pickField('System', 'Panel', ['DSC', 'ClareOne', 'First Alert', 'Ajax']) +
+      '<div><label>Status</label><select oninput="setField(\'Status\',this.value)">' +
+        ['active', 'suspended', 'cancelled'].map(s => '<option value="' + s + '"' + (s === (b.Status || 'active') ? ' selected' : '') + '>' + s[0].toUpperCase() + s.slice(1) + '</option>').join('') +
+      '</select></div>' +
+    '</div>' +
+
+    '<div class="sec-h">Billing</div>' +
+    '<div class="fgrid">' +
+      field('Monthly rate', 'MonthlyRate', 'number') +
+      '<div><label>Bill day</label><select oninput="setField(\'BillDay\',this.value)">' +
+        [1, 5, 10, 15, 20, 25].map(d => '<option value="' + d + '"' + (String(d) === String(b.BillDay || 1) ? ' selected' : '') + '>' + d + (d === 1 ? 'st' : d === 5 || d === 10 || d === 15 || d === 20 || d === 25 ? 'th' : '') + '</option>').join('') +
+      '</select></div>' +
+      '<div><label><input type="checkbox" ' + (b.Gst !== false ? 'checked' : '') + ' onchange="setField(\'Gst\',this.checked)" style="width:auto;vertical-align:middle;margin-right:6px">GST</label></div>' +
+      '<div><label><input type="checkbox" ' + (b.Pst !== false ? 'checked' : '') + ' onchange="setField(\'Pst\',this.checked)" style="width:auto;vertical-align:middle;margin-right:6px">PST</label></div>' +
+      '<div class="full">' + field('Start date', 'StartDate', 'date') + '</div>' +
+    '</div>' +
+
+    '<div class="sec-h">Note</div>' +
+    '<textarea rows="2" oninput="setField(\'Note\',this.value)" placeholder="Anything worth knowing — gate code, callback preference, dispute history">' + esc(b.Note || '') + '</textarea>' +
+
+    (isNew ? '' :
+      '<div class="sec-h">Standing</div>' +
+      '<div class="fgrid">' +
+        '<div><label>Balance owing</label><div style="padding:9px 0;font-weight:700;font-size:16px">' + money(acc.owed) + '</div></div>' +
+        '<div><label>This cycle</label><div style="padding:9px 0">' + fmtDate(acc.cycleLast) + ' → ' + fmtDate(acc.cycleNext) + '</div></div>' +
+      '</div>' +
+      '<div class="drawer-actions">' +
+        '<button class="btn btn-sm" onclick="recordPayment(\'' + openId + '\',\'paid\')">Mark this cycle paid</button>' +
+        '<button class="btn btn-sm" onclick="recordPayment(\'' + openId + '\',\'declined\')">Mark declined</button>' +
+        '<button class="btn btn-sm" onclick="adjustBalance(\'' + openId + '\')">Adjust balance…</button>' +
+      '</div>' +
+
+      '<div class="sec-h">Payment history</div>' +
+      (hist.length ? hist.slice(0, 24).map(h =>
+        '<div class="hist-row"><span>' + fmtDate((h.At || '').slice(0, 10)) + ' — ' +
+          '<span class="tag ' + (h.Result === 'paid' ? 't-ok' : h.Result === 'declined' || h.Result === 'expired' ? 't-late' : 't-grey') + '">' + esc(h.Result || '') + '</span></span>' +
+          '<span>' + money(h.Amount) + '</span></div>' +
+          (h.Note ? '<div class="h-note">' + esc(h.Note) + '</div>' : '')
+      ).join('') : '<p style="color:var(--text3);font-size:12.5px">No payments recorded yet.</p>')
+    ) +
+
+    '<div class="drawer-actions" style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px">' +
+      '<button class="btn btn-primary" ' + (busy ? 'disabled' : '') + ' onclick="saveAccount()">Save</button>' +
+      (isNew ? '' : '<button class="btn btn-ghost" ' + (busy ? 'disabled' : '') + ' onclick="cancelAccount()">Cancel this account…</button>') +
+    '</div>' +
+  '</div></div>';
+}
+
+async function saveAccount() {
+  if (busy) return;
+  const b = editBuf;
+  if (!String(b.CustomerName || '').trim()) { alert('Name is required.'); return; }
+  busy = true; render();
+  try {
+    const fields = {
+      CustomerName: b.CustomerName || '', Address: b.Address || '', Phone: b.Phone || '', Email: b.Email || '',
+      Station: b.Station || '', StationAccountId: b.StationAccountId || '', Panel: b.Panel || '',
+      MonthlyRate: String(Number(b.MonthlyRate) || 0), Gst: b.Gst !== false, Pst: b.Pst !== false,
+      BillDay: String(Number(b.BillDay) || 1), Status: b.Status || 'active',
+      StartDate: b.StartDate || today(), Note: b.Note || ''
+    };
+    if (!openId) {
+      fields.AccountId = 'SB' + Date.now().toString(36).toUpperCase();
+      fields.Title = fields.CustomerName;
+      fields.Balance = '0';
+      if (!usingSample) {
+        const created = await graph('POST', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items', { fields });
+        accounts.push({ itemId: created.id, ...fields });
+      } else {
+        accounts.push({ itemId: 's' + Date.now(), ...fields });
+      }
+      toast('✓ Account created');
+    } else {
+      fields.Title = fields.CustomerName;
+      if (!usingSample) await graph('PATCH', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items/' + openId + '/fields', fields);
+      const idx = accounts.findIndex(a => a.itemId === openId);
+      if (idx >= 0) accounts[idx] = { ...accounts[idx], ...fields };
+      toast('✓ Saved');
+    }
+    closeDrawer();
+  } catch (e) { toast('Could not save: ' + e.message, true); }
+  busy = false; render();
+}
+
+// A payment attempt: written to SecurityPayments and rolled into the account's running
+// balance and LastResult/LastPaidCycle, which is what the chase queue actually reads --
+// so the queue updates the moment this is recorded, not on the next full sync.
+async function recordPayment(id, result) {
+  if (busy) return;
+  const acc = accounts.find(a => a.itemId === id);
+  if (!acc) return;
+  const v = shape(acc);
+  busy = true; render();
+  try {
+    const at = new Date().toISOString();
+    const payFields = { AccountId: v.accountId, At: at, Amount: String(v.rate), Result: result, Note: '' };
+    if (!usingSample) await graph('POST', '/sites/' + siteId + '/lists/' + (await listId(LIST.payments)) + '/items', { fields: payFields });
+    payments.push({ itemId: 'p' + Date.now(), ...payFields });
+
+    // Paid clears one cycle's worth from whatever is owed -- not all of it, since a
+    // balance can be several cycles deep and one payment only catches up the latest.
+    const newBalance = result === 'paid' ? Math.max(0, v.owed - v.rate) : v.owed + v.rate;
+    const accFields = {
+      Balance: String(newBalance), LastResult: result, LastAttemptAt: at,
+      ...(result === 'paid' ? { LastPaidCycle: v.cycleLast } : {})
+    };
+    if (!usingSample) await graph('PATCH', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items/' + id + '/fields', accFields);
+    Object.assign(acc, accFields);
+    toast(result === 'paid' ? '✓ Marked paid' : 'Marked declined — added to balance');
+  } catch (e) { toast('Could not record: ' + e.message, true); }
+  busy = false; render();
+}
+
+async function adjustBalance(id) {
+  const acc = accounts.find(a => a.itemId === id);
+  if (!acc) return;
+  const v = shape(acc);
+  const raw = prompt('New balance for ' + v.name + ' (currently ' + money(v.owed) + '):', v.owed.toFixed(2));
+  if (raw === null) return;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) { toast('Enter a number, 0 or more', true); return; }
+  busy = true; render();
+  try {
+    if (!usingSample) await graph('PATCH', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items/' + id + '/fields', { Balance: String(n) });
+    acc.Balance = String(n);
+    toast('✓ Balance updated');
+  } catch (e) { toast('Could not update: ' + e.message, true); }
+  busy = false; render();
+}
+
+async function cancelAccount() {
+  if (!openId) return;
+  const reason = prompt('Reason for cancelling (optional):', '');
+  if (reason === null) return;
+  busy = true; render();
+  try {
+    const fields = { Status: 'cancelled', CancelDate: today(), CancelReason: reason || '' };
+    if (!usingSample) await graph('PATCH', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items/' + openId + '/fields', fields);
+    const acc = accounts.find(a => a.itemId === openId);
+    if (acc) Object.assign(acc, fields);
+    toast('Account cancelled');
+    closeDrawer();
+  } catch (e) { toast('Could not cancel: ' + e.message, true); }
+  busy = false; render();
+}
+
+function toast(msg, isErr) {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;font-size:13px;z-index:200;box-shadow:0 4px 16px rgba(0,0,0,.3)'; document.body.appendChild(el); }
+  el.style.color = isErr ? 'var(--red)' : 'var(--text)';
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(window.__toastT);
+  window.__toastT = setTimeout(() => { el.style.display = 'none'; }, 3200);
+}
+
+/* ---------- sample ----------
+   Shapes based on the real SecurTek statement: $21/$29 typical monthly rates,
+   billing days of 1st/15th/20th, and the pattern of a card quietly failing for
+   months with nobody chasing it -- the exact problem this tool exists to catch. */
+function loadSample() {
+  usingSample = true;
+  const d = n => iso(addDays(new Date(), n));
+  accounts = [
+    { itemId: 's1', AccountId: 'SB1001', CustomerName: 'Nick Hagidiakow', Address: '14 Larchdale Cres', Phone: '', Email: '',
+      Station: 'SecurTek', StationAccountId: 'R40-007172', Panel: 'DSC', MonthlyRate: '23.52', Gst: true, Pst: true,
+      BillDay: '15', Status: 'active', StartDate: '2023-04-01', Balance: '0', LastResult: 'paid', LastPaidCycle: d(-40), Note: '' },
+    { itemId: 's2', AccountId: 'SB1002', CustomerName: 'Shawn Bergen', Address: '1063 Wellington Cres', Phone: '',
+      Station: 'SecurTek', StationAccountId: 'R40-007122', Panel: 'DSC', MonthlyRate: '21.00', Gst: true, Pst: true,
+      BillDay: '15', Status: 'active', StartDate: '2022-11-01', Balance: '63.00', LastResult: 'declined', LastAttemptAt: d(-3) + 'T09:00:00Z', Note: 'Card on file expired — texted twice, no reply.' },
+    { itemId: 's3', AccountId: 'SB1003', CustomerName: 'Aaron & Joanna Webb', Address: '220 Handsart Blvd', Phone: '',
+      Station: 'SecurTek', StationAccountId: 'R40-007190', Panel: 'First Alert', MonthlyRate: '21.00', Gst: true, Pst: true,
+      BillDay: '1', Status: 'active', StartDate: '2021-06-01', Balance: '729.12', LastResult: 'declined', LastAttemptAt: d(-95) + 'T09:00:00Z', Note: 'Long-standing decline — SecurTek statement shows Feb 2024 onward. Worth a phone call before writing off.' },
+    { itemId: 's4', AccountId: 'SB1004', CustomerName: 'Harris Builders - Office', Address: '400 Main St', Phone: '',
+      Station: 'SecurTek', StationAccountId: 'R40-007200', Panel: 'DSC', MonthlyRate: '8.00', Gst: true, Pst: true,
+      BillDay: '15', Status: 'active', StartDate: '2024-02-01', Balance: '0', LastResult: 'paid', LastPaidCycle: d(-25), Note: '' },
+    // A freshly-moved account, on the new system and the new monitoring company -- the
+    // case the System/Monitoring company fields exist for.
+    { itemId: 's5', AccountId: 'SB1005', CustomerName: 'Colin & Maria Pewarchuk', Address: '7 Ash Cove', Phone: '',
+      Station: 'Lanvac', StationAccountId: '', Panel: 'Ajax', MonthlyRate: '29.00', Gst: true, Pst: true,
+      BillDay: '1', Status: 'active', StartDate: d(-14), Balance: '0', LastResult: 'paid', LastPaidCycle: d(-14), Note: 'Moved off SecurTek Sep 2026 — first Lanvac account.' }
+  ];
+  payments = [
+    { itemId: 'p1', AccountId: 'SB1002', At: d(-3) + 'T09:00:00Z', Amount: '21.00', Result: 'declined', Note: 'Card expired' },
+    { itemId: 'p2', AccountId: 'SB1002', At: d(-33) + 'T09:00:00Z', Amount: '21.00', Result: 'paid', Note: '' },
+    { itemId: 'p3', AccountId: 'SB1003', At: d(-95) + 'T09:00:00Z', Amount: '21.00', Result: 'declined', Note: '' }
+  ];
+}
+
+init().catch(e => { console.error(e); renderSignIn(); });
+</script>
+</body>
+</html>
