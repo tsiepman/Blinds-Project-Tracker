@@ -245,23 +245,54 @@ function fmtDate(s) { return s ? parseD(s).toLocaleDateString(undefined, { day: 
 
 /* ---------- shaping ---------- */
 
-// Billing day (1, 15, 20 ...) -> the most recent cycle date on or before today,
-// and the next one after it. Matches SecurTek's own EFTCRD-1st/15th/20th habit,
-// so the same customers keep the same billing day when they move over.
-function cycleDates(billDay) {
-  const d = Number(billDay) || 1;
-  const now = new Date();
-  const thisMonth = new Date(now.getFullYear(), now.getMonth(), d);
-  const last = thisMonth > now ? new Date(now.getFullYear(), now.getMonth() - 1, d) : thisMonth;
-  const next = new Date(last.getFullYear(), last.getMonth() + 1, d);
-  return { last: iso(last), next: iso(next) };
+/* Not everyone is monthly. In the SecurTek book, $21/month, $63/quarter and $252/year are
+   the same service billed on different cycles -- 116 monthly, 10 quarterly, 13 annual.
+   Treating them all as monthly overstates the book twelvefold on an annual account and
+   makes it read as overdue for the eleven months it is legitimately not due. */
+const FREQ = { monthly: 1, quarterly: 3, annual: 12 };
+const FREQ_LABEL = { monthly: '/mo', quarterly: '/qtr', annual: '/yr' };
+
+function freqOf(a) {
+  const f = String(a.BillingFrequency || 'monthly').toLowerCase();
+  return FREQ[f] ? f : 'monthly';
+}
+
+/* The cycle currently in effect and the next one, walked forward from the last cycle we
+   know was settled. LastPaidCycle is the anchor: it carries which MONTHS a quarterly or
+   annual account actually falls due in, so no separate anchor column is needed. */
+function cycleDates(a) {
+  const step = FREQ[freqOf(a)];
+  const day = Number(a.BillDay) || 1;
+  const paid = a.LastPaidCycle ? parseD(a.LastPaidCycle) : null;
+  const start = a.StartDate ? parseD(a.StartDate) : null;
+  const base = paid || start;
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+
+  if (!base) {
+    // Nothing to anchor on -- fall back to this month's bill day.
+    const thisOne = new Date(now.getFullYear(), now.getMonth(), day);
+    const last = thisOne > now ? new Date(now.getFullYear(), now.getMonth() - step, day) : thisOne;
+    return { last: iso(last), next: iso(new Date(last.getFullYear(), last.getMonth() + step, day)), step };
+  }
+
+  let last = new Date(base.getFullYear(), base.getMonth(), day);
+  // A paid cycle means the next one falls a full step later; a start date is itself the
+  // first cycle due.
+  let next = new Date(base.getFullYear(), base.getMonth() + (paid ? step : 0), day);
+  while (next <= now) { last = new Date(next); next = new Date(next.getFullYear(), next.getMonth() + step, day); }
+  return { last: iso(last), next: iso(next), step };
 }
 
 function shape(a) {
   const status = (a.Status || 'active').toLowerCase();
+  // MonthlyRate is the SharePoint column name, but it holds the amount charged per
+  // BILLING CYCLE -- $252 on an annual account, not $252 a month. perMonth below is the
+  // normalised figure, and it is what the book value is totalled on.
   const rate = Number(a.MonthlyRate) || 0;
+  const freq = freqOf(a);
+  const perMonth = rate / FREQ[freq];
   const owed = Number(a.Balance) || 0;
-  const { last, next } = cycleDates(a.BillDay);
+  const { last, next } = cycleDates(a);
   const lastResult = String(a.LastResult || '').toLowerCase();   // paid / declined / expired / manual / ''
   const lastAt = a.LastAttemptAt || '';
   const daysSinceCycle = dayDiff(last, today());
@@ -269,17 +300,33 @@ function shape(a) {
   // whether that's a real decline or just not yet run through, it needs a look.
   const behind = status === 'active' && daysSinceCycle >= 0 && lastResult !== 'paid' &&
     (!a.LastPaidCycle || a.LastPaidCycle < last);
+
+  /* Measured from the FIRST cycle they missed, not the most recent one -- otherwise
+     someone three months gone reads the same "6 days" as someone who missed yesterday,
+     and the chase queue sorts them as equally urgent. */
+  let daysBehind = 0, cyclesBehind = 0;
+  if (behind) {
+    const step = FREQ[freq];
+    let cursor = a.LastPaidCycle ? parseD(a.LastPaidCycle) : parseD(last);
+    if (a.LastPaidCycle) cursor = new Date(cursor.getFullYear(), cursor.getMonth() + step, cursor.getDate());
+    const now = parseD(today());
+    const firstMissed = iso(cursor);
+    while (cursor <= now) { cyclesBehind++; cursor = new Date(cursor.getFullYear(), cursor.getMonth() + step, cursor.getDate()); }
+    daysBehind = Math.max(0, dayDiff(firstMissed, today()));
+  }
   return {
     id: a.itemId, accountId: a.AccountId || '', name: a.CustomerName || '', address: a.Address || '',
     phone: a.Phone || '', email: a.Email || '',
     station: a.Station || '', stationAccountId: a.StationAccountId || '', panel: a.Panel || '',
-    rate, gst: !!a.Gst, pst: !!a.Pst,
+    rate, freq, perMonth, freqLabel: FREQ_LABEL[freq],
+    method: a.PaymentMethod || '',
+    gst: !!a.Gst, pst: !!a.Pst,
     billDay: Number(a.BillDay) || 1, status,
     startDate: a.StartDate || '', cancelDate: a.CancelDate || '', cancelReason: a.CancelReason || '',
     owed, lastResult, lastAt, lastPaidCycle: a.LastPaidCycle || '',
     note: a.Note || '',
     cycleLast: last, cycleNext: next, behind,
-    daysBehind: behind ? Math.max(0, daysSinceCycle) : 0,
+    daysBehind, cyclesBehind,
   };
 }
 
@@ -302,8 +349,9 @@ function renderSignIn() {
 function statusTag(v) {
   if (v.status === 'cancelled') return '<span class="tag t-grey">cancelled</span>';
   if (v.status === 'suspended') return '<span class="tag t-grey">suspended</span>';
-  if (v.owed > 0) return '<span class="tag ' + (v.daysBehind >= 30 ? 't-late' : 't-miss') + '">' + money(v.owed) + ' owing</span>';
-  if (v.behind) return '<span class="tag t-miss">not yet billed</span>';
+  if (v.owed > 0) return '<span class="tag ' + (v.daysBehind >= 30 ? 't-late' : 't-miss') + '">' + money(v.owed) + ' owing</span>' +
+    (v.cyclesBehind > 1 ? '<div class="sub">' + v.cyclesBehind + ' cycles behind</div>' : '');
+  if (v.behind) return '<span class="tag t-miss">' + (v.cyclesBehind > 1 ? v.cyclesBehind + ' cycles due' : 'not yet billed') + '</span>';
   return '<span class="tag t-ok">current</span>';
 }
 
@@ -312,9 +360,11 @@ function rowHtml(v) {
     'onkeydown="if(event.key===\'Enter\'){openDrawer(\'' + v.id + '\')}">' +
     '<div class="r-main">' +
       '<div class="r-name">' + (v.accountId ? '<span class="num">' + esc(v.accountId) + '</span>' : '') + esc(v.name) + '</div>' +
-      '<div class="r-sub">' + esc([v.address, v.station, v.panel].filter(Boolean).join(' · ')) + '</div>' +
+      '<div class="r-sub">' + esc([v.address, v.station, v.panel, v.method].filter(Boolean).join(' · ')) + '</div>' +
     '</div>' +
-    '<div class="r-amt"><b>' + money(v.rate) + '</b><span class="lbl">/mo · day ' + v.billDay + '</span></div>' +
+    // The cycle has to be on the amount, or $252 reads as a monthly account.
+    '<div class="r-amt"><b>' + money(v.rate) + '</b><span class="lbl">' + v.freqLabel + ' · day ' + v.billDay +
+      (v.freq === 'monthly' ? '' : ' · ' + money(v.perMonth) + '/mo') + '</span></div>' +
     '<div class="r-amt">' + statusTag(v) + '</div>' +
   '</div>';
 }
@@ -328,7 +378,8 @@ function render() {
   const owingList = active.filter(v => v.owed > 0 || v.behind).filter(matches)
     .sort((a, b) => (b.owed - a.owed) || (b.daysBehind - a.daysBehind));
   const totalOwed = active.reduce((n, v) => n + v.owed, 0);
-  const monthlyBook = active.reduce((n, v) => n + v.rate, 0);
+  // Normalised, so a $252 annual account contributes $21 and not $252.
+  const monthlyBook = active.reduce((n, v) => n + v.perMonth, 0);
 
   const shown = view === 'chase' ? owingList
     : all.filter(v => statusFilter === 'all' || v.status === statusFilter)
@@ -371,7 +422,7 @@ function render() {
     '</div>' +
     '<div class="totals">' +
       tot('', active.length, 'active accounts') +
-      tot('good', money(monthlyBook), 'billed monthly') +
+      tot('good', money(monthlyBook), 'per month (all cycles)') +
       tot(totalOwed > 0 ? 'late' : 'good', money(totalOwed), 'owing right now') +
       tot(owingList.length ? 'miss' : 'good', owingList.length, 'need a look') +
     '</div>' + importPanel() + body +
@@ -396,7 +447,8 @@ function openDrawer(id) {
   const acc = id ? accounts.find(a => a.itemId === id) : null;
   editBuf = acc ? { ...acc } : {
     CustomerName: '', Address: '', Phone: '', Email: '', Station: '', StationAccountId: '', Panel: '',
-    MonthlyRate: '', Gst: true, Pst: true, BillDay: '1', Status: 'active', StartDate: today(), Note: ''
+    MonthlyRate: '', BillingFrequency: 'monthly', PaymentMethod: '', Gst: true, Pst: true,
+    BillDay: '1', Status: 'active', StartDate: today(), Note: ''
   };
   openId = id || '';
   render();
@@ -469,7 +521,11 @@ function drawerHtml() {
 
     '<div class="sec-h">Billing</div>' +
     '<div class="fgrid">' +
-      field('Monthly rate', 'MonthlyRate', 'number') +
+      field('Amount per cycle', 'MonthlyRate', 'number') +
+      '<div><label>Billed</label><select oninput="setPick(\'BillingFrequency\',this.value)">' +
+        ['monthly', 'quarterly', 'annual'].map(f => '<option value="' + f + '"' + (f === (b.BillingFrequency || 'monthly') ? ' selected' : '') + '>' + f[0].toUpperCase() + f.slice(1) + '</option>').join('') +
+      '</select></div>' +
+      pickField('How they pay', 'PaymentMethod', ['Credit card', 'Pre-authorized debit', 'Cheque', 'Manual']) +
       '<div><label>Bill day</label><select oninput="setField(\'BillDay\',this.value)">' +
         [1, 5, 10, 15, 20, 25].map(d => '<option value="' + d + '"' + (String(d) === String(b.BillDay || 1) ? ' selected' : '') + '>' + d + (d === 1 ? 'st' : d === 5 || d === 10 || d === 15 || d === 20 || d === 25 ? 'th' : '') + '</option>').join('') +
       '</select></div>' +
@@ -485,7 +541,8 @@ function drawerHtml() {
       '<div class="sec-h">Standing</div>' +
       '<div class="fgrid">' +
         '<div><label>Balance owing</label><div style="padding:9px 0;font-weight:700;font-size:16px">' + money(acc.owed) + '</div></div>' +
-        '<div><label>This cycle</label><div style="padding:9px 0">' + fmtDate(acc.cycleLast) + ' → ' + fmtDate(acc.cycleNext) + '</div></div>' +
+        '<div><label>Billed ' + acc.freq + '</label><div style="padding:9px 0">due ' + fmtDate(acc.cycleLast) +
+          '<div class="sm2">next ' + fmtDate(acc.cycleNext) + '</div></div></div>' +
       '</div>' +
       '<div class="drawer-actions">' +
         '<button class="btn btn-sm" onclick="recordPayment(\'' + openId + '\',\'paid\')">Mark this cycle paid</button>' +
@@ -519,6 +576,7 @@ async function saveAccount() {
       CustomerName: b.CustomerName || '', Address: b.Address || '', Phone: b.Phone || '', Email: b.Email || '',
       Station: b.Station || '', StationAccountId: b.StationAccountId || '', Panel: b.Panel || '',
       MonthlyRate: String(Number(b.MonthlyRate) || 0), Gst: b.Gst !== false, Pst: b.Pst !== false,
+      BillingFrequency: b.BillingFrequency || 'monthly', PaymentMethod: b.PaymentMethod || '',
       BillDay: String(Number(b.BillDay) || 1), Status: b.Status || 'active',
       StartDate: b.StartDate || today(), Note: b.Note || ''
     };
@@ -653,9 +711,14 @@ function parseSecurtekExport(raw) {
     // The flag is dropped, not carried into a note -- these were resolved outside the tool.
     const name = rawName.split(/\s+-\s+Owes\b/i)[0].trim();
 
+    // "EFTCRD 15th" carries both how they pay and the day: EFTCRD is a card on file,
+    // EFTCHQ is pre-authorized debit off a chequing account, MANUAL is neither.
     const payType = (r[1] || '').trim();
     const dayMatch = /(\d{1,2})(st|nd|rd|th)/i.exec(payType);
     const billDay = dayMatch ? Number(dayMatch[1]) : 1;
+    const method = /EFTCRD/i.test(payType) ? 'Credit card'
+      : /EFTCHQ/i.test(payType) ? 'Pre-authorized debit'
+      : /MANUAL/i.test(payType) ? 'Manual' : '';
 
     const manitouId = (r[2] || '').trim();
 
@@ -667,20 +730,52 @@ function parseSecurtekExport(raw) {
     // column group off -- silently picking up a Current Month Owing figure as the rate.
     const billedIdx = [];
     for (let i = 4; i + 3 < r.length; i += 4) billedIdx.push(i);
-    let rate = null;
-    for (let k = billedIdx.length - 1; k >= 0; k--) {
-      const v = moneyNum(r[billedIdx[k]]);
-      if (v > 0) { rate = v; break; }
+
+    // Which month-blocks carry a charge, and what it was. The SPACING between them is the
+    // billing cycle: every month, every third month, or once in the window.
+    const hits = [];
+    billedIdx.forEach((col, block) => { const v = moneyNum(r[col]); if (v > 0) hits.push({ block, v }); });
+    if (!hits.length) { skipped.push(rawName + ' (never billed — no rate to import)'); continue; }
+
+    const rate = hits[hits.length - 1].v;
+    // Size is the reliable tell in this book -- the same service is $21 monthly, $63
+    // quarterly and $252 a year, so the amount alone usually settles the cycle.
+    const byAmount = rate >= 150 ? 'annual' : rate >= 45 ? 'quarterly' : 'monthly';
+
+    let freq = byAmount;
+    if (hits.length > 1) {
+      const gaps = hits.slice(1).map((h, i) => h.block - hits[i].block);
+      const tally = {};
+      for (const g of gaps) tally[g] = (tally[g] || 0) + 1;
+      const ranked = Object.keys(tally).sort((a, b) => tally[b] - tally[a]);
+      // Only trust the spacing when one gap genuinely dominates. Manually-invoiced
+      // accounts get billed whenever someone remembers -- Dan Granger was charged in
+      // Feb, Mar, May and Aug -- and a tie between gaps there means nothing, so the
+      // amount decides instead of an arbitrary first-place tie.
+      const dominant = ranked.length === 1 || tally[ranked[0]] > tally[ranked[1]];
+      if (dominant) {
+        const common = Number(ranked[0]);
+        freq = common >= 6 ? 'annual' : common >= 2 ? 'quarterly' : 'monthly';
+      }
     }
-    if (rate === null) { skipped.push(rawName + ' (never billed — no rate to import)'); continue; }
+
+    // The most recent month actually billed, as the anchor the cycle maths walks from --
+    // this is what keeps a quarterly or annual account falling due in the right months.
+    const monthHeader = (rows[hIdx - 1] || [])[billedIdx[hits[hits.length - 1].block]] || '';
+    const lastCycle = monthNameToIso(monthHeader, billDay);
 
     ready.push({
       AccountId: accountId || ('SBIMP' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase()),
       Title: name, CustomerName: name, Address: '', Phone: '', Email: '',
       Station: 'SecurTek', StationAccountId: manitouId, Panel: '',
-      MonthlyRate: String(rate), Gst: true, Pst: true, BillDay: String(billDay),
+      MonthlyRate: String(rate), BillingFrequency: freq, PaymentMethod: method,
+      Gst: true, Pst: true, BillDay: String(billDay),
       Status: 'active', StartDate: '', Balance: '0',
-      Note: 'Imported from the SecurTek statement' + (custNum ? ' (Cust # ' + custNum + ')' : '') + '.'
+      // The last billed month, treated as settled -- arrears were handled outside the tool,
+      // and it anchors when the next cycle falls due.
+      LastPaidCycle: lastCycle, LastResult: 'paid',
+      Note: 'Imported from the SecurTek statement' + (custNum ? ' (Cust # ' + custNum + ')' : '') +
+        ' — billed ' + freq + (method ? ' by ' + method.toLowerCase() : '') + '.'
     });
   }
   return { ready, skipped, already };
@@ -705,6 +800,17 @@ function parseDelimitedSB(text) {
   return rows;
 }
 function norm2(s) { return String(s ?? '').trim().toLowerCase(); }
+
+// The row above the column headers labels each month block: "December-25", "August-26".
+const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+function monthNameToIso(label, day) {
+  const m = /([A-Za-z]+)[\s-]+(\d{2,4})/.exec(String(label || '').trim());
+  if (!m) return '';
+  const mi = MONTH_NAMES.indexOf(m[1].toLowerCase());
+  if (mi < 0) return '';
+  const yr = m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]);
+  return yr + '-' + String(mi + 1).padStart(2, '0') + '-' + String(Math.min(28, Number(day) || 1)).padStart(2, '0');
+}
 // "( 29.00 )" and " 87.00 " both show up in the export -- accounting-negative and padded.
 function moneyNum(s) {
   const t = String(s ?? '').trim();
@@ -807,6 +913,19 @@ function importPanel() {
         (p.already.length ? ' · ' + p.already.length + ' already in the list (skipped)' : '') +
         (p.skipped.length ? ' · ' + p.skipped.length + ' skipped (no rate found)' : '') +
         '</p>' +
+        // Worth showing before anything is written: an annual account read as monthly is a
+        // twelvefold error, and this is where it would be visible.
+        (p.ready.length ? (() => {
+          const by = { monthly: [], quarterly: [], annual: [] };
+          for (const a of p.ready) (by[a.BillingFrequency] || by.monthly).push(a);
+          const perMonth = p.ready.reduce((n, a) => n + Number(a.MonthlyRate) / FREQ[a.BillingFrequency || 'monthly'], 0);
+          const meth = {};
+          for (const a of p.ready) { const k = a.PaymentMethod || '(not stated)'; meth[k] = (meth[k] || 0) + 1; }
+          return '<p class="lt-hint">' +
+            ['monthly', 'quarterly', 'annual'].filter(f => by[f].length).map(f => by[f].length + ' ' + f).join(' · ') +
+            ' — ' + money(perMonth) + ' a month once normalised' +
+            '<br><span class="sm2">' + Object.entries(meth).sort((a, b) => b[1] - a[1]).map(([k, n]) => esc(k) + ': ' + n).join(' · ') + '</span></p>';
+        })() : '') +
         (p.skipped.length ? '<p class="lt-hint" style="color:var(--text3)">' + p.skipped.slice(0, 15).map(esc).join('<br>') + (p.skipped.length > 15 ? '<br>+ ' + (p.skipped.length - 15) + ' more' : '') + '</p>' : '')
         : '') +
     '</div></div>';
