@@ -80,6 +80,7 @@
   .lt-body { padding: 14px 16px; }
   .lt-hint { font-size: 12.5px; color: var(--text2); line-height: 1.55; }
   .sm2 { font-size: 12px; color: var(--text3); }
+  .dropzone { border: 1px dashed var(--border); border-radius: var(--radius); padding: 16px; text-align: center; transition: border-color .15s; }
   .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
@@ -713,6 +714,60 @@ function moneyNum(s) {
   return Number.isFinite(n) ? (neg ? -n : n) : 0;
 }
 
+/* SecurTek sends a genuine .xls, which a browser can't read on its own. SheetJS can, and
+   it is ~900 KB, so it only loads when someone actually picks a spreadsheet. Same approach
+   the Orders page uses for the RepairQ export. */
+let sheetJs = null;
+function loadSheetJs() {
+  if (window.XLSX) return Promise.resolve();
+  if (!sheetJs) sheetJs = new Promise((ok, bad) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = ok; s.onerror = () => bad(new Error('Could not load the spreadsheet reader'));
+    document.head.appendChild(s);
+  });
+  return sheetJs;
+}
+
+// A workbook has more than one sheet (the customer list and the dealer statement), so pick
+// whichever one actually carries the customer table rather than assuming it is the first.
+function sheetToCsv(wb) {
+  for (const name of wb.SheetNames) {
+    const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
+    if (/payment\s*type/i.test(csv)) return csv;
+  }
+  return XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+}
+
+async function importFromFile(file) {
+  if (!file) return;
+  try {
+    if (/\.(xls|xlsx)$/i.test(file.name)) {
+      await loadSheetJs();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      importText = sheetToCsv(wb);
+    } else {
+      importText = await file.text();
+    }
+    parseImport();                        // straight to the preview -- no extra click
+    toast('Read ' + file.name);
+  } catch (e) {
+    toast('Could not read that file: ' + e.message, true);
+  }
+}
+function importFile(input) { const f = input.files && input.files[0]; input.value = ''; importFromFile(f); }
+
+// Drag-and-drop onto the panel. The browser's default for a file dropped anywhere on a
+// page is to navigate away to it, which is what makes an un-wired drop target look broken.
+function importDragOver(e) { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent)'; }
+function importDragLeave(e) { e.currentTarget.style.borderColor = ''; }
+function importDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = '';
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) importFromFile(f);
+}
+
 function toggleImport() { importOpen = !importOpen; if (!importOpen) { importText = ''; importParsed = null; } render(); }
 function setImportText(v) { importText = v; }
 function parseImport() {
@@ -733,8 +788,16 @@ function importPanel() {
       '<p class="lt-hint">Paste the Billing &amp; Collections sheet — straight out of Excel (select all, copy, paste below) or as a .csv. ' +
       'The most recent monthly rate for each customer is picked up, and the SecurTek account number carries over so re-pasting a later export ' +
       "won't create duplicates. Balances and the “Owes… Declined” flags are not imported — start clean and let the chase queue take it from here.</p>" +
+      // File first: it is the reliable route. Pasting a 153-row sheet works, but only if
+      // the box is focused first, and the file is what people actually have in hand.
+      '<div class="dropzone" ondragover="importDragOver(event)" ondragleave="importDragLeave(event)" ondrop="importDrop(event)">' +
+        '<label class="btn btn-sm" style="display:inline-block">Choose the file…' +
+          '<input type="file" accept=".xls,.xlsx,.csv,.txt" hidden onchange="importFile(this)"></label>' +
+        '<div class="sm2" style="margin-top:8px">…or drag the .xls / .xlsx / .csv here</div>' +
+      '</div>' +
+      '<div class="sm2" style="margin:10px 0 6px">Or paste the sheet — click in the box first, then Ctrl+V:</div>' +
       '<textarea id="importPaste" rows="4" placeholder="Paste the sheet here" oninput="setImportText(this.value)">' + esc(importText) + '</textarea>' +
-      '<div style="margin-top:10px;display:flex;gap:8px;align-items:center">' +
+      '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
         '<button class="btn btn-sm" onclick="parseImport()">Check what would import</button>' +
         (p && p.ready.length ? '<button class="btn btn-primary btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="runImport()">Import ' + p.ready.length + ' account' + (p.ready.length === 1 ? '' : 's') + '</button>' : '') +
         (importProgress ? '<span class="sm2">' + esc(importProgress) + '</span>' : '') +
