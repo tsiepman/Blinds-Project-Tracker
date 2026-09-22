@@ -72,6 +72,14 @@
   .t-grey { background: var(--surface2); color: var(--text3); }
 
   .banner { background: var(--yellow-dim); color: var(--yellow); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+
+  /* ── collapsible panel (import) ── */
+  .lt { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .lt-head { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: var(--surface2); cursor: pointer; }
+  .panel-title { font-size: 13.5px; font-weight: 700; }
+  .lt-body { padding: 14px 16px; }
+  .lt-hint { font-size: 12.5px; color: var(--text2); line-height: 1.55; }
+  .sm2 { font-size: 12px; color: var(--text3); }
   .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
@@ -147,6 +155,7 @@ let accounts = [], payments = [], usingSample = false;
 let view = (() => { try { return localStorage.getItem('secbill.view') || 'chase'; } catch { return 'chase'; } })();
 let search = '', statusFilter = 'active', stationFilter = 'all';
 let openId = null;      // account currently shown in the drawer, or null
+let importOpen = false, importText = '', importParsed = null, importProgress = null;
 let editBuf = null;     // a copy of the open account's fields, edited in the drawer
 let busy = false;
 
@@ -355,6 +364,7 @@ function render() {
       '<div style="flex:1 1 220px"><label class="fld" for="q">Find</label><input id="q" style="width:100%" placeholder="Name, account #, address" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
       '<div style="display:flex;gap:6px">' +
         '<button class="btn btn-primary btn-sm" onclick="openDrawer(null)">+ New account</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="toggleImport()">Import SecurTek export</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="load()">Refresh</button>' +
       '</div>' +
     '</div>' +
@@ -363,7 +373,7 @@ function render() {
       tot('good', money(monthlyBook), 'billed monthly') +
       tot(totalOwed > 0 ? 'late' : 'good', money(totalOwed), 'owing right now') +
       tot(owingList.length ? 'miss' : 'good', owingList.length, 'need a look') +
-    '</div>' + body +
+    '</div>' + importPanel() + body +
     (openId !== null || openId === '' ? drawerHtml() : '') +
     '</div>';
 }
@@ -604,6 +614,178 @@ function toast(msg, isErr) {
   el.style.display = 'block';
   clearTimeout(window.__toastT);
   window.__toastT = setTimeout(() => { el.style.display = 'none'; }, 3200);
+}
+
+/* ---------- import from the SecurTek B&C export ----------
+   The monthly "Billing & Collections" workbook SecurTek sends: Customer, Payment Type,
+   Manitou ID, Cust #, then one block of four columns (Billed / Coll & Pd / Current Month
+   Owing / Customer Balance) per month, oldest first. Paste the sheet -- as a .xls/.csv or
+   copied straight out of Excel (tab-separated) -- and it becomes accounts here, using your
+   own signed-in session to write them, since this page has no server-side credentials.
+
+   What it deliberately does NOT bring over: the "Owes Nov 2023-Aug 2026 - Declined" style
+   flags baked into 50 of the names, and the outstanding balances that go with them --
+   those were dealt with outside this tool, so every imported account starts at a clean
+   $0 balance and active status rather than re-importing three years of write-offs. */
+
+function parseSecurtekExport(raw) {
+  const rows = parseDelimitedSB(raw.trim());
+  const hIdx = rows.findIndex(r => norm2(r[0]) === 'customer' && r.some(c => norm2(c) === 'payment type'));
+  if (hIdx < 0) return { error: 'No header row found — is this the SecurTek Billing & Collections sheet? It should have a "Customer" and "Payment Type" column.' };
+
+  const known = new Set(accounts.map(a => a.AccountId).filter(Boolean));
+  const ready = [], skipped = [], already = [];
+
+  for (const r of rows.slice(hIdx + 1)) {
+    const rawName = (r[0] || '').trim();
+    // SUBTOTAL/TOTAL close the customer list. Below them the same sheet carries a
+    // reconciliation section (Balance Forward, Wholesale Invoice, NSF FEE...) -- real rows
+    // with real numbers, but not customers, so parsing must stop rather than skip past.
+    if (/^(subtotal|total)$/i.test(rawName)) break;
+    if (!rawName || /^customer$/i.test(rawName)) continue;
+
+    const custNum = (r[3] || '').trim();
+    const accountId = custNum || null;
+    if (accountId && known.has(accountId)) { already.push(rawName); continue; }
+
+    // "Ted & Marney Sherritt - Owes July 2025-Aug 2026 - Declined" -> "Ted & Marney Sherritt".
+    // The flag is dropped, not carried into a note -- these were resolved outside the tool.
+    const name = rawName.split(/\s+-\s+Owes\b/i)[0].trim();
+
+    const payType = (r[1] || '').trim();
+    const dayMatch = /(\d{1,2})(st|nd|rd|th)/i.exec(payType);
+    const billDay = dayMatch ? Number(dayMatch[1]) : 1;
+
+    const manitouId = (r[2] || '').trim();
+
+    // Billed is the first column of each repeating 4-column month block, and every block
+    // starts counting from column 4 -- Dec's Billed is 4, Jan's is 8, and so on. Anchoring
+    // the scan at 4 (rather than working backward from the row's own length) matters
+    // because Excel pads every row out to the widest row in the sheet with empty trailing
+    // columns, so "the last 4 columns" is usually padding, not August, and landed one
+    // column group off -- silently picking up a Current Month Owing figure as the rate.
+    const billedIdx = [];
+    for (let i = 4; i + 3 < r.length; i += 4) billedIdx.push(i);
+    let rate = null;
+    for (let k = billedIdx.length - 1; k >= 0; k--) {
+      const v = moneyNum(r[billedIdx[k]]);
+      if (v > 0) { rate = v; break; }
+    }
+    if (rate === null) { skipped.push(rawName + ' (never billed — no rate to import)'); continue; }
+
+    ready.push({
+      AccountId: accountId || ('SBIMP' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase()),
+      Title: name, CustomerName: name, Address: '', Phone: '', Email: '',
+      Station: 'SecurTek', StationAccountId: manitouId, Panel: '',
+      MonthlyRate: String(rate), Gst: true, Pst: true, BillDay: String(billDay),
+      Status: 'active', StartDate: '', Balance: '0',
+      Note: 'Imported from the SecurTek statement' + (custNum ? ' (Cust # ' + custNum + ')' : '') + '.'
+    });
+  }
+  return { ready, skipped, already };
+}
+
+// Tab-separated (pasted straight from Excel) or comma-separated (a saved .csv), matching
+// the same detection ART_Orders.html uses for the RQ report.
+function parseDelimitedSB(text) {
+  const sample = text.split('\n').slice(0, 30);
+  const count = ch => sample.reduce((n, l) => n + (l.split(ch).length - 1), 0);
+  const delim = count('\t') >= count(',') ? '\t' : ',';
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === delim) { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (c !== '\r') cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+function norm2(s) { return String(s ?? '').trim().toLowerCase(); }
+// "( 29.00 )" and " 87.00 " both show up in the export -- accounting-negative and padded.
+function moneyNum(s) {
+  const t = String(s ?? '').trim();
+  if (!t || t === '-') return 0;
+  const neg = /^\(.*\)$/.test(t);
+  const n = parseFloat(t.replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? (neg ? -n : n) : 0;
+}
+
+function toggleImport() { importOpen = !importOpen; if (!importOpen) { importText = ''; importParsed = null; } render(); }
+function setImportText(v) { importText = v; }
+function parseImport() {
+  if (!importText.trim()) { toast('Paste the SecurTek sheet first', true); return; }
+  const result = parseSecurtekExport(importText);
+  if (result.error) { toast(result.error, true); importParsed = null; }
+  else importParsed = result;
+  render();
+}
+
+function importPanel() {
+  if (!importOpen) return '';
+  const p = importParsed;
+  return '<div class="lt open" style="margin-bottom:14px">' +
+    '<div class="lt-head" onclick="toggleImport()"><span class="panel-title">Import SecurTek export</span>' +
+      '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">close</span></div>' +
+    '<div class="lt-body">' +
+      '<p class="lt-hint">Paste the Billing &amp; Collections sheet — straight out of Excel (select all, copy, paste below) or as a .csv. ' +
+      'The most recent monthly rate for each customer is picked up, and the SecurTek account number carries over so re-pasting a later export ' +
+      "won't create duplicates. Balances and the “Owes… Declined” flags are not imported — start clean and let the chase queue take it from here.</p>" +
+      '<textarea id="importPaste" rows="4" placeholder="Paste the sheet here" oninput="setImportText(this.value)">' + esc(importText) + '</textarea>' +
+      '<div style="margin-top:10px;display:flex;gap:8px;align-items:center">' +
+        '<button class="btn btn-sm" onclick="parseImport()">Check what would import</button>' +
+        (p && p.ready.length ? '<button class="btn btn-primary btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="runImport()">Import ' + p.ready.length + ' account' + (p.ready.length === 1 ? '' : 's') + '</button>' : '') +
+        (importProgress ? '<span class="sm2">' + esc(importProgress) + '</span>' : '') +
+      '</div>' +
+      (p ? '<p class="lt-hint" style="margin-top:10px">' +
+        p.ready.length + ' ready to import' +
+        (p.already.length ? ' · ' + p.already.length + ' already in the list (skipped)' : '') +
+        (p.skipped.length ? ' · ' + p.skipped.length + ' skipped (no rate found)' : '') +
+        '</p>' +
+        (p.skipped.length ? '<p class="lt-hint" style="color:var(--text3)">' + p.skipped.slice(0, 15).map(esc).join('<br>') + (p.skipped.length > 15 ? '<br>+ ' + (p.skipped.length - 15) + ' more' : '') + '</p>' : '')
+        : '') +
+    '</div></div>';
+}
+
+// Sequential, with the same 429/503 backoff the scheduled sync uses -- SharePoint throttles
+// a burst of ~150 creates from one session more readily than it does from the app-only
+// sync, since this runs at full speed with no pacing between requests otherwise.
+async function importOne(fields, attempt = 1) {
+  try {
+    return await graph('POST', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items', { fields });
+  } catch (e) {
+    const status = Number(String(e.message).match(/-> (\d+)/)?.[1] || 0);
+    if ((status === 429 || status === 503) && attempt < 5) {
+      await new Promise(r => setTimeout(r, attempt * 1500));
+      return importOne(fields, attempt + 1);
+    }
+    throw e;
+  }
+}
+
+async function runImport() {
+  if (busy || !importParsed || !importParsed.ready.length) return;
+  const rows = importParsed.ready;
+  busy = true;
+  let done = 0, failed = 0;
+  for (const fields of rows) {
+    importProgress = 'Creating ' + (done + failed + 1) + ' of ' + rows.length + '…';
+    render();
+    try {
+      const created = await importOne(fields);
+      accounts.push({ itemId: created.id, ...fields });
+      done++;
+    } catch (e) {
+      failed++;
+      console.warn('Import failed for', fields.CustomerName, e.message);
+    }
+  }
+  busy = false; importProgress = null;
+  toast('✓ Imported ' + done + ' account' + (done === 1 ? '' : 's') + (failed ? ' · ' + failed + ' failed (see console)' : ''));
+  importOpen = false; importText = ''; importParsed = null;
+  render();
 }
 
 /* ---------- sample ----------
