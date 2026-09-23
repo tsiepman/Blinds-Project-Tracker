@@ -168,6 +168,7 @@ let view = (() => { try { return localStorage.getItem('secbill.view') || 'chase'
 let search = '', statusFilter = 'active', stationFilter = 'all';
 let openId = null;      // account currently shown in the drawer, or null
 let importOpen = false, importText = '', importParsed = null, importProgress = null;
+let importError = '';
 let alarmOpen = false;   // the alarm-info form inside the drawer
 // Which code fields are currently revealed. Deliberately not remembered anywhere: closing
 // the account, or reopening the page, hides them again.
@@ -891,7 +892,14 @@ async function copyAlarm() {
 function parseSecurtekExport(raw) {
   const rows = parseDelimitedSB(raw.trim());
   const hIdx = rows.findIndex(r => norm2(r[0]) === 'customer' && r.some(c => norm2(c) === 'payment type'));
-  if (hIdx < 0) return { error: 'No header row found — is this the SecurTek Billing & Collections sheet? It should have a "Customer" and "Payment Type" column.' };
+  if (hIdx < 0) {
+    // Name what was actually loaded: the collections call list and the B&C statement look
+    // alike in a file picker, and "nothing happened" is a miserable way to find out.
+    const firstLine = (rows[0] || []).filter(Boolean).join(' ').slice(0, 80);
+    return { error: 'This does not look like the Billing & Collections statement — it has no "Customer" and "Payment Type" columns.' +
+      (firstLine ? ' The file starts with: “' + firstLine + '”.' : '') +
+      ' Load the monthly B&C workbook from SecurTek instead.' };
+  }
 
   // Existing accounts by SecurTek account number, so a re-import can repair rows rather
   // than only skip them -- needed the first time a column was added after an import ran.
@@ -1091,13 +1099,16 @@ function importDrop(e) {
   if (f) importFromFile(f);
 }
 
-function toggleImport() { importOpen = !importOpen; if (!importOpen) { importText = ''; importParsed = null; } render(); }
+function toggleImport() { importOpen = !importOpen; if (!importOpen) { importText = ''; importParsed = null; importError = ''; } render(); }
 function setImportText(v) { importText = v; }
 function parseImport() {
   if (!importText.trim()) { toast('Paste the SecurTek sheet first', true); return; }
   const result = parseSecurtekExport(importText);
-  if (result.error) { toast(result.error, true); importParsed = null; }
-  else importParsed = result;
+  // A rejected file used to say so in a toast, which is gone in three seconds -- long
+  // enough to miss, and then the panel just sits there with no buttons and no reason
+  // given. The error stays on screen now until another file is loaded.
+  if (result.error) { importError = result.error; importParsed = null; }
+  else { importError = ''; importParsed = result; }
   render();
 }
 
@@ -1126,6 +1137,7 @@ function importPanel() {
         (p && p.update.length ? '<button class="btn btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="runUpdate()">Update ' + p.update.length + ' existing</button>' : '') +
         (importProgress ? '<span class="sm2">' + esc(importProgress) + '</span>' : '') +
       '</div>' +
+      (importError ? '<div class="banner" style="margin:10px 0 0">' + esc(importError) + '</div>' : '') +
       (p ? '<p class="lt-hint" style="margin-top:10px">' +
         p.ready.length + ' ready to import' +
         (p.update.length ? ' · <b>' + p.update.length + ' already here but out of date</b>' : '') +
