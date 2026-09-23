@@ -893,8 +893,10 @@ function parseSecurtekExport(raw) {
   const hIdx = rows.findIndex(r => norm2(r[0]) === 'customer' && r.some(c => norm2(c) === 'payment type'));
   if (hIdx < 0) return { error: 'No header row found — is this the SecurTek Billing & Collections sheet? It should have a "Customer" and "Payment Type" column.' };
 
-  const known = new Set(accounts.map(a => a.AccountId).filter(Boolean));
-  const ready = [], skipped = [], already = [];
+  // Existing accounts by SecurTek account number, so a re-import can repair rows rather
+  // than only skip them -- needed the first time a column was added after an import ran.
+  const known = new Map(accounts.filter(a => a.AccountId).map(a => [a.AccountId, a]));
+  const ready = [], skipped = [], already = [], update = [];
 
   for (const r of rows.slice(hIdx + 1)) {
     const rawName = (r[0] || '').trim();
@@ -906,7 +908,7 @@ function parseSecurtekExport(raw) {
 
     const custNum = (r[3] || '').trim();
     const accountId = custNum || null;
-    if (accountId && known.has(accountId)) { already.push(rawName); continue; }
+    const existing = accountId ? known.get(accountId) : null;
 
     // "Ted & Marney Sherritt - Owes July 2025-Aug 2026 - Declined" -> "Ted & Marney Sherritt".
     // The flag is dropped, not carried into a note -- these were resolved outside the tool.
@@ -965,7 +967,7 @@ function parseSecurtekExport(raw) {
     const monthHeader = (rows[hIdx - 1] || [])[billedIdx[hits[hits.length - 1].block]] || '';
     const lastCycle = monthNameToIso(monthHeader, billDay);
 
-    ready.push({
+    const record = {
       AccountId: accountId || ('SBIMP' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase()),
       Title: name, CustomerName: name, Address: '', Phone: '', Email: '',
       Station: 'SecurTek', StationAccountId: manitouId, Panel: '',
@@ -977,9 +979,23 @@ function parseSecurtekExport(raw) {
       LastPaidCycle: lastCycle, LastResult: 'paid',
       Note: 'Imported from the SecurTek statement' + (custNum ? ' (Cust # ' + custNum + ')' : '') +
         ' — billed ' + freq + (method ? ' by ' + method.toLowerCase() : '') + '.'
-    });
+    };
+
+    if (existing) {
+      // Already here. Only worth reporting if the export disagrees with what is stored --
+      // typically because a column was added after the first import and never filled in.
+      const changes = {};
+      for (const k of ['BillingFrequency', 'PaymentMethod', 'MonthlyRate', 'BillDay', 'StationAccountId', 'LastPaidCycle']) {
+        if (String(existing[k] ?? '') !== String(record[k] ?? '')) changes[k] = record[k];
+      }
+      if (Object.keys(changes).length) update.push({ itemId: existing.itemId, name, changes });
+      else already.push(rawName);
+      continue;
+    }
+
+    ready.push(record);
   }
-  return { ready, skipped, already };
+  return { ready, skipped, already, update };
 }
 
 // Tab-separated (pasted straight from Excel) or comma-separated (a saved .csv), matching
@@ -1107,13 +1123,25 @@ function importPanel() {
       '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
         '<button class="btn btn-sm" onclick="parseImport()">Check what would import</button>' +
         (p && p.ready.length ? '<button class="btn btn-primary btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="runImport()">Import ' + p.ready.length + ' account' + (p.ready.length === 1 ? '' : 's') + '</button>' : '') +
+        (p && p.update.length ? '<button class="btn btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="runUpdate()">Update ' + p.update.length + ' existing</button>' : '') +
         (importProgress ? '<span class="sm2">' + esc(importProgress) + '</span>' : '') +
       '</div>' +
       (p ? '<p class="lt-hint" style="margin-top:10px">' +
         p.ready.length + ' ready to import' +
-        (p.already.length ? ' · ' + p.already.length + ' already in the list (skipped)' : '') +
+        (p.update.length ? ' · <b>' + p.update.length + ' already here but out of date</b>' : '') +
+        (p.already.length ? ' · ' + p.already.length + ' already in the list and correct' : '') +
         (p.skipped.length ? ' · ' + p.skipped.length + ' skipped (no rate found)' : '') +
         '</p>' +
+        // What would actually change, named field by field, so an update is never a
+        // mystery write -- this is the path that repairs a column added after an import.
+        (p.update.length ? (() => {
+          const fields = {};
+          for (const u of p.update) for (const k of Object.keys(u.changes)) fields[k] = (fields[k] || 0) + 1;
+          return '<p class="lt-hint">Updating would set: ' +
+            Object.entries(fields).sort((a, b) => b[1] - a[1]).map(([k, n]) => '<b>' + esc(k) + '</b> on ' + n).join(' · ') +
+            '<br><span class="sm2">' + p.update.slice(0, 6).map(u => esc(u.name)).join(' · ') +
+            (p.update.length > 6 ? ' + ' + (p.update.length - 6) + ' more' : '') + '</span></p>';
+        })() : '') +
         // Worth showing before anything is written: an annual account read as monthly is a
         // twelvefold error, and this is where it would be visible.
         (p.ready.length ? (() => {
@@ -1167,6 +1195,35 @@ async function runImport() {
   }
   busy = false; importProgress = null;
   toast('✓ Imported ' + done + ' account' + (done === 1 ? '' : 's') + (failed ? ' · ' + failed + ' failed (see console)' : ''));
+  importOpen = false; importText = ''; importParsed = null;
+  render();
+}
+
+/* Repairs accounts that are already here. Only the fields that actually differ are sent,
+   so this never overwrites anything edited by hand that the export has nothing to say
+   about -- address, phone, panel type, alarm info and balances are all left alone. */
+async function runUpdate() {
+  if (busy || !importParsed || !importParsed.update.length) return;
+  const rows = importParsed.update;
+  busy = true;
+  let done = 0, failed = 0;
+  for (const row of rows) {
+    importProgress = 'Updating ' + (done + failed + 1) + ' of ' + rows.length + '…';
+    render();
+    try {
+      if (!usingSample) {
+        await graph('PATCH', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items/' + row.itemId + '/fields', row.changes);
+      }
+      const acc = accounts.find(a => a.itemId === row.itemId);
+      if (acc) Object.assign(acc, row.changes);
+      done++;
+    } catch (e) {
+      failed++;
+      console.warn('Update failed for', row.name, e.message);
+    }
+  }
+  busy = false; importProgress = null;
+  toast('✓ Updated ' + done + ' account' + (done === 1 ? '' : 's') + (failed ? ' · ' + failed + ' failed (see console)' : ''));
   importOpen = false; importText = ''; importParsed = null;
   render();
 }
