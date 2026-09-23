@@ -81,6 +81,15 @@
   .lt-hint { font-size: 12.5px; color: var(--text2); line-height: 1.55; }
   .sm2 { font-size: 12px; color: var(--text3); }
   .dropzone { border: 1px dashed var(--border); border-radius: var(--radius); padding: 16px; text-align: center; transition: border-color .15s; }
+
+  /* ── alarm info: same three colours the paper form uses ── */
+  .role { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 1px 6px; border-radius: 20px; display: inline-block; }
+  .role-sales     { background: rgba(0,176,240,0.16);  color: #4cc4f0; }
+  .role-client    { background: rgba(255,90,90,0.16);  color: #ff8080; }
+  .role-installer { background: rgba(0,176,80,0.16);   color: #3ecf7a; }
+  .zone-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .zone-row input, .zone-row select { flex: 1; min-width: 0; }
+  .zone-n { font-family: var(--mono); font-size: 12px; color: var(--text3); min-width: 2.4em; }
   .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
@@ -157,6 +166,7 @@ let view = (() => { try { return localStorage.getItem('secbill.view') || 'chase'
 let search = '', statusFilter = 'active', stationFilter = 'all';
 let openId = null;      // account currently shown in the drawer, or null
 let importOpen = false, importText = '', importParsed = null, importProgress = null;
+let alarmOpen = false;   // the alarm-info form inside the drawer
 let editBuf = null;     // a copy of the open account's fields, edited in the drawer
 let busy = false;
 
@@ -537,6 +547,8 @@ function drawerHtml() {
     '<div class="sec-h">Note</div>' +
     '<textarea rows="2" oninput="setField(\'Note\',this.value)" placeholder="Anything worth knowing — gate code, callback preference, dispute history">' + esc(b.Note || '') + '</textarea>' +
 
+    alarmSection() +
+
     (isNew ? '' :
       '<div class="sec-h">Standing</div>' +
       '<div class="fgrid">' +
@@ -577,6 +589,9 @@ async function saveAccount() {
       Station: b.Station || '', StationAccountId: b.StationAccountId || '', Panel: b.Panel || '',
       MonthlyRate: String(Number(b.MonthlyRate) || 0), Gst: b.Gst !== false, Pst: b.Pst !== false,
       BillingFrequency: b.BillingFrequency || 'monthly', PaymentMethod: b.PaymentMethod || '',
+      // The whole alarm form travels as one JSON blob -- far too many fields, and the zone
+      // list is open-ended, so a column each was never going to work.
+      AlarmInfoJson: JSON.stringify(b._alarm || alarmOf(b.AlarmInfoJson)),
       BillDay: String(Number(b.BillDay) || 1), Status: b.Status || 'active',
       StartDate: b.StartDate || today(), Note: b.Note || ''
     };
@@ -673,6 +688,174 @@ function toast(msg, isErr) {
   el.style.display = 'block';
   clearTimeout(window.__toastT);
   window.__toastT = setTimeout(() => { el.style.display = 'none'; }, 3200);
+}
+
+/* ---------- alarm info: what the monitoring company needs to set an account up ----------
+
+   Replaces the "Alarm Info" spreadsheet that gets emailed around. Same fields, same three
+   roles, but attached to the account instead of living in a file nobody can find later.
+
+   The roles are the point of the form, and in the spreadsheet they were carried by FONT
+   colour -- which is why they vanish the moment anyone saves it as anything else. Here
+   they are structural: each field knows whose job it is, so the page can answer the
+   question the salesman actually has, which is "what am I still waiting on, and from whom".
+
+   Panel type and monitoring company are deliberately NOT repeated here -- they already
+   live on the account above, and asking twice is how two answers end up disagreeing. */
+
+const ALARM_ROLES = { sales: 'Salesperson', client: 'Client', installer: 'Installer' };
+
+// key, label, role, type, placeholder
+const ALARM_FIELDS = [
+  ['panelModel',    'Panel model',            'sales',     'text', 'e.g. PROA7'],
+  ['panelLocation', 'Panel location',         'sales',     'text', 'e.g. Mechanical room'],
+  ['sirenLocation', 'Siren location',         'sales',     'text', 'e.g. Main floor'],
+  ['keypadLocation','Keypad location',        'sales',     'text', ''],
+  ['keypadModel',   'Keypad model',           'sales',     'text', ''],
+  ['salesman',      'Salesman',               'sales',     'text', ''],
+  ['transmitter',   'Transmitter #',          'sales',     'text', ''],
+  ['viaNetwork',    'Monitored via network',  'sales',     'yesno', ''],
+  ['viaPhone',      'Monitored via phone',    'client',    'yesno', ''],
+  ['masterCode',    'Master code',            'client',    'text', ''],
+  ['sitePassword',  'Site password',          'client',    'text', ''],
+  ['entryDelay1',   'Entry delay 1',          'client',    'text', 'Default 60 sec'],
+  ['entryDelay2',   'Entry delay 2',          'client',    'text', 'Default 180 sec'],
+  ['exitDelay',     'Exit delay',             'client',    'text', 'Default 60 sec'],
+  ['userCodes',     'User codes (other than master)', 'client', 'text', ''],
+  ['installerCode', "Installer's code",       'installer', 'text', 'e.g. 1300'],
+  ['installer',     'Installer',              'installer', 'text', ''],
+];
+
+function alarmOf(src) {
+  try { const a = JSON.parse(src || '{}'); return a && typeof a === 'object' ? a : {}; } catch { return {}; }
+}
+function alarmBuf() {
+  if (!editBuf._alarm) editBuf._alarm = alarmOf(editBuf.AlarmInfoJson);
+  const a = editBuf._alarm;
+  if (!Array.isArray(a.keyholders)) a.keyholders = [{ name: '', phone: '' }, { name: '', phone: '' }, { name: '', phone: '' }];
+  if (!Array.isArray(a.zones)) a.zones = [];
+  return a;
+}
+function setAlarm(k, v) { alarmBuf()[k] = v; }
+function setKeyholder(i, k, v) { alarmBuf().keyholders[i][k] = v; }
+function setZone(i, k, v) { alarmBuf().zones[i][k] = v; }
+function addZone() { const a = alarmBuf(); a.zones.push({ name: '', def: '', wire: '' }); render(); }
+function removeZone(i) { const a = alarmBuf(); a.zones.splice(i, 1); render(); }
+function toggleAlarm() { alarmOpen = !alarmOpen; render(); }
+
+// What is still missing, and whose job it is -- the question the form exists to answer.
+function alarmOutstanding(a) {
+  const missing = { sales: 0, client: 0, installer: 0 };
+  for (const [key, , role, type] of ALARM_FIELDS) {
+    const v = a[key];
+    const empty = type === 'yesno' ? (v !== 'yes' && v !== 'no') : !String(v ?? '').trim();
+    if (empty) missing[role]++;
+  }
+  if (!(a.keyholders || []).some(k => String(k.name || '').trim())) missing.client++;
+  if (!(a.zones || []).some(z => String(z.name || '').trim())) missing.installer++;
+  return missing;
+}
+
+function alarmSection() {
+  const a = alarmBuf();
+  const missing = alarmOutstanding(a);
+  const total = missing.sales + missing.client + missing.installer;
+
+  const head = '<div class="sec-h" style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleAlarm()">' +
+    '<span>Alarm info for the monitoring company</span>' +
+    (total ? '<span class="tag t-miss">' + total + ' to fill in</span>' : '<span class="tag t-ok">complete</span>') +
+    '<span style="margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0">' + (alarmOpen ? 'hide' : 'show') + '</span></div>';
+  if (!alarmOpen) {
+    return head + '<div class="sm2">' +
+      ['sales', 'client', 'installer'].filter(r => missing[r]).map(r =>
+        '<span class="role role-' + r + '">' + ALARM_ROLES[r] + ': ' + missing[r] + '</span>').join(' ') +
+      (total ? '' : 'Everything the monitoring company needs is filled in.') + '</div>';
+  }
+
+  const fieldRow = ([key, label, role, type, ph]) => {
+    const v = a[key] ?? '';
+    const input = type === 'yesno'
+      ? '<select oninput="setAlarm(\'' + key + '\',this.value)">' +
+          ['', 'yes', 'no'].map(o => '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + (o ? o[0].toUpperCase() + o.slice(1) : '—') + '</option>').join('') +
+        '</select>'
+      : '<input value="' + esc(v) + '" placeholder="' + esc(ph) + '" oninput="setAlarm(\'' + key + '\',this.value)">';
+    // No role tag on the field itself -- the group heading above already says whose it is.
+    return '<div><label>' + esc(label) + '</label>' + input + '</div>';
+  };
+
+  const group = role => '<div class="sm2" style="margin:14px 0 6px"><span class="role role-' + role + '">' + ALARM_ROLES[role] + '</span>' +
+      ' <span style="color:var(--text3)">fills these in</span></div>' +
+    '<div class="fgrid">' + ALARM_FIELDS.filter(f => f[2] === role).map(fieldRow).join('') + '</div>';
+
+  const keyholders = '<div class="sm2" style="margin:12px 0 6px"><span class="role role-client">Client</span> Keyholders</div>' +
+    a.keyholders.map((k, i) =>
+      '<div class="fgrid" style="margin-bottom:6px">' +
+        '<div><input value="' + esc(k.name || '') + '" placeholder="Name" oninput="setKeyholder(' + i + ',\'name\',this.value)"></div>' +
+        '<div><input value="' + esc(k.phone || '') + '" placeholder="Phone" oninput="setKeyholder(' + i + ',\'phone\',this.value)"></div>' +
+      '</div>').join('');
+
+  const zones = '<div class="sm2" style="margin:14px 0 6px"><span class="role role-installer">Installer</span> Zones' +
+      ' <span style="color:var(--text3)">— add only the ones in use</span></div>' +
+    (a.zones.length ? a.zones.map((z, i) =>
+      '<div class="zone-row">' +
+        '<span class="zone-n">#' + (i + 1) + '</span>' +
+        '<input value="' + esc(z.name || '') + '" placeholder="Zone name" oninput="setZone(' + i + ',\'name\',this.value)">' +
+        '<input value="' + esc(z.def || '') + '" placeholder="Def #" style="max-width:5.5em" oninput="setZone(' + i + ',\'def\',this.value)">' +
+        '<select oninput="setZone(' + i + ',\'wire\',this.value)">' +
+          ['', 'Wired', 'Wireless'].map(o => '<option value="' + o + '"' + (o === (z.wire || '') ? ' selected' : '') + '>' + (o || '—') + '</option>').join('') +
+        '</select>' +
+        '<button class="btn btn-ghost btn-sm" onclick="removeZone(' + i + ')" title="Remove">✕</button>' +
+      '</div>').join('') : '<div class="sm2">No zones yet.</div>') +
+    '<div style="margin-top:8px"><button class="btn btn-sm" onclick="addZone()">+ Add zone</button></div>';
+
+  return head +
+    '<div class="sm2">Colours match the paper form: who is expected to supply each answer.</div>' +
+    group('sales') + group('client') + keyholders + group('installer') + zones +
+    '<div class="sm2" style="margin:14px 0 6px">Notes</div>' +
+    '<textarea rows="2" placeholder="Anything else the monitoring company should know" oninput="setAlarm(\'notes\',this.value)">' + esc(a.notes || '') + '</textarea>' +
+    '<div class="drawer-actions">' +
+      '<button class="btn btn-sm" onclick="copyAlarm()">Copy for the monitoring company</button>' +
+    '</div>';
+}
+
+/* Plain text, ready to paste into an email or the station's own portal -- the actual
+   point of collecting any of this. */
+function alarmText() {
+  const a = alarmBuf();
+  const b = editBuf;
+  const L = [];
+  L.push('ALARM INFO — ' + (b.CustomerName || ''));
+  if (b.Address) L.push(b.Address);
+  L.push('Monitoring company: ' + (b.Station || '(not set)'));
+  L.push('Panel type: ' + (b.Panel || '(not set)'));
+  L.push('');
+  for (const role of ['sales', 'client', 'installer']) {
+    L.push(ALARM_ROLES[role].toUpperCase());
+    for (const [key, label, r, type] of ALARM_FIELDS) {
+      if (r !== role) continue;
+      const v = a[key];
+      const shown = type === 'yesno' ? (v ? v.toUpperCase() : '—') : (String(v ?? '').trim() || '—');
+      L.push('  ' + label + ': ' + shown);
+    }
+    if (role === 'client') {
+      const ks = (a.keyholders || []).filter(k => String(k.name || '').trim() || String(k.phone || '').trim());
+      L.push('  Keyholders:' + (ks.length ? '' : ' —'));
+      ks.forEach(k => L.push('    ' + (k.name || '—') + '  ' + (k.phone || '')));
+    }
+    if (role === 'installer') {
+      const zs = (a.zones || []).filter(z => String(z.name || '').trim());
+      L.push('  Zones:' + (zs.length ? '' : ' —'));
+      zs.forEach((z, i) => L.push('    #' + (i + 1) + '  ' + (z.name || '') + '  def ' + (z.def || '—') + '  ' + (z.wire || '—')));
+    }
+    L.push('');
+  }
+  if (a.notes) { L.push('NOTES'); L.push('  ' + a.notes); }
+  return L.join('\n');
+}
+async function copyAlarm() {
+  const text = alarmText();
+  try { await navigator.clipboard.writeText(text); toast('✓ Copied — paste it into the email or the station portal'); }
+  catch { toast('Could not copy automatically — the text is in the console', true); console.log(text); }
 }
 
 /* ---------- import from the SecurTek B&C export ----------
