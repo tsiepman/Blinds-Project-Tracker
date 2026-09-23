@@ -90,6 +90,8 @@
   .zone-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
   .zone-row input, .zone-row select { flex: 1; min-width: 0; }
   .zone-n { font-family: var(--mono); font-size: 12px; color: var(--text3); min-width: 2.4em; }
+  .secret-wrap { display: flex; gap: 6px; }
+  .secret-wrap input { flex: 1; min-width: 0; }
   .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
@@ -167,6 +169,9 @@ let search = '', statusFilter = 'active', stationFilter = 'all';
 let openId = null;      // account currently shown in the drawer, or null
 let importOpen = false, importText = '', importParsed = null, importProgress = null;
 let alarmOpen = false;   // the alarm-info form inside the drawer
+// Which code fields are currently revealed. Deliberately not remembered anywhere: closing
+// the account, or reopening the page, hides them again.
+let shownSecrets = new Set();
 let editBuf = null;     // a copy of the open account's fields, edited in the drawer
 let busy = false;
 
@@ -461,11 +466,12 @@ function openDrawer(id) {
     BillDay: '1', Status: 'active', StartDate: today(), Note: ''
   };
   openId = id || '';
+  shownSecrets.clear();        // never carry a revealed code from one account to the next
   render();
   const el = document.getElementById('drawerName');
   if (el) el.focus();
 }
-function closeDrawer() { openId = null; editBuf = null; render(); }
+function closeDrawer() { openId = null; editBuf = null; shownSecrets.clear(); render(); }
 function setField(k, v) { editBuf[k] = v; }
 // For the System/Station dropdowns: a normal pick just stores it; "Other" clears the field
 // so the reveal-a-text-box logic in pickField treats it as a custom, not-yet-typed value.
@@ -716,13 +722,13 @@ const ALARM_FIELDS = [
   ['transmitter',   'Transmitter #',          'sales',     'text', ''],
   ['viaNetwork',    'Monitored via network',  'sales',     'yesno', ''],
   ['viaPhone',      'Monitored via phone',    'client',    'yesno', ''],
-  ['masterCode',    'Master code',            'client',    'text', ''],
-  ['sitePassword',  'Site password',          'client',    'text', ''],
+  ['masterCode',    'Master code',            'client',    'secret', ''],
+  ['sitePassword',  'Site password',          'client',    'secret', ''],
   ['entryDelay1',   'Entry delay 1',          'client',    'text', 'Default 60 sec'],
   ['entryDelay2',   'Entry delay 2',          'client',    'text', 'Default 180 sec'],
   ['exitDelay',     'Exit delay',             'client',    'text', 'Default 60 sec'],
-  ['userCodes',     'User codes (other than master)', 'client', 'text', ''],
-  ['installerCode', "Installer's code",       'installer', 'text', 'e.g. 1300'],
+  ['userCodes',     'User codes (other than master)', 'client', 'secret', ''],
+  ['installerCode', "Installer's code",       'installer', 'secret', 'e.g. 1300'],
   ['installer',     'Installer',              'installer', 'text', ''],
 ];
 
@@ -742,6 +748,7 @@ function setZone(i, k, v) { alarmBuf().zones[i][k] = v; }
 function addZone() { const a = alarmBuf(); a.zones.push({ name: '', def: '', wire: '' }); render(); }
 function removeZone(i) { const a = alarmBuf(); a.zones.splice(i, 1); render(); }
 function toggleAlarm() { alarmOpen = !alarmOpen; render(); }
+function toggleSecret(k) { shownSecrets.has(k) ? shownSecrets.delete(k) : shownSecrets.add(k); render(); }
 
 // What is still missing, and whose job it is -- the question the form exists to answer.
 function alarmOutstanding(a) {
@@ -774,10 +781,21 @@ function alarmSection() {
 
   const fieldRow = ([key, label, role, type, ph]) => {
     const v = a[key] ?? '';
+    // Codes are masked until someone asks to see them: they should not be sitting on
+    // screen during a screen-share, a walk-past, or an accidental screenshot. It is a
+    // shoulder-surfing measure, not encryption -- the value is stored in plain text and
+    // anyone who can open this page can still reveal it.
     const input = type === 'yesno'
       ? '<select oninput="setAlarm(\'' + key + '\',this.value)">' +
           ['', 'yes', 'no'].map(o => '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + (o ? o[0].toUpperCase() + o.slice(1) : '—') + '</option>').join('') +
         '</select>'
+      : type === 'secret'
+      ? '<span class="secret-wrap">' +
+          '<input type="' + (shownSecrets.has(key) ? 'text' : 'password') + '" value="' + esc(v) + '" placeholder="' + esc(ph) + '" ' +
+            'autocomplete="off" oninput="setAlarm(\'' + key + '\',this.value)">' +
+          '<button class="btn btn-ghost btn-sm" onclick="toggleSecret(\'' + key + '\')" ' +
+            'title="' + (shownSecrets.has(key) ? 'Hide' : 'Show') + '">' + (shownSecrets.has(key) ? 'Hide' : 'Show') + '</button>' +
+        '</span>'
       : '<input value="' + esc(v) + '" placeholder="' + esc(ph) + '" oninput="setAlarm(\'' + key + '\',this.value)">';
     // No role tag on the field itself -- the group heading above already says whose it is.
     return '<div><label>' + esc(label) + '</label>' + input + '</div>';
