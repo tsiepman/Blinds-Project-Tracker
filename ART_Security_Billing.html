@@ -974,9 +974,22 @@ function parseSecurtekExport(raw) {
     // billing cycle: every month, every third month, or once in the window.
     const hits = [];
     billedIdx.forEach((col, block) => { const v = moneyNum(r[col]); if (v > 0) hits.push({ block, v }); });
-    if (!hits.length) { skipped.push(rawName + ' (never billed — no rate to import)'); continue; }
+    // What they still owe, read before deciding whether to import them at all: an account
+    // with a balance but no recent billing is precisely the one collections cares about,
+    // and skipping it for want of a rate dropped $846 of Martin & Caroline Maric's debt.
+    let balance = 0;
+    for (let k = billedIdx.length - 1; k >= 0; k--) {
+      const c = billedIdx[k];
+      const active = [0, 1, 2, 3].some(o => String(r[c + o] ?? '').trim() !== '');
+      // The most recent month with any activity decides it, and a blank balance there
+      // means nothing outstanding. Scanning further back for a non-zero figure resurrects
+      // balances that were since cleared.
+      if (active) { balance = Math.max(0, moneyNum(r[c + 3])); break; }
+    }
 
-    const rate = hits[hits.length - 1].v;
+    if (!hits.length && balance <= 0) { skipped.push(rawName + ' (never billed, nothing owing)'); continue; }
+
+    const rate = hits.length ? hits[hits.length - 1].v : 0;
     // Size is the reliable tell in this book -- the same service is $21 monthly, $63
     // quarterly and $252 a year, so the amount alone usually settles the cycle.
     const byAmount = rate >= 150 ? 'annual' : rate >= 45 ? 'quarterly' : 'monthly';
@@ -998,10 +1011,28 @@ function parseSecurtekExport(raw) {
       }
     }
 
-    // The most recent month actually billed, as the anchor the cycle maths walks from --
-    // this is what keeps a quarterly or annual account falling due in the right months.
-    const monthHeader = (rows[hIdx - 1] || [])[billedIdx[hits[hits.length - 1].block]] || '';
-    const lastCycle = monthNameToIso(monthHeader, billDay);
+    /* The anchor has to be the last cycle actually SETTLED, not the last one billed.
+       Someone invoiced every month who has paid nothing since March is nine months behind,
+       and anchoring on the billing made them look up to date. "Coll & Pd" is the second
+       column of each block -- what was actually collected. */
+    const monthOf = block => monthNameToIso((rows[hIdx - 1] || [])[billedIdx[block]] || '', billDay);
+    let lastCycle = '';
+    for (let k = billedIdx.length - 1; k >= 0; k--) {
+      if (moneyNum(r[billedIdx[k] + 1]) > 0) { lastCycle = monthOf(k); break; }
+    }
+    // Never collected anything in the window: fall back to the first month they were
+    // billed, so the overdue clock runs from when they should have started paying. With
+    // no billing either, the window's first month is the best anchor available.
+    if (!lastCycle) lastCycle = monthOf(hits.length ? hits[0].block : 0);
+
+    /* Why they are behind, which the statement records by appending it to the customer's
+       own name -- "Owes Nov 2023-Aug 2026 - Declined", "- Expired Card". Crude, but it is
+       the only record of the reason, and it is exactly the expired-card flag the page
+       needs. Parsed out rather than discarded. */
+    const flag = /expired\s*card/i.test(rawName) ? 'expired'
+      : /declined/i.test(rawName) ? 'declined'
+      : balance > 0 ? 'unpaid' : 'paid';
+    const owesText = (/\s-\s*(Owes\b[^-]*(?:-[^-]*)*)$/i.exec(rawName) || [, ''])[1].trim();
 
     const record = {
       AccountId: accountId || ('SBIMP' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase()),
@@ -1009,19 +1040,18 @@ function parseSecurtekExport(raw) {
       Station: 'SecurTek', StationAccountId: manitouId, Panel: '',
       MonthlyRate: String(rate), BillingFrequency: freq, PaymentMethod: method,
       Gst: true, Pst: true, BillDay: String(billDay),
-      Status: 'active', StartDate: '', Balance: '0',
-      // The last billed month, treated as settled -- arrears were handled outside the tool,
-      // and it anchors when the next cycle falls due.
-      LastPaidCycle: lastCycle, LastResult: 'paid',
+      Status: 'active', StartDate: '', Balance: String(balance),
+      LastPaidCycle: lastCycle, LastResult: flag === 'unpaid' ? '' : flag,
       Note: 'Imported from the SecurTek statement' + (custNum ? ' (Cust # ' + custNum + ')' : '') +
-        ' — billed ' + freq + (method ? ' by ' + method.toLowerCase() : '') + '.'
+        ' — billed ' + freq + (method ? ' by ' + method.toLowerCase() : '') + '.' +
+        (owesText ? ' Statement flagged: ' + owesText + '.' : '')
     };
 
     if (existing) {
       // Already here. Only worth reporting if the export disagrees with what is stored --
       // typically because a column was added after the first import and never filled in.
       const changes = {};
-      for (const k of ['BillingFrequency', 'PaymentMethod', 'MonthlyRate', 'BillDay', 'StationAccountId', 'LastPaidCycle']) {
+      for (const k of ['BillingFrequency', 'PaymentMethod', 'MonthlyRate', 'BillDay', 'StationAccountId', 'LastPaidCycle', 'Balance', 'LastResult']) {
         if (String(existing[k] ?? '') !== String(record[k] ?? '')) changes[k] = record[k];
       }
       if (Object.keys(changes).length) update.push({ itemId: existing.itemId, name, changes });
