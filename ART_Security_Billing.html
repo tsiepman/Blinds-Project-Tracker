@@ -314,7 +314,10 @@ function shape(a) {
   const daysSinceCycle = dayDiff(last, today());
   // "behind" means the most recent cycle has passed and it wasn't marked paid --
   // whether that's a real decline or just not yet run through, it needs a look.
-  const behind = status === 'active' && daysSinceCycle >= 0 && lastResult !== 'paid' &&
+  // Judged on which cycle was last settled, NOT on the last result string. "Paid" is true
+  // of a payment made in June, and an account that has paid nothing since is three cycles
+  // behind however that payment went -- keying off the result hid exactly those.
+  const behind = status === 'active' && daysSinceCycle >= 0 &&
     (!a.LastPaidCycle || a.LastPaidCycle < last);
 
   /* Measured from the FIRST cycle they missed, not the most recent one -- otherwise
@@ -343,6 +346,11 @@ function shape(a) {
     note: a.Note || '',
     cycleLast: last, cycleNext: next, behind,
     daysBehind, cyclesBehind,
+    /* Overdue by time, not by cycle count. One missed cycle is a few weeks on a monthly
+       account and a whole YEAR on an annual one -- counting cycles called both of those
+       the same thing and let a year-unpaid account read as current. 45 days clears the
+       gap between "this month's bill hasn't run" and "nobody has paid in a while". */
+    lapsed: behind && daysBehind >= 45,
   };
 }
 
@@ -362,13 +370,30 @@ function renderSignIn() {
 
 /* ---------- render: main ---------- */
 
+/* A status is worth showing only if someone would act on it. The cycle rolling over is
+   not a problem -- it is the normal state of every account between billing runs, and
+   flagging all 137 of them buries the handful that genuinely need a call.
+
+   So: a known card failure, money owed, or falling more than one cycle behind are
+   problems. Everything else reads "current". */
 function statusTag(v) {
   if (v.status === 'cancelled') return '<span class="tag t-grey">cancelled</span>';
   if (v.status === 'suspended') return '<span class="tag t-grey">suspended</span>';
+  if (v.lastResult === 'expired') return '<span class="tag t-late">expired card</span>' +
+    (v.owed > 0 ? '<div class="sub">' + money(v.owed) + ' owing</div>' : '');
+  if (v.lastResult === 'declined') return '<span class="tag t-late">card declined</span>' +
+    (v.owed > 0 ? '<div class="sub">' + money(v.owed) + ' owing</div>' : '');
   if (v.owed > 0) return '<span class="tag ' + (v.daysBehind >= 30 ? 't-late' : 't-miss') + '">' + money(v.owed) + ' owing</span>' +
     (v.cyclesBehind > 1 ? '<div class="sub">' + v.cyclesBehind + ' cycles behind</div>' : '');
-  if (v.behind) return '<span class="tag t-miss">' + (v.cyclesBehind > 1 ? v.cyclesBehind + ' cycles due' : 'not yet billed') + '</span>';
+  if (v.lapsed) return '<span class="tag ' + (v.daysBehind >= 90 ? 't-late' : 't-miss') + '">' +
+    (v.cyclesBehind > 1 ? v.cyclesBehind + ' cycles due' : v.daysBehind + ' days overdue') + '</span>';
   return '<span class="tag t-ok">current</span>';
+}
+
+// What the chase queue is for: things a person should actually do something about.
+function needsAttention(v) {
+  return v.status === 'active' &&
+    (v.lastResult === 'expired' || v.lastResult === 'declined' || v.owed > 0 || v.lapsed);
 }
 
 function rowHtml(v) {
@@ -391,7 +416,7 @@ function render() {
   const matches = v => !q || [v.name, v.accountId, v.address, v.station, v.stationAccountId].join(' ').toLowerCase().includes(q);
 
   const active = all.filter(v => v.status === 'active');
-  const owingList = active.filter(v => v.owed > 0 || v.behind).filter(matches)
+  const owingList = active.filter(needsAttention).filter(matches)
     .sort((a, b) => (b.owed - a.owed) || (b.daysBehind - a.daysBehind));
   const totalOwed = active.reduce((n, v) => n + v.owed, 0);
   // Normalised, so a $252 annual account contributes $21 and not $252.
@@ -566,6 +591,7 @@ function drawerHtml() {
       '<div class="drawer-actions">' +
         '<button class="btn btn-sm" onclick="recordPayment(\'' + openId + '\',\'paid\')">Mark this cycle paid</button>' +
         '<button class="btn btn-sm" onclick="recordPayment(\'' + openId + '\',\'declined\')">Mark declined</button>' +
+        '<button class="btn btn-sm" onclick="recordPayment(\'' + openId + '\',\'expired\')">Card expired</button>' +
         '<button class="btn btn-sm" onclick="adjustBalance(\'' + openId + '\')">Adjust balance…</button>' +
       '</div>' +
 
@@ -649,7 +675,9 @@ async function recordPayment(id, result) {
     };
     if (!usingSample) await graph('PATCH', '/sites/' + siteId + '/lists/' + (await listId(LIST.accounts)) + '/items/' + id + '/fields', accFields);
     Object.assign(acc, accFields);
-    toast(result === 'paid' ? '✓ Marked paid' : 'Marked declined — added to balance');
+    toast(result === 'paid' ? '✓ Marked paid'
+      : result === 'expired' ? 'Marked expired card — it will stay flagged until a payment goes through'
+      : 'Marked declined — added to balance');
   } catch (e) { toast('Could not record: ' + e.message, true); }
   busy = false; render();
 }
