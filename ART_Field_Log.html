@@ -71,6 +71,13 @@
   .wu summary { cursor: pointer; font-size: 12px; color: var(--text2); }
   details.fu > summary { cursor: pointer; list-style: none; }
   details.fu > summary::-webkit-details-marker { display: none; }
+  .chev { color: var(--text3); font-size: 11px; width: 1em; }
+  .group-head { cursor: pointer; }
+  .group-head:hover .group-name { color: var(--accent); }
+  .fu-item { display: flex; gap: 7px; align-items: flex-start; list-style: none; margin-left: -18px; }
+  .fu-item input { margin-top: 2px; accent-color: var(--accent); cursor: pointer; flex: none; }
+  .fu-item.fu-done > span { text-decoration: line-through; color: var(--text3); }
+  .group-meta a { color: var(--accent); text-decoration: none; }
   .t-miss { background: var(--yellow-dim); color: var(--yellow); }
   .t-late { background: var(--accent-dim); color: var(--accent); }
   .t-grey { background: var(--surface2); color: var(--text3); }
@@ -124,8 +131,36 @@ const LIST = 'FieldVisits';
 
 let msal_ = null, siteId = null, listIds = {};
 let visits = [], usingSample = false;
-let view = (() => { try { return localStorage.getItem('field.view') === 'person' ? 'person' : 'day'; } catch { return 'day'; } })();
+let view = (() => { try { const v = localStorage.getItem('field.view'); return ['person', 'job'].includes(v) ? v : 'day'; } catch { return 'day'; } })();
 let days = 14, search = '', showInternal = false;
+// Groups collapsed by name, remembered per browser. Open by default: the log is read far
+// more often than it is tidied, and a page of closed headings answers nothing.
+let closedGroups = (() => { try { return new Set(JSON.parse(localStorage.getItem('field.closed') || '[]')); } catch { return new Set(); } })();
+function toggleGroup(key) {
+  closedGroups.has(key) ? closedGroups.delete(key) : closedGroups.add(key);
+  try { localStorage.setItem('field.closed', JSON.stringify([...closedGroups])); } catch {}
+  render();
+}
+function setAllGroups(open) {
+  if (open) closedGroups.clear();
+  else for (const k of lastGroupKeys) closedGroups.add(k);
+  try { localStorage.setItem('field.closed', JSON.stringify([...closedGroups])); } catch {}
+  render();
+}
+let lastGroupKeys = [];   // what is on screen now, so "collapse all" knows what to close
+let busy = false, showDoneFollowUps = false;
+function toggleDoneFollowUps() { showDoneFollowUps = !showDoneFollowUps; render(); }
+function toast(msg, isErr) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'toast';
+    el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;font-size:13px;z-index:200;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+    document.body.appendChild(el);
+  }
+  el.style.color = isErr ? 'var(--red)' : 'var(--text)';
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(window.__t); window.__t = setTimeout(() => { el.style.display = 'none'; }, 3200);
+}
 
 /* ---------- auth / graph ---------- */
 
@@ -148,14 +183,26 @@ async function token() {
   try { return (await msal_.acquireTokenSilent({ scopes: SCOPES, account: a[0] })).accessToken; }
   catch { await msal_.acquireTokenRedirect({ scopes: SCOPES, account: a[0] }); return null; }
 }
-async function graph(path) {
+// Reads take one argument; ticking a follow-up done needs a PATCH, hence the method.
+async function graph(path, method, body) {
   const t = await token();
   if (!t) return null;
   const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
-    headers: { Authorization: 'Bearer ' + t, Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' }
+    method: method || 'GET',
+    headers: {
+      Authorization: 'Bearer ' + t,
+      'Content-Type': 'application/json',
+      Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly'
+    },
+    ...(body ? { body: JSON.stringify(body) } : {})
   });
   if (!res.ok) throw new Error('Graph ' + res.status);
-  return res.json();
+  return res.status === 204 ? null : res.json();
+}
+async function listId(name) {
+  if (!siteId) siteId = (await graph('/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
+  if (!listIds[name]) listIds[name] = (await graph('/sites/' + siteId + '/lists/' + name)).id;
+  return listIds[name];
 }
 async function items(name) {
   if (!siteId) siteId = (await graph('/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
@@ -176,7 +223,8 @@ function setStatus(cls, txt) { const e = document.getElementById('spStatus'); e.
 async function load() {
   setStatus('loading', 'Loading…');
   try {
-    visits = (await items(LIST)).map(i => i.fields || {});
+    // itemId is kept alongside the fields so a follow-up tick can be written back.
+    visits = (await items(LIST)).map(i => ({ itemId: i.id, ...(i.fields || {}) }));
     usingSample = false;
     if (!visits.length) loadSample();
     setStatus('connected', 'SharePoint');
@@ -229,6 +277,8 @@ function shape(f) {
     progress: f.Progress || '', instructions: f.Instructions || '',
     writeUpAt: f.WriteUpAt || '', writeUpBy: f.WriteUpBy || '', writeUpText: f.WriteUpText || '',
     summaries: parseSummaries(f.Summary),
+    followUpsDone: f.FollowUpsDone || '',
+    doneSet: fuDoneSet({ followUpsDone: f.FollowUpsDone }),
     // Visit day to the day the note was written, from the note's own D-Tools send time.
     late: f.WriteUpAt && date ? Math.max(0, dayDiff(date, String(f.WriteUpAt).slice(0, 10))) : null,
     age, done, internal,
@@ -306,29 +356,86 @@ function writeUpHtml(v) {
   '</div>';
 }
 
-// Everything left hanging across the window: unfinished work, return visits, office to-dos
-// and what clients or builders said. This is the part Terry and the salespeople read.
+/* Everything left hanging: unfinished work, return visits, office to-dos and what clients
+   or builders said. This is the part Terry and the salespeople read.
+
+   Items are ticked off, not aged off. Until this had a tick, an item left the list only
+   by falling outside the date window -- so a list somebody had worked through looked
+   exactly like one nobody had touched, and things vanished on a timer rather than because
+   they were finished. Done items are stored on the visit (FollowUpsDone), so the tick
+   holds for everyone rather than living in one person's browser. */
+
+function fuKey(kind, text) { return kind + '|' + String(text).slice(0, 120); }
+function fuDoneSet(v) { try { const a = JSON.parse(v.followUpsDone || '[]'); return new Set(Array.isArray(a) ? a : []); } catch { return new Set(); } }
+
+async function toggleFollowUp(visitId, kind, text) {
+  const raw = visits.find(f => (f.VisitId || '') === visitId);
+  if (!raw || busy) return;
+  const key = fuKey(kind, text);
+  const done = fuDoneSet({ followUpsDone: raw.FollowUpsDone });
+  done.has(key) ? done.delete(key) : done.add(key);
+  const json = JSON.stringify([...done]);
+  busy = true; render();
+  try {
+    if (!usingSample) {
+      const lid = await listId(LIST);
+      await graph('/sites/' + siteId + '/lists/' + lid + '/items/' + raw.itemId + '/fields',
+        'PATCH', { FollowUpsDone: json });
+    }
+    raw.FollowUpsDone = json;
+  } catch (e) {
+    toast('Could not save that tick: ' + e.message, true);
+  }
+  busy = false; render();
+}
+
+function fuItem(v, kind, text, extra) {
+  const key = fuKey(kind, text);
+  const isDone = v.doneSet.has(key);
+  const arg = "'" + esc(v.id).replace(/'/g, '&#39;') + "','" + kind + "','" + esc(text).replace(/'/g, '&#39;').replace(/\\/g, '') + "'";
+  return '<li class="fu-item' + (isDone ? ' fu-done' : '') + '">' +
+    '<input type="checkbox" ' + (isDone ? 'checked ' : '') + (busy ? 'disabled ' : '') +
+      'onchange="toggleFollowUp(' + arg + ')" aria-label="Mark done"> ' +
+    '<span>' + esc(text) + (extra || '') + '</span></li>';
+}
+
 function followUpsHtml(vs) {
   const rows = [];
   for (const v of vs) for (const s of v.summaries) {
     const out = s.outstanding || [], act = s.officeActions || [], cb = s.clientBuilderNotes || [];
     if (!out.length && !act.length && !cb.length && !s.returnVisit) continue;
-    rows.push({ v, s, out, act, cb });
+    const total = out.length + act.length + cb.length;
+    const open = out.filter(o => !v.doneSet.has(fuKey('out', o.item))).length +
+      act.filter(x => !v.doneSet.has(fuKey('act', x))).length +
+      cb.filter(x => !v.doneSet.has(fuKey('cb', x))).length;
+    rows.push({ v, s, out, act, cb, total, open });
   }
   if (!rows.length) return '';
-  rows.sort((a, b) => b.v.date.localeCompare(a.v.date));
-  return '<details class="group fu" open><summary class="group-head"><span class="group-name">Follow-ups</span>' +
-    '<span class="group-meta">' + rows.length + ' visit' + (rows.length === 1 ? '' : 's') + ' left something to do</span></summary>' +
-    rows.map(({ v, s, out, act, cb }) =>
+  const openRows = rows.filter(r => r.open > 0);
+  const shown = showDoneFollowUps ? rows : openRows;
+  const openItems = rows.reduce((n, r) => n + r.open, 0);
+  const doneItems = rows.reduce((n, r) => n + (r.total - r.open), 0);
+  if (!shown.length) {
+    return '<div class="group fu"><div class="group-head"><span class="group-name">Follow-ups</span>' +
+      '<span class="tag t-ok">all cleared</span>' +
+      '<span class="group-meta">' + doneItems + ' ticked off' +
+      ' · <a href="#" onclick="toggleDoneFollowUps();return false">show them</a></span></div></div>';
+  }
+  shown.sort((a, b) => b.v.date.localeCompare(a.v.date));
+  return '<div class="group fu"><div class="group-head"><span class="group-name">Follow-ups</span>' +
+    '<span class="group-meta">' + openItems + ' still open across ' + openRows.length + ' visit' + (openRows.length === 1 ? '' : 's') +
+    (doneItems ? ' · ' + doneItems + ' done · <a href="#" onclick="toggleDoneFollowUps();return false">' +
+      (showDoneFollowUps ? 'hide' : 'show') + ' them</a>' : '') + '</span></div>' +
+    shown.map(({ v, s, out, act, cb }) =>
       '<div class="row"><div class="when">' + parseD(v.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '</div>' +
       '<div class="what"><div class="job">' + (v.jobNumber ? '<span class="num">' + esc(v.jobNumber) + '</span>' : '') + esc(v.jobName || v.name || v.client) +
         (s.returnVisit ? ' <span class="tag t-miss">return visit</span>' : '') + '</div>' +
         '<div class="sub">' + esc([v.client, s.by || v.writeUpBy].filter(Boolean).join(' · ')) + '</div>' +
-        (out.length ? '<div class="wu-sec wu-out"><b>Outstanding</b><ul>' + out.map(o => '<li>' + esc(o.item) + (o.reason ? ' <span class="why">— ' + esc(o.reason) + '</span>' : '') + '</li>').join('') + '</ul></div>' : '') +
-        (act.length ? '<div class="wu-sec wu-act"><b>Office to do</b><ul>' + act.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
-        (cb.length ? '<div class="wu-sec"><b>Client / builder</b><ul>' + cb.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+        (out.length ? '<div class="wu-sec wu-out"><b>Outstanding</b><ul>' + out.map(o => fuItem(v, 'out', o.item, o.reason ? ' <span class="why">— ' + esc(o.reason) + '</span>' : '')).join('') + '</ul></div>' : '') +
+        (act.length ? '<div class="wu-sec wu-act"><b>Office to do</b><ul>' + act.map(x => fuItem(v, 'act', x)).join('') + '</ul></div>' : '') +
+        (cb.length ? '<div class="wu-sec"><b>Client / builder</b><ul>' + cb.map(x => fuItem(v, 'cb', x)).join('') + '</ul></div>' : '') +
       '</div></div>').join('') +
-  '</details>';
+  '</div>';
 }
 
 function render() {
@@ -338,7 +445,25 @@ function render() {
   const missing = past.filter(v => !v.done);
   const late = past.filter(v => v.state === 'late');
 
+  /* One collapsible group, however the visits are sliced. The chevron and the count stay
+     visible when closed, so a shut group still answers "is there anything outstanding
+     here?" without being opened. */
+  const groupHtml = (key, title, tags, meta, vs, showDate) => {
+    const open = !closedGroups.has(key);
+    const k = esc(key).replace(/'/g, '&#39;');
+    return '<div class="group">' +
+      '<div class="group-head" role="button" tabindex="0" aria-expanded="' + open + '" ' +
+        'onclick="toggleGroup(\'' + k + '\')" ' +
+        'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();toggleGroup(\'' + k + '\')}">' +
+        '<span class="chev">' + (open ? '▾' : '▸') + '</span>' +
+        '<span class="group-name">' + title + '</span>' + (tags || '') +
+        '<span class="group-meta">' + meta + '</span></div>' +
+      (open ? vs.map(v => rowHtml(v, showDate)).join('') : '') +
+    '</div>';
+  };
+
   let body;
+  lastGroupKeys = [];
   if (!all.length) {
     body = '<div class="empty">Nothing scheduled in the last ' + days + ' days' + (search ? ' matching “' + esc(search) + '”' : '') + '.</div>';
   } else if (view === 'day') {
@@ -347,12 +472,12 @@ function render() {
     body = [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([date, vs]) => {
       vs.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
       const miss = vs.filter(v => v.state === 'missing' || v.state === 'late').length;
-      return '<div class="group"><div class="group-head"><span class="group-name">' + dayLabel(date) + '</span>' +
-        '<span class="group-meta">' + vs.length + ' visit' + (vs.length === 1 ? '' : 's') +
-        (miss ? ' · ' + miss + ' without a write-up' : '') + '</span></div>' +
-        vs.map(v => rowHtml(v, false)).join('') + '</div>';
+      lastGroupKeys.push('d:' + date);
+      return groupHtml('d:' + date, dayLabel(date), '',
+        vs.length + ' visit' + (vs.length === 1 ? '' : 's') + (miss ? ' · ' + miss + ' without a write-up' : ''),
+        vs, false);
     }).join('');
-  } else {
+  } else if (view === 'person') {
     const byPerson = new Map();
     for (const v of all) {
       const names = v.crew.length ? v.crew : ['(nobody assigned)'];
@@ -365,10 +490,39 @@ function render() {
       vs.sort((a, b) => (b.date + b.from).localeCompare(a.date + a.from));
       const miss = vs.filter(v => v.state === 'missing' || v.state === 'late').length;
       const done = vs.filter(v => v.done).length;
-      return '<div class="group"><div class="group-head"><span class="group-name">' + esc(name) + '</span>' +
-        (miss ? '<span class="tag t-miss">' + miss + ' to write up</span>' : '') +
-        '<span class="group-meta">' + vs.length + ' visit' + (vs.length === 1 ? '' : 's') + ' · ' + done + ' written up</span></div>' +
-        vs.map(v => rowHtml(v, true)).join('') + '</div>';
+      lastGroupKeys.push('p:' + name);
+      return groupHtml('p:' + name, esc(name),
+        miss ? '<span class="tag t-miss">' + miss + ' to write up</span>' : '',
+        vs.length + ' visit' + (vs.length === 1 ? '' : 's') + ' · ' + done + ' written up',
+        vs, true);
+    }).join('');
+  } else {
+    /* By job: every visit to one client or job together, oldest first, so the whole
+       history of a job reads top to bottom -- what was done, what was left, what came
+       back. This is the view for "what is going on at the Pollards'", which neither a
+       day nor an installer answers. */
+    const byJob = new Map();
+    for (const v of all) {
+      const key = v.jobNumber || v.jobName || v.client || v.site || '(no job)';
+      if (!byJob.has(key)) byJob.set(key, []);
+      byJob.get(key).push(v);
+    }
+    body = [...byJob.entries()].sort((a, b) => {
+      const newest = x => x[1].reduce((n, v) => v.date > n ? v.date : n, '');
+      return newest(b).localeCompare(newest(a));
+    }).map(([key, vs]) => {
+      vs.sort((a, b) => (a.date + a.from).localeCompare(b.date + b.from));   // oldest first
+      const miss = vs.filter(v => v.state === 'missing' || v.state === 'late').length;
+      const done = vs.filter(v => v.done).length;
+      const open = vs.reduce((n, v) => n + v.summaries.reduce((m, s) => m + (s.outstanding || []).length, 0), 0);
+      const first = vs[0];
+      lastGroupKeys.push('j:' + key);
+      return groupHtml('j:' + key,
+        (first.jobNumber ? '<span class="num">' + esc(first.jobNumber) + '</span> ' : '') + esc(first.jobName || first.client || key),
+        (open ? '<span class="tag t-miss">' + open + ' outstanding</span>' : '') +
+          (miss ? '<span class="tag t-late">' + miss + ' to write up</span>' : ''),
+        esc(first.client || '') + ' · ' + vs.length + ' visit' + (vs.length === 1 ? '' : 's') + ' · ' + done + ' written up',
+        vs, true);
     }).join('');
   }
 
@@ -382,13 +536,19 @@ function render() {
       '<div><label class="fld">View</label><div class="seg" role="tablist">' +
         '<button role="tab" aria-selected="' + (view === 'day') + '" class="' + (view === 'day' ? 'on' : '') + '" onclick="setView(\'day\')">By day</button>' +
         '<button role="tab" aria-selected="' + (view === 'person') + '" class="' + (view === 'person' ? 'on' : '') + '" onclick="setView(\'person\')">By installer</button>' +
+        '<button role="tab" aria-selected="' + (view === 'job') + '" class="' + (view === 'job' ? 'on' : '') + '" onclick="setView(\'job\')">By job</button>' +
       '</div></div>' +
       '<div><label class="fld">Show</label><select onchange="setDays(this.value)">' +
-        [7, 14, 30].map(d => '<option value="' + d + '"' + (d === days ? ' selected' : '') + '>last ' + d + ' days</option>').join('') +
+        // 365 covers "everything on this job" -- a job's history is the point of the job
+        // view, and it does not stop at thirty days.
+        [7, 14, 30, 90, 365].map(d => '<option value="' + d + '"' + (d === days ? ' selected' : '') + '>' +
+          (d >= 365 ? 'everything' : 'last ' + d + ' days') + '</option>').join('') +
       '</select></div>' +
       '<div style="flex:1 1 200px"><label class="fld" for="q">Find</label><input id="q" style="width:100%" placeholder="Job, client, site or installer" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
       '<div style="display:flex;gap:6px"><button class="btn" onclick="toggleInternal()">' +
         (showInternal ? 'Hide' : 'Show') + ' A-team &amp; time off' + (hiddenInternal ? ' (' + hiddenInternal + ')' : '') + '</button>' +
+        '<button class="btn" onclick="setAllGroups(true)">Expand all</button>' +
+        '<button class="btn" onclick="setAllGroups(false)">Collapse all</button>' +
         '<button class="btn" onclick="load()">Refresh</button></div>' +
     '</div>' +
     '<div class="totals">' +
