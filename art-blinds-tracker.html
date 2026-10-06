@@ -341,7 +341,11 @@ let msalClient=null,projects=[],expandedId=null,activeTab='all',activeFilter='al
 let editingId=null,roomEditId=null,roomEditTemp=[];
 let currentUser=null,spSiteId=null,spListId=null;
 
-const stageObj  = id => STAGES.find(s=>s.id===id)||STAGES[0];
+// Archived is deliberately outside STAGES -- it is where a job ends up, not a step on the
+// way. It still needs a label and a percentage, or every archived job reads "Initial
+// meeting" at 5% wherever a stage is shown.
+const ARCHIVED_STAGE = {id:'archived', label:'Archived', pct:100};
+const stageObj  = id => id==='archived' ? ARCHIVED_STAGE : (STAGES.find(s=>s.id===id)||STAGES[0]);
 const needsInfo = p  => (p.blockers||[]).length>0;
 const isReady   = p  => p.stage==='ready'||p.stage==='ordered'||p.stage==='received'||p.stage==='partial-order'||
   (!needsInfo(p)&&!!p.fabric&&!!p.mount&&!!p.power&&p.rooms.length>0&&p.rooms.every(r=>r.m1&&r.m2));
@@ -429,7 +433,12 @@ function spToP(item){
     id:item.id,spId:item.id,
     client:f.Client||'',project:f.Project||'—',
     lead:f.Lead||'Bruno',type:f.QuoteType||'',
-    stage:(STAGES.find(s=>s.label===f.Stage)||STAGES.find(s=>s.id===f.Stage)||STAGES[0]).id,mount:f.Mount||'',power:f.Power||'',
+    // 'archived' is a state, not a stage, so it is not in STAGES -- without this an
+    // archived project matched nothing on reload, fell through to STAGES[0] and came back
+    // as a brand-new "Initial meeting" job on the main list.
+    stage:(f.Stage==='archived'||f.Stage==='Archived')?'archived'
+      :(STAGES.find(s=>s.label===f.Stage)||STAGES.find(s=>s.id===f.Stage)||STAGES[0]).id,
+    mount:f.Mount||'',power:f.Power||'',
     fabric:f.Fabric||'',fabric2:f.Fabric2||'',
     fabricBy:f.FabricBy||'',fabricDate:f.FabricDate||'',
     blockers:safeJSON(f.Blockers,[]),rooms:safeJSON(f.Rooms,[]),
@@ -446,7 +455,9 @@ function pToSp(p){
   }:{};
   return Object.assign(rem,{
     Client:p.client,Project:p.project,Lead:p.lead,QuoteType:p.type,
-    Stage:STAGES.find(s=>s.id===p.stage)?.label||p.stage,Mount:p.mount,Power:p.power,
+    // stageObj covers 'archived' too, so it writes "Archived" rather than falling back to
+    // the raw id and leaving the two sides to disagree about what the value looks like.
+    Stage:stageObj(p.stage).label,Mount:p.mount,Power:p.power,
     Fabric:p.fabric,Fabric2:p.fabric2||'',FabricBy:p.fabricBy,FabricDate:p.fabricDate,
     Blockers:JSON.stringify(p.blockers||[]),
     Rooms:JSON.stringify(p.rooms||[]),
