@@ -30,6 +30,11 @@
   /* Scales with the board's type instead of the suite's fixed 13px. */
   .top .art-back { margin-left: .4vw; font-size: .85em; padding: .35em .8em; white-space: nowrap; }
   .pageno { font-size: .85em; color: var(--text2); font-variant-numeric: tabular-nums; background: var(--surface2); padding: .2em .6em; border-radius: 1em; }
+  .pager { display: inline-flex; align-items: center; gap: .3em; }
+  .pbtn { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); border-radius: .4em;
+          font-size: .85em; line-height: 1; padding: .35em .6em; cursor: pointer; font-family: inherit; }
+  .pbtn:hover { border-color: var(--accent); color: var(--text); }
+  .pbtn.on { color: var(--accent); border-color: var(--accent); }
 
   /* Teal for prewire, amber for install. Deliberately desaturated: a wall board is
      scanned for shape and gaps, and saturated red/blue pulled the eye to individual
@@ -356,6 +361,9 @@ function render() {
 
   const per = pageSize(unscheduled.length);
   const pageCount = Math.max(1, Math.ceil(scheduled.length / per));
+  // Remembered so the arrows can work out the page count without re-deriving the board.
+  lastScheduled = scheduled.length;
+  lastUnscheduled = unscheduled.length;
   if (pageIndex >= pageCount) pageIndex = 0;
   const pageRows = pageCount > 1 ? scheduled.slice(pageIndex * per, pageIndex * per + per) : scheduled;
 
@@ -400,7 +408,19 @@ function render() {
     '<span class="key"><span class="swatch sw-finish"></span>Finish</span>' +
     '<span class="key"><span class="swatch sw-est"></span>Estimated</span>' +
     '</div>' +
-    (pageCount > 1 ? '<span class="pageno">' + (pageIndex + 1) + ' / ' + pageCount + '</span>' : '') +
+    (pageCount > 1
+      ? '<span class="pager">' +
+          '<button class="pbtn" onclick="flipPage(-1)" title="Previous page" aria-label="Previous page">‹</button>' +
+          '<span class="pageno">' + (pageIndex + 1) + ' / ' + pageCount + '</span>' +
+          '<button class="pbtn" onclick="flipPage(1)" title="Next page" aria-label="Next page">›</button>' +
+          // Auto-advance is what the wall TV wants and what anyone actually reading the
+          // board does not. The toggle says which mode you are in rather than leaving you
+          // to discover it when the page changes under you.
+          '<button class="pbtn ' + (auto ? 'on' : '') + '" onclick="toggleAuto()" ' +
+            'title="' + (auto ? 'Auto-advancing every ' + PAGE_SECONDS + 's — click to stop' : 'Paused — click to auto-advance') + '">' +
+            (auto ? '❚❚' : '▶') + '</button>' +
+        '</span>'
+      : '') +
     '<span class="stamp">' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span>' +
     (KIOSK ? '' : '<a class="art-back" href="index.html">← All tools</a>') + '</div>' +
     '<div class="board"><div class="grid' + (compact ? ' compact' : '') + '" style="--rowh:' + rowh + 'px">' +
@@ -425,6 +445,7 @@ const PAGE_SECONDS = 20;
 const COMPACT_BELOW = 38;      // below this, second label line and bar text are dropped
 
 let pageIndex = 0;
+let lastScheduled = 0, lastUnscheduled = 0;
 
 function availableHeight(unscheduledCount) {
   return Math.max(200, window.innerHeight - 96 - (unscheduledCount ? 64 : 0));
@@ -439,11 +460,41 @@ function rowHeight(onThisPage, unscheduledCount) {
   return Math.round(Math.min(64, Math.max(22, avail / Math.max(1, onThisPage))));
 }
 
+/* Auto-advance suits the wall TV, where nobody is driving, and gets in the way everywhere
+   else -- you find the job you want and the board turns the page on you. So it is on for
+   the kiosk and off when the board is opened from the tools index, and either way the
+   arrows are there. */
+let auto = KIOSK;
 let rotateTimer = null;
+
 function startRotation() {
   clearInterval(rotateTimer);
+  if (!auto) return;
   rotateTimer = setInterval(() => { pageIndex++; if (rows.length) render(); }, PAGE_SECONDS * 1000);
 }
+
+// Paging by hand means you are reading, so the timer stands down rather than fighting you.
+function flipPage(step) {
+  const per = pageSize(lastUnscheduled);
+  const pageCount = Math.max(1, Math.ceil(lastScheduled / per));
+  pageIndex = (pageIndex + step + pageCount) % pageCount;
+  auto = false;
+  startRotation();
+  if (rows.length) render();
+}
+
+function toggleAuto() {
+  auto = !auto;
+  startRotation();
+  if (rows.length) render();
+}
+
+// Arrow keys for anyone reading it on a laptop; space toggles the auto-advance.
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') flipPage(1);
+  else if (e.key === 'ArrowLeft') flipPage(-1);
+  else if (e.key === ' ') { e.preventDefault(); toggleAuto(); }
+});
 
 // Re-render on resize so the kiosk adapts if the panel reports a different size after
 // waking, and so the same file stays usable on a laptop.
