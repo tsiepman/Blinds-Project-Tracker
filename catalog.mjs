@@ -310,13 +310,14 @@ export async function catalogReport(graph, getVendorMap, usedModels = new Set())
   for (const r of ready) types.set(r.type, (types.get(r.type) ?? 0) + 1);
   // Said out loud, because a filter that quietly halves the item count is a filter somebody
   // will later assume was a bug.
-  const skipped = all.filter(r => !importable(r, holdModels) && !r.discontinued &&
+  const skipped = all.filter(r => !importable(r, holdModels) &&
     !holdModels.has(r.model.trim().toLowerCase())).length;
   console.log(
     `\n  left out of the QuickBooks file:` +
     `\n    ${holdModels.size} with a problem to fix first` +
-    `\n    ${all.filter(r => r.discontinued).length} discontinued` +
     `\n    ${skipped} neither stocked nor ever quoted` +
+    `\n  (${all.filter(r => r.discontinued && importable(r, holdModels)).length} of those going in are discontinued` +
+    ' -- kept because they are stocked or have been quoted)' +
     `\n  ${ready.length} going in: ` + [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${n} ${t}`).join(', ') +
     `\n  ${suppliers.length} suppliers, to import as vendors BEFORE the items` +
     (QTY_AS_OF ? `\n  Inventory rows carry quantity 0 as of ${QTY_AS_OF}` :
@@ -393,8 +394,13 @@ function qboType(p, rqSkus) {
    allowances are exactly what an invoice needs, so excluding them would break the estimate
    push the moment a job had a labour line. It is a small set either way. */
 function importable(r, holdModels) {
-  if (r.discontinued) return false;
   if (holdModels.has(r.model.trim().toLowerCase())) return false;
+  /* Discontinued is deliberately NOT a reason on its own.
+     A discontinued product that is still stocked needs an item for the opening inventory
+     count, and one that has been quoted needs an item to invoice against -- a job
+     straddling 31 December with a discontinued part on it would otherwise have nothing to
+     bill. Discontinued products nobody stocks or has quoted are already left out by the
+     rule below, so checking the flag separately only ever excluded the wrong ones. */
   return r.type === 'Inventory' || r.type === 'Service' || r.used;
 }
 
