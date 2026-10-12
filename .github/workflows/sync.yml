@@ -12,6 +12,10 @@ on:
         description: 'Dry run — report what would change, write nothing'
         type: boolean
         default: true
+      catalog_report:
+        description: 'Catalog report — cleanup worklist and the QuickBooks item list, as downloadable CSVs'
+        type: boolean
+        default: false
 
 jobs:
   sync:
@@ -62,6 +66,22 @@ jobs:
           STOCK_FIELD_STOCK: ${{ vars.STOCK_FIELD_STOCK }}
           STOCK_FIELD_COMMITTED: ${{ vars.STOCK_FIELD_COMMITTED }}
           STOCK_FIELD_ONORDER: ${{ vars.STOCK_FIELD_ONORDER }}
+          # Reads the whole catalog, so it only runs when asked for. Empty on a scheduled
+          # run, which is what keeps it off the twenty-minute tick.
+          CATALOG_REPORT: ${{ inputs.catalog_report }}
+          # Set to 01/01/2027 for the live item import, so Inventory rows load at quantity
+          # zero and the closing stocktake sets the real figures. Unset leaves both the
+          # quantity and the date blank, which is what you want while only reading the data.
+          CATALOG_QTY_AS_OF: ${{ vars.CATALOG_QTY_AS_OF }}
         # Scheduled runs have no inputs, so this is empty and they always write.
         run: node sync.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
 
+      # always(), because the report is most wanted on a run that failed for some unrelated
+      # reason -- an unposted QuickBooks token should not cost you the worklist.
+      - name: Upload the catalog report
+        if: ${{ always() && inputs.catalog_report }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-report
+          path: catalog-report/
+          if-no-files-found: warn
