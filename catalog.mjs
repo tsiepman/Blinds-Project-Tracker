@@ -62,7 +62,12 @@ const QBO_COLUMNS = [
    count sets them; leave it unset for a dry look at the data. */
 const QTY_AS_OF = String(process.env.CATALOG_QTY_AS_OF || '').trim();
 
-export async function catalogReport(graph, getVendorMap) {
+/* usedModels: every model that appears as an order line on a project the sync has seen.
+   It answers the question the raw count cannot -- of 5,400 catalog products, which ones has
+   anybody actually quoted? A product nobody has used in the synced history is a row in the
+   QuickBooks item list for ever and a product to clean up now, for no return. Reported, not
+   filtered: where to draw that line is a decision, not a rule. */
+export async function catalogReport(graph, getVendorMap, usedModels = new Set()) {
   const cat = await getVendorMap();
 
   /* RepairQ, for two separate jobs.
@@ -229,6 +234,10 @@ export async function catalogReport(graph, getVendorMap) {
       add('info', 'Do Not Order is set', p, 'Excluded from ordering on every job',
         'Correct for labour and allowances -- worth checking it is deliberate on a real product');
     }
+    if (isDiscontinued(p)) {
+      add('info', 'Discontinued', p, 'Flagged discontinued in SI',
+        'Left out of the QuickBooks import -- no action needed unless it is still being bought');
+    }
   }
 
   /* ---------- the files ---------- */
@@ -253,6 +262,7 @@ export async function catalogReport(graph, getVendorMap) {
     rq: rqRaw(p), usable: p.rq,
     inRq: rqSkus.size ? (rqRaw(p) && rqSkus.has(norm(rqRaw(p))) ? 'yes' : 'no') : '',
     doNotOrder: p.doNotOrder ? 'yes' : '', type: qboType(p, rqSkus), id: p.id,
+    discontinued: isDiscontinued(p), used: usedModels.has(p.model.trim().toLowerCase()),
   });
 
   const all = products.sort((a, b) => a.model.localeCompare(b.model)).map(row);
@@ -260,11 +270,13 @@ export async function catalogReport(graph, getVendorMap) {
   writeCsv(`${OUT}/catalog-master.csv`,
     ['Model', 'Manufacturer', 'Description', 'Category', 'Vendor', 'Part number', 'Unit cost',
      'Unit price', 'RepairQ SKU', 'Usable for stock', 'In RepairQ', 'Do not order',
-     'QuickBooks item type', 'Problems', 'Import ready', 'D-Tools Id'],
+     'Discontinued', 'Used on a job', 'QuickBooks item type', 'Problems', 'Import ready',
+     'D-Tools Id'],
     all.map(r => [r.model, r.mfr, r.desc, r.category, r.vendor, r.part, r.cost || '', r.price || '',
-      r.rq, r.usable ? 'yes' : '', r.inRq, r.doNotOrder, r.type,
+      r.rq, r.usable ? 'yes' : '', r.inRq, r.doNotOrder,
+      r.discontinued ? 'yes' : '', r.used ? 'yes' : '', r.type,
       issueCount.get(r.model.trim().toLowerCase()) ?? 0,
-      holdModels.has(r.model.trim().toLowerCase()) ? 'no' : 'yes', r.id]));
+      importable(r, holdModels) ? 'yes' : 'no', r.id]));
 
   /* Suppliers first, items second. Preferred Vendor only resolves if the vendor already
      exists in QuickBooks -- import items first and the column is dropped on every row
@@ -272,7 +284,7 @@ export async function catalogReport(graph, getVendorMap) {
   const suppliers = [...new Set(all.map(r => r.vendor).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   writeCsv(`${OUT}/qbo-suppliers.csv`, ['Vendor name'], suppliers.map(s => [s]));
 
-  const ready = all.filter(r => !holdModels.has(r.model.trim().toLowerCase()));
+  const ready = all.filter(r => importable(r, holdModels));
   const files = [];
   for (let i = 0; i < ready.length; i += QBO_ROWS) {
     const part = ready.slice(i, i + QBO_ROWS);
@@ -296,9 +308,16 @@ export async function catalogReport(graph, getVendorMap) {
 
   const types = new Map();
   for (const r of ready) types.set(r.type, (types.get(r.type) ?? 0) + 1);
+  // Said out loud, because a filter that quietly halves the item count is a filter somebody
+  // will later assume was a bug.
+  const skipped = all.filter(r => !importable(r, holdModels) && !r.discontinued &&
+    !holdModels.has(r.model.trim().toLowerCase())).length;
   console.log(
-    `\n  ${holdModels.size} product(s) held out of the QuickBooks file until fixed` +
-    `\n  ${ready.length} ready: ` + [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${n} ${t}`).join(', ') +
+    `\n  left out of the QuickBooks file:` +
+    `\n    ${holdModels.size} with a problem to fix first` +
+    `\n    ${all.filter(r => r.discontinued).length} discontinued` +
+    `\n    ${skipped} neither stocked nor ever quoted` +
+    `\n  ${ready.length} going in: ` + [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${n} ${t}`).join(', ') +
     `\n  ${suppliers.length} suppliers, to import as vendors BEFORE the items` +
     (QTY_AS_OF ? `\n  Inventory rows carry quantity 0 as of ${QTY_AS_OF}` :
                  '\n  Inventory rows carry no quantity (set CATALOG_QTY_AS_OF=MM/DD/YYYY for the live import)'));
@@ -331,17 +350,28 @@ function categoryOf(p) {
 }
 
 /* Labour and allowances, which are services in QuickBooks and have no vendor or cost by
-   design. TypeId 2 is labour in the SI payload.
-   Where a product carries no TypeId, Do Not Order is the fallback -- it is a flag somebody
-   set deliberately. A blank vendor and no cost is NOT used as a signal here, however much
-   it looks like one: that is also exactly what a carelessly created real product looks
-   like, and treating those as services would quietly excuse them from the very checks
-   meant to catch them. */
+   design.
+   A catalog product carries no TypeId -- the field simply is not in SI's product payload,
+   as the field list printed at the top of the run shows -- so labour is identified from
+   what is there: labour hours or labour types on the product, or a category that says so.
+   Do Not Order is the last fallback, being a flag somebody set deliberately.
+
+   A blank vendor and no cost is NOT used as a signal here, however much it looks like one.
+   That is also exactly what a carelessly created real product looks like, and treating
+   those as services would quietly excuse them from the checks meant to catch them. */
+const SERVICE_CATEGORY = /labou?r|service|allowance|freight|shipping|subcontract|per ?diem|misc/i;
 function isService(p) {
   const f = p?.full ?? {};
-  if (f.TypeId != null && f.TypeId !== '') return Number(f.TypeId) === 2;
+  if (Number(f.LaborHours) > 0) return true;
+  if ((f.LaborTypes?.length || f.ItemLaborTypes?.length) && !(p.cost > 0)) return true;
+  if (SERVICE_CATEGORY.test(str(f.Category)) || SERVICE_CATEGORY.test(str(f.Subcategory))) return true;
   return !!p.doNotOrder;
 }
+
+// SI has a Discontinued flag and the catalog carries plenty of them. They are history --
+// worth keeping in D-Tools so old quotes still read, worth keeping out of QuickBooks,
+// where every one is a row in the item list somebody has to scroll past for ever.
+function isDiscontinued(p) { return !!(p?.full ?? {}).Discontinued; }
 
 /* Inventory means QuickBooks keeps a quantity and FIFO cost layers for it, and somebody
    counts it at year end. Worth doing for what sits on the shelf, not for gear bought per
@@ -353,6 +383,22 @@ function qboType(p, rqSkus) {
   const raw = rqRaw(p);
   if (raw && rqSkus.has(norm(raw))) return 'Inventory';
   return 'Non-Inventory';
+}
+
+/* What goes into the QuickBooks file: stocked, quoted, or labour. Everything else stays in
+   D-Tools, where it costs nothing. If a never-quoted product gets specced in 2027, the
+   estimate push creates the item then -- nothing is lost by leaving it out now, and every
+   row left out is one nobody scrolls past and nobody has to clean.
+
+   Labour is in regardless of whether it looks quoted, and that is deliberate. orderLines()
+   filters to buyable lines -- it drops TypeId 2, Do Not Order and anything with no cost --
+   so labour can never appear in usedModels however many jobs carry it. Labour and
+   allowances are exactly what an invoice needs, so excluding them would break the estimate
+   push the moment a job had a labour line. It is a small set either way. */
+function importable(r, holdModels) {
+  if (r.discontinued) return false;
+  if (holdModels.has(r.model.trim().toLowerCase())) return false;
+  return r.type === 'Inventory' || r.type === 'Service' || r.used;
 }
 
 // Groups sharing a key, groups of one dropped -- the shape every duplicate check wants.

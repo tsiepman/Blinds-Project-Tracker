@@ -85,9 +85,12 @@ export async function pushStock(si, graph, getVendorMap, { dryRun = false } = {}
     console.log(`\nstock probe on ${v.model}: ${F_STOCK}=111  ${F_COMMITTED}=222  ${F_ONORDER}=333` +
       '\n  In SI, whichever field reads 111 is the stock field, 222 committed, 333 on order.');
     if (dryRun) { console.log('  (dry run -- nothing sent)'); return; }
-    await si.publishCatalog({ Name: file.catalogName || 'RepairQ Stock', IsMetric: false,
+    // D-Tools answers 200 whether or not it applied anything, so print the body: it is the
+    // only clue to whether catalog updates are enabled in SI Control Panel.
+    const reply = await si.publishCatalog({ Name: file.catalogName || 'RepairQ Stock', IsMetric: false,
       TotalProductsCount: 1, Products: [{ ...v.full, ...PROBE }] });
-    console.log('  sent -- check the product in the D-Tools catalog');
+    console.log(`  sent. D-Tools replied: ${String(reply).slice(0, 200) || '(empty body)'}`);
+    console.log('  If the product in SI is unchanged, catalog updates are probably off in Control Panel -> Manage Integrations.');
     return;
   }
 
@@ -127,7 +130,7 @@ export async function pushStock(si, graph, getVendorMap, { dryRun = false } = {}
   for (let i = 0; i < batch.length; i += CHUNK) {
     const part = batch.slice(i, i + CHUNK);
     try {
-      await si.publishCatalog({
+      const reply = await si.publishCatalog({
         Name: file.catalogName || 'RepairQ Stock',
         Description: `Stock, committed and on order from RepairQ, as of ${String(file.asOf || '').slice(0, 10)}`,
         IsMetric: false,
@@ -135,6 +138,7 @@ export async function pushStock(si, graph, getVendorMap, { dryRun = false } = {}
         Products: part,
       });
       sent += part.length;
+      if (i === 0) console.log(`  D-Tools replied: ${String(reply).slice(0, 200) || '(empty body)'}`);
     } catch (e) {
       console.log(`  ! stock push failed after ${sent}: ${e.message.slice(0, 200)}`);
       return;                                        // leave the stamp alone so it retries
