@@ -1,191 +1,199 @@
-// QuickBooks Online client.
+// QuickBooks Online — the accounting side of the fulfilment loop.
 //
-// STATUS: not live yet. QBO Plus is planned for purchase ~October 2026, ahead of the
-// Dec 31 2026 handover. Until then `stubInventory()` supplies fake numbers so the
-// D-Tools half of the sync can be built and tested end to end.
+// Why this lives in the sync and not in the Pull Log: Intuit's token exchange needs the
+// client secret as HTTP Basic auth. Anything in a page served from GitHub Pages is
+// readable by anyone who views source, so the browser can never hold it. The installers'
+// tools stay SharePoint-only; everything that touches QuickBooks happens here, where the
+// secrets already live.
 //
-// ---------------------------------------------------------------------------
-// Mapping the three SI custom fields onto QuickBooks
-// ---------------------------------------------------------------------------
-// Only one of the three is a native QuickBooks field. Worth knowing before wiring
-// this up, because the other two cost extra API calls:
+// The refresh token ROTATES on every use. Intuit hands back a new one with each refresh
+// and the old one stops working, so it has to be written somewhere durable before the
+// next run. A GitHub Action cannot write its own secrets, so the token is kept in
+// SharePoint and passed in through the store below. Get this wrong and the integration
+// works for weeks and then dies quietly, which is the worst way for it to fail.
 //
-//   Stock     -> Item.QtyOnHand. Native, one query, trivially available.
-//
-//   Committed -> No native equivalent. QBO Plus has no Sales Orders (that is a
-//                Desktop feature). The closest analogue is quantity sitting on open
-//                Estimates that have not yet been converted to an Invoice, which means
-//                querying Estimate objects and summing their line items per SKU.
-//
-//   Ordered   -> No native equivalent. Derived by querying PurchaseOrder objects still
-//                in an open//pending state and summing line items per SKU.
-//
-// So Stock works on day one; Committed and Ordered need aggregation passes that are
-// worth validating against real data before trusting them on a salesperson's screen.
-//
-// ---------------------------------------------------------------------------
-// The refresh-token trap
-// ---------------------------------------------------------------------------
-// Intuit refresh tokens ROTATE: every refresh returns a new refresh token and
-// invalidates the old one. They also expire after ~100 days of disuse. A scheduled
-// job that does not persist the new token somewhere durable will work perfectly in
-// testing and then die silently weeks later. `onTokenRefresh` exists for exactly this
-// -- see sync.mjs, which persists to a SharePoint list via Graph.
-//
-// This is the same class of bug as the `offline_access` scope fix on the Pull Log.
+// Intuit changed the refresh-token validity policy in November 2025 and the old "100 days"
+// figure is no longer something to rely on. The design does not depend on a lifetime: it
+// persists every rotation, and when Intuit finally refuses with invalid_grant it says so
+// loudly, because the fix is a human re-authorising and nothing else will do.
 
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
-const API_BASE = {
-  production: 'https://quickbooks.api.intuit.com',
+const API = {
   sandbox: 'https://sandbox-quickbooks.api.intuit.com',
+  production: 'https://quickbooks.api.intuit.com',
 };
+// Minor versions below 75 were retired on 1 August 2025. Pinned rather than floating, so
+// Intuit changing the default cannot change our behaviour without us choosing it.
+const MINOR_VERSION = '75';
 
-export class QuickBooks {
-  /**
-   * @param {object}   opts
-   * @param {string}   opts.clientId
-   * @param {string}   opts.clientSecret
-   * @param {string}   opts.refreshToken   Current refresh token (rotates on every use).
-   * @param {string}   opts.realmId        QBO company id.
-   * @param {'production'|'sandbox'} [opts.environment]
-   * @param {(token: string) => Promise<void>} [opts.onTokenRefresh]
-   *        Called with the NEW refresh token after each refresh. Must persist it.
-   */
-  constructor({ clientId, clientSecret, refreshToken, realmId, environment = 'production', onTokenRefresh }) {
-    Object.assign(this, { clientId, clientSecret, refreshToken, realmId, environment, onTokenRefresh });
-    this.accessToken = null;
+export class ReauthorizeNeeded extends Error {
+  constructor(msg) { super(msg); this.name = 'ReauthorizeNeeded'; }
+}
+
+export class Qbo {
+  /* store: { read(): Promise<{refreshToken, realmId}>, write(obj): Promise<void> }
+     Injected so this module knows nothing about SharePoint. */
+  constructor({ clientId, clientSecret, environment = 'production', store }) {
+    for (const [k, v] of Object.entries({ clientId, clientSecret, store })) {
+      if (!v) throw new Error(`Qbo: ${k} is missing.`);
+    }
+    Object.assign(this, { clientId, clientSecret, store });
+    this.base = API[environment] || API.production;
+    this.environment = environment;
+    this.access = null;
+    this.accessExpires = 0;
+    this.realmId = null;
   }
 
-  async #refreshAccessToken() {
-    const basic = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
+  async #refresh() {
+    const saved = await this.store.read();
+    if (!saved?.refreshToken) {
+      throw new ReauthorizeNeeded('No QuickBooks refresh token stored. Authorise once and save the token.');
+    }
+    this.realmId = saved.realmId || this.realmId;
+
     const res = await fetch(TOKEN_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${basic}`,
+        Authorization: 'Basic ' + Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
+        Accept: 'application/json',
       },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: this.refreshToken,
-      }),
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: saved.refreshToken }),
     });
-
+    const text = await res.text();
     if (!res.ok) {
-      throw new Error(`QBO token refresh failed: HTTP ${res.status} ${await res.text()}`);
+      // invalid_grant means the stored token is spent or revoked. No amount of retrying
+      // fixes it -- somebody has to click through Intuit's consent screen again.
+      if (/invalid_grant/i.test(text)) {
+        throw new ReauthorizeNeeded(
+          'QuickBooks refused the stored refresh token (invalid_grant). Re-authorise and save a new token — ' +
+          'nothing will post until that is done.');
+      }
+      throw new Error(`QuickBooks token refresh failed: ${res.status} ${text.slice(0, 200)}`);
     }
+    const d = JSON.parse(text);
+    this.access = d.access_token;
+    // A minute of slack so a long run cannot straddle the expiry.
+    this.accessExpires = Date.now() + ((d.expires_in ?? 3600) - 60) * 1000;
 
-    const data = await res.json();
-    this.accessToken = data.access_token;
-
-    // Rotation: persist immediately, before any other call can fail and lose it.
-    if (data.refresh_token && data.refresh_token !== this.refreshToken) {
-      this.refreshToken = data.refresh_token;
-      await this.onTokenRefresh?.(data.refresh_token);
+    // Persist FIRST, use second. If the write fails we would rather fail now than carry on
+    // with a token the store has never seen -- that is how the chain gets broken.
+    if (d.refresh_token && d.refresh_token !== saved.refreshToken) {
+      await this.store.write({ ...saved, refreshToken: d.refresh_token, rotatedAt: new Date().toISOString() });
     }
-    return this.accessToken;
+    return this.access;
   }
 
-  async #query(sql) {
-    if (!this.accessToken) await this.#refreshAccessToken();
+  async #token() {
+    if (this.access && Date.now() < this.accessExpires) return this.access;
+    return this.#refresh();
+  }
 
-    const url = `${API_BASE[this.environment]}/v3/company/${this.realmId}/query?query=${encodeURIComponent(sql)}`;
-    const res = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${this.accessToken}`, 'Accept': 'application/json' },
+  async req(method, path, body, attempt = 1) {
+    const token = await this.#token();
+    const realm = this.realmId || (await this.store.read())?.realmId;
+    if (!realm) throw new Error('Qbo: no realmId (company id) stored.');
+    const join = path.includes('?') ? '&' : '?';
+    const res = await fetch(`${this.base}/v3/company/${realm}${path}${join}minorversion=${MINOR_VERSION}`, {
+      method,
+      headers: {
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/json',
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
     });
 
-    if (!res.ok) throw new Error(`QBO query failed: HTTP ${res.status} ${await res.text()}`);
-    return (await res.json()).QueryResponse ?? {};
+    // 401 once means the access token died early; refresh and try again. Twice means
+    // something else is wrong and retrying would just hammer Intuit.
+    if (res.status === 401 && attempt === 1) {
+      this.access = null;
+      return this.req(method, path, body, 2);
+    }
+    // Intuit throttles per realm. Back off rather than dropping the pull on the floor --
+    // an unposted pull is product out the door that nobody invoiced.
+    if ((res.status === 429 || res.status >= 500) && attempt < 4) {
+      await new Promise(r => setTimeout(r, attempt * 2000));
+      return this.req(method, path, body, attempt + 1);
+    }
+    const text = await res.text();
+    if (!res.ok) throw new Error(`QuickBooks ${method} ${path} -> ${res.status} ${text.slice(0, 300)}`);
+    return text ? JSON.parse(text) : null;
   }
 
-  // QBO caps query results at 1000 rows, so page with STARTPOSITION/MAXRESULTS.
-  async #queryAll(select, entity) {
+  /* The query endpoint takes a SQL-ish string. Single quotes inside values have to be
+     doubled or the query breaks on any customer with an apostrophe in their name, which
+     in this book is a matter of time. */
+  async query(sql) {
+    const d = await this.req('GET', '/query?query=' + encodeURIComponent(sql));
+    const qr = d?.QueryResponse ?? {};
+    const key = Object.keys(qr).find(k => Array.isArray(qr[k]));
+    return key ? qr[key] : [];
+  }
+
+  /* Reads everything, not just the first page. QBO caps a query at 1000 rows and simply
+     stops -- no flag, no warning -- so a shop with more estimates than that would silently
+     see only some of them. */
+  async queryAll(sql, pageSize = 500) {
     const out = [];
-    const page = 1000;
-    for (let start = 1; ; start += page) {
-      const qr = await this.#query(`${select} STARTPOSITION ${start} MAXRESULTS ${page}`);
-      const rows = qr[entity] ?? [];
-      out.push(...rows);
-      if (rows.length < page) break;
+    for (let start = 1; ; start += pageSize) {
+      const page = await this.query(`${sql} STARTPOSITION ${start} MAXRESULTS ${pageSize}`);
+      out.push(...page);
+      if (page.length < pageSize) break;
     }
     return out;
   }
 
-  /**
-   * Returns Map<sku, { stock, committed, ordered }> keyed by the item's SKU.
-   *
-   * The SKU must equal the D-Tools SI Model string exactly (dashes and spaces
-   * included, e.g. "AN-520-AP-I-1"). Items with no SKU are skipped -- they cannot be
-   * matched, and silently guessing from Name would produce wrong stock numbers.
-   */
-  async getInventory() {
-    const items = await this.#queryAll(
-      "SELECT Id, Name, Sku, QtyOnHand FROM Item WHERE Type = 'Inventory' AND Active = true",
-      'Item',
-    );
-
-    const inv = new Map();
-    for (const it of items) {
-      if (!it.Sku) continue;
-      inv.set(String(it.Sku).trim().toLowerCase(), {
-        stock: Number(it.QtyOnHand ?? 0),
-        committed: 0,
-        ordered: 0,
-      });
-    }
-
-    await this.#addOrdered(inv);
-    await this.#addCommitted(inv);
-    return inv;
+  estimates({ since } = {}) {
+    const where = since ? ` WHERE MetaData.LastUpdatedTime > '${since}'` : '';
+    return this.queryAll(`SELECT * FROM Estimate${where}`);
   }
+  invoice(id) { return this.query(`SELECT * FROM Invoice WHERE Id = '${String(id).replace(/'/g, "''")}'`).then(r => r[0] || null); }
+  items() { return this.queryAll('SELECT * FROM Item'); }
+  customers() { return this.queryAll('SELECT * FROM Customer'); }
 
-  // Quantity on open purchase orders, summed per SKU.
-  async #addOrdered(inv) {
-    const pos = await this.#queryAll(
-      "SELECT Id, POStatus, Line FROM PurchaseOrder WHERE POStatus = 'Open'",
-      'PurchaseOrder',
-    );
-    for (const po of pos) accumulate(inv, po.Line, 'ordered');
-  }
+  createInvoice(invoice) { return this.req('POST', '/invoice', invoice).then(r => r?.Invoice); }
 
-  // Quantity on open (not yet invoiced) estimates, summed per SKU.
-  // QBO Plus has no Sales Order object; estimates are the nearest thing to a
-  // commitment. Validate this against how the team actually quotes before trusting it.
-  async #addCommitted(inv) {
-    const ests = await this.#queryAll(
-      "SELECT Id, TxnStatus, Line FROM Estimate WHERE TxnStatus IN ('Pending', 'Accepted')",
-      'Estimate',
-    );
-    for (const e of ests) accumulate(inv, e.Line, 'committed');
+  /* Full-object update, not a sparse one. Sparse updates are documented but behave
+     inconsistently across entity types, and an invoice whose lines are half-replaced is a
+     bill that goes out wrong. Read, change, send the whole thing back with its SyncToken. */
+  updateInvoice(invoice) { return this.req('POST', '/invoice', invoice).then(r => r?.Invoice); }
+
+  /** Proves the credentials and the company before anything is written. */
+  async whoami() {
+    const info = await this.req('GET', '/companyinfo/' + (this.realmId || (await this.store.read())?.realmId));
+    const c = info?.CompanyInfo ?? {};
+    return { name: c.CompanyName || '', legalName: c.LegalName || '', country: c.Country || '', environment: this.environment };
   }
 }
 
-function accumulate(inv, lines, field) {
-  for (const line of lines ?? []) {
-    const detail = line.SalesItemLineDetail ?? line.ItemBasedExpenseLineDetail;
-    const sku = detail?.ItemRef?.name;
-    if (!sku) continue;
-    const row = inv.get(String(sku).trim().toLowerCase());
-    if (row) row[field] += Number(detail.Qty ?? 0);
-  }
-}
-
-/**
- * Fake inventory for testing the D-Tools half before QuickBooks exists.
- * Given SI models, returns deterministic quantities so repeated runs are stable
- * and a genuine change is distinguishable from random noise.
- */
-export function stubInventory(models) {
-  const inv = new Map();
-  for (const m of models) {
-    const key = String(m).trim().toLowerCase();
-    let h = 0;
-    for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    inv.set(key, {
-      stock: h % 40,
-      committed: h % 7,
-      ordered: h % 5,
-    });
-  }
-  return inv;
+/* Token storage in SharePoint.
+   A refresh token is full access to the accounting system, so the list it lives in should
+   have its permission inheritance broken -- app plus Trevor, nobody else. The sync reaches
+   it with app-only credentials either way; the restriction is about people. */
+export function sharePointTokenStore(graph, listName = 'SyncConfig', title = 'qbo') {
+  let cached = null;
+  return {
+    async read() {
+      if (cached) return cached;
+      const rows = await graph.items(listName).catch(() => []);
+      const row = rows.find(i => (i.fields ?? {}).Title === title);
+      if (!row) return null;
+      let data = {};
+      try { data = JSON.parse(row.fields.DataJson || '{}'); } catch { data = {}; }
+      cached = { ...data, _itemId: row.id };
+      return cached;
+    },
+    async write(obj) {
+      const { _itemId, ...data } = obj;
+      const fields = { Title: title, DataJson: JSON.stringify(data) };
+      if (_itemId) await graph.update(listName, _itemId, fields);
+      else {
+        const made = await graph.create(listName, fields);
+        obj._itemId = made?.id;
+      }
+      cached = { ...data, _itemId: _itemId || obj._itemId };
+    },
+  };
 }
