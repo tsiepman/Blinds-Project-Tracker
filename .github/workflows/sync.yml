@@ -1,60 +1,49 @@
-name: Project board sync
+name: Inventory sync
 
 on:
   schedule:
-    # Every 20 minutes during working hours, Winnipeg (UTC-5 CDT / UTC-6 CST).
-    # The board is a working-hours tool, and there is nothing to refresh overnight.
-    # Off the hour on purpose: GitHub delays or drops scheduled runs at :00 when it is busy.
-    - cron: '7,27,47 12-23 * * 1-5'
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Dry run — report what would change, write nothing'
-        type: boolean
-        default: true
+    # Every 2 hours, matching SI's catalog pull interval. Syncing more often than SI
+    # pulls just queues messages that pile up behind each other.
+    - cron: '15 */2 * * *'
+  workflow_dispatch:        # lets you trigger a run by hand from the Actions tab
+
+permissions:
+  contents: write           # needed to commit state.json back to the repo
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Anthropic's SDK, for summarising installer write-ups. Installed fresh each run so
-      # the repository needs no package.json. If this ever fails, the sync still runs --
-      # notes are saved and matched, just without summaries.
-      - name: Install the Claude SDK
-        run: npm install --no-save @anthropic-ai/sdk
-        continue-on-error: true
-
-      - name: Sync D-Tools projects to SharePoint
+      - name: Refresh SI product Id map
         env:
           DTOOLS_API_KEY: ${{ secrets.DTOOLS_API_KEY }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Optional repository variable: claude-sonnet-5 or claude-haiku-4-5 to spend less.
-          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
-          # Stock push into the D-Tools catalog. Set the repository variable
-          # STOCK_PUSH_LIMIT to 1 for the first real run, check that product in SI, then
-          # delete the variable to let the rest go. STOCK_PUSH_FORCE re-sends a report
-          # that has already been pushed.
-          STOCK_PUSH_LIMIT: ${{ vars.STOCK_PUSH_LIMIT }}
-          STOCK_PUSH_FORCE: ${{ vars.STOCK_PUSH_FORCE }}
-          # STOCK_PUSH_PROBE=<model> writes 111/222/333 to that one product, to prove which
-          # CustomField each label in SI actually is. The three below then record the answer.
-          STOCK_PUSH_PROBE: ${{ vars.STOCK_PUSH_PROBE }}
-          # Models still in the catalog feed that no longer exist in SI, comma-separated.
-          # They hold RepairQ SKUs hostage from live products; CS-206 is the known one.
-          CATALOG_IGNORE: ${{ vars.CATALOG_IGNORE }}
-          # Who owns a RepairQ SKU two live products share: "SKU=Model, SKU=Model".
-          CATALOG_SKU_OWNER: ${{ vars.CATALOG_SKU_OWNER }}
-          STOCK_FIELD_STOCK: ${{ vars.STOCK_FIELD_STOCK }}
-          STOCK_FIELD_COMMITTED: ${{ vars.STOCK_FIELD_COMMITTED }}
-          STOCK_FIELD_ONORDER: ${{ vars.STOCK_FIELD_ONORDER }}
-        # Scheduled runs have no inputs, so this is empty and they always write.
-        run: node sync.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: node sync.mjs --harvest
 
+      - name: Sync inventory
+        env:
+          DTOOLS_API_KEY: ${{ secrets.DTOOLS_API_KEY }}
+          QBO_CLIENT_ID: ${{ secrets.QBO_CLIENT_ID }}
+          QBO_CLIENT_SECRET: ${{ secrets.QBO_CLIENT_SECRET }}
+          QBO_REFRESH_TOKEN: ${{ secrets.QBO_REFRESH_TOKEN }}
+          QBO_REALM_ID: ${{ secrets.QBO_REALM_ID }}
+          # Until QuickBooks exists, set repository variable USE_STUB to 1.
+          # sync.mjs refuses to publish stub quantities, so this stays a safe no-op
+          # run until real QBO credentials are in place.
+          USE_STUB: ${{ vars.USE_STUB }}
+        run: node sync.mjs
+
+      # state.json records the last quantities published so the next run only sends
+      # what actually changed. Without persisting it, every run republishes everything.
+      - name: Persist sync state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state.json product-ids.json
+          git diff --staged --quiet || git commit -m "Update sync state [skip ci]"
+          git push
