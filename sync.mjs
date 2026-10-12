@@ -11,6 +11,7 @@ import { DTools, phaseEstimate, taskSpans, orderLines, catalogVendors,
 import { Graph } from './graph.mjs';
 import { processWriteups } from './writeups.mjs';
 import { pushStock } from './stockpush.mjs';
+import { catalogReport } from './catalog.mjs';
 import { Qbo, sharePointTokenStore, ReauthorizeNeeded } from './qbo.mjs';
 import { createHash } from 'node:crypto';
 
@@ -310,6 +311,14 @@ async function main() {
   // SI sees what is on the shelf. Only runs when Brian has loaded a newer report.
   try { await pushStock(si, graph, getVendorMap, { dryRun }); }
   catch (e) { failed.push('stock push'); console.log(`  ! stock push: ${e.message.slice(0, 200)}`); }
+
+  // Catalog health and the QuickBooks item list. On request only -- it reads every catalog
+  // product, which is not work for a twenty-minute tick. Writes CSVs into catalog-report/
+  // that the workflow then uploads as an artifact. See catalog.mjs.
+  if (String(process.env.CATALOG_REPORT || '') === 'true') {
+    try { await catalogReport(graph, getVendorMap); }
+    catch (e) { failed.push('catalog report'); console.log(`  ! catalog report: ${e.message.slice(0, 200)}`); }
+  }
 
   // Installer write-ups: notes the Power Automate flow copied into WorkOrderNotes are
   // summarised once and attached to their field visit. See writeups.mjs.
