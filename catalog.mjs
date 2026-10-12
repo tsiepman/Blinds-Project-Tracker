@@ -175,21 +175,31 @@ export async function catalogReport(graph, getVendorMap, usedModels = new Set())
       'Leave the SKU on the one product it belongs to, clear CustomField1 on the rest');
   }
 
-  // A SKU that is not in the RepairQ report at all. It looks like a working link and is
-  // not one: the product can never show stock and nobody can tell why. Read from the raw
-  // field, because catalogVendors has already blanked the shared ones.
+  /* A SKU that does not appear in the stock report Brian loaded.
+     This is information, NOT a problem, and it was a blocker in the first version of this
+     file by mistake. The report is a STOCK report: an item sitting at zero with nothing
+     committed and nothing on order has no reason to be in it. When this check first ran it
+     produced 694 rows, every one a different SKU on a single product, all of them in
+     RepairQ's own format -- which is what a list of real items at zero looks like, not a
+     list of typos.
+     Telling a genuinely wrong SKU from a correct one at zero stock needs a full RepairQ
+     ITEM export to compare against, which is not what gets loaded on the Orders page. Until
+     that exists this says only what it can honestly say: no stock figure is available. */
   if (rqSkus.size) {
-    const dead = new Map();                       // SKU -> models carrying it
+    const noFigure = [];
     for (const p of products) {
       const raw = rqRaw(p);
       if (!raw || rqSkus.has(norm(raw)) || sharedSkus.has(norm(raw))) continue;
-      if (!dead.has(raw)) dead.set(raw, []);
-      dead.get(raw).push(p.model);
+      noFigure.push(p);
     }
-    for (const [sku, models] of [...dead].sort((a, b) => b[1].length - a[1].length)) {
-      add('blocker', 'RepairQ SKU not in RepairQ', { model: models[0] },
-        `${sku} on ${models.length} product(s): ${models.slice(0, 6).join(' / ')}${models.length > 6 ? ` / +${models.length - 6} more` : ''}`,
-        'Replace with the real RQ SKU, or clear CustomField1 if the product is not stocked');
+    for (const p of noFigure) {
+      add('info', 'No stock figure for this SKU', p,
+        `${rqRaw(p)} is not in the stock report of ${rqAsOf || 'unknown date'}`,
+        'Usually means zero stock with nothing on order, which is fine. Only worth checking if you expected stock on this product');
+    }
+    if (noFigure.length) {
+      console.log(`  (${noFigure.length} products carry a RepairQ SKU that is not in the stock report -- ` +
+        'reported as information, not a problem: a stock report has no reason to list an item at zero)');
     }
   }
 
