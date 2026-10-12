@@ -104,6 +104,13 @@ async function main() {
   const visits = [];
   const stats = { withStart: 0, withTasks: 0, board: 0, active: 0, lines: 0, catalog: 0, project: 0, noVendor: 0 };
   const noVendorModels = new Map();                 // model -> number of jobs it is on
+  // Every model anybody has actually quoted, for the catalog report. A catalog product
+  // that appears on no job is one nobody needs in QuickBooks.
+  const usedModels = new Set();
+  // How many projects were read in full this run. A project that did not need rebuilding
+  // contributes only its buyable lines from the cached copy, so the catalog report says
+  // how complete the picture is rather than quietly implying it is all of them.
+  let detailRead = 0;
 
   for (const p of projects) {
     const prior = existing.get(p.Id);
@@ -137,6 +144,14 @@ async function main() {
       // first cuts a job to roughly 70, so this stays one row per project and the
       // Orders page aggregates across them in a single request.
       orders = JSON.stringify(orderLines(detail, await getVendorMap()));
+      // Every model on the job, for the catalog report -- not just the buyable ones.
+      // orderLines() drops labour, Do Not Order and zero-cost items because none of them
+      // are ordered, but all of them get INVOICED, so all of them need an item in
+      // QuickBooks. Taken from the raw detail for that reason.
+      detailRead++;
+      for (const it of detail.Items ?? []) {
+        if (it.Model) usedModels.add(it.Model.trim().toLowerCase());
+      }
     }
 
     // Tasks change independently of the project, so refresh them every run -- but only for
@@ -184,6 +199,7 @@ async function main() {
 
     // Tallies for the end-of-run report.
     const lines = JSON.parse(orders);
+    for (const l of lines) if (l.model) usedModels.add(l.model.trim().toLowerCase());
     stats.withStart += startDate ? 1 : 0;
     stats.withTasks += spans.length ? 1 : 0;
     stats.board += Number(p.Price || 0) >= 10000 ? 1 : 0;   // report only -- matches the board's MIN_PRICE
@@ -316,7 +332,9 @@ async function main() {
   // product, which is not work for a twenty-minute tick. Writes CSVs into catalog-report/
   // that the workflow then uploads as an artifact. See catalog.mjs.
   if (String(process.env.CATALOG_REPORT || '') === 'true') {
-    try { await catalogReport(graph, getVendorMap); }
+    console.log(`\n  (models quoted: ${usedModels.size}, from ${detailRead} of ${projects.length} projects read in full` +
+      `${detailRead < projects.length ? ' -- the rest contributed their buyable lines only' : ''})`);
+    try { await catalogReport(graph, getVendorMap, usedModels); }
     catch (e) { failed.push('catalog report'); console.log(`  ! catalog report: ${e.message.slice(0, 200)}`); }
   }
 

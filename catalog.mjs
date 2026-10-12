@@ -359,13 +359,10 @@ function categoryOf(p) {
    A blank vendor and no cost is NOT used as a signal here, however much it looks like one.
    That is also exactly what a carelessly created real product looks like, and treating
    those as services would quietly excuse them from the checks meant to catch them. */
-const SERVICE_CATEGORY = /labou?r|service|allowance|freight|shipping|subcontract|per ?diem|misc/i;
+const SERVICE_CATEGORY = /^(labou?r|services?|per ?diem|levy|freight|shipping|subcontract|allowance)/i;
 function isService(p) {
   const f = p?.full ?? {};
-  if (Number(f.LaborHours) > 0) return true;
-  if ((f.LaborTypes?.length || f.ItemLaborTypes?.length) && !(p.cost > 0)) return true;
-  if (SERVICE_CATEGORY.test(str(f.Category)) || SERVICE_CATEGORY.test(str(f.Subcategory))) return true;
-  return !!p.doNotOrder;
+  return SERVICE_CATEGORY.test(str(f.Category)) || SERVICE_CATEGORY.test(str(f.Subcategory));
 }
 
 // SI has a Discontinued flag and the catalog carries plenty of them. They are history --
