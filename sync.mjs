@@ -65,8 +65,11 @@ async function main() {
   const getVendorMap = async () => {
     if (!vendorMap) {
       vendorMap = await catalogVendors(si, catalogs);
+      // Named while there were two or three. ghosts.txt made it 195, so the count is the
+      // useful figure and the list itself lives in the file.
+      const ign = vendorMap.ignored ?? [];
       console.log(`  (catalog read: ${vendorMap.size} products` +
-        ((vendorMap.ignored ?? []).length ? `, ignoring ${vendorMap.ignored.join(', ')}` : '') + ')');
+        (ign.length ? `, ignoring ${ign.length} ${ign.length <= 4 ? '(' + ign.join(', ') + ')' : 'deleted products still in the feed — see ghosts.txt'}` : '') + ')');
       // A RepairQ SKU on two products can't identify either, so both lose their stock
       // figure on the Orders page. Each line here is one catalog edit that fixes it.
       const shared = vendorMap.sharedRq ?? [];
@@ -107,6 +110,18 @@ async function main() {
   // Every model anybody has actually quoted, for the catalog report. A catalog product
   // that appears on no job is one nobody needs in QuickBooks.
   const usedModels = new Set();
+  /* Both the plain form and the punctuation-stripped one. A project item is a COPY of the
+     catalog product, so renaming the catalog entry leaves every existing quote spelling it
+     the old way -- which would make a renamed product look as though nobody had ever
+     quoted it, and drop it out of the QuickBooks item list. Merging C4-IOXV2 into
+     C4-IOX-V2 is exactly that case, and it is about to happen eighteen times.
+     Stripping punctuation costs nothing: the worst a false match can do is keep an item
+     that nobody needed. */
+  const addUsed = m => {
+    const s = String(m).trim();
+    usedModels.add(s.toLowerCase());
+    usedModels.add(s.replace(/[^A-Za-z0-9]/g, '').toUpperCase());
+  };
   // How many projects were read in full this run. A project that did not need rebuilding
   // contributes only its buyable lines from the cached copy, so the catalog report says
   // how complete the picture is rather than quietly implying it is all of them.
@@ -149,9 +164,7 @@ async function main() {
       // are ordered, but all of them get INVOICED, so all of them need an item in
       // QuickBooks. Taken from the raw detail for that reason.
       detailRead++;
-      for (const it of detail.Items ?? []) {
-        if (it.Model) usedModels.add(it.Model.trim().toLowerCase());
-      }
+      for (const it of detail.Items ?? []) if (it.Model) addUsed(it.Model);
     }
 
     // Tasks change independently of the project, so refresh them every run -- but only for
@@ -199,7 +212,7 @@ async function main() {
 
     // Tallies for the end-of-run report.
     const lines = JSON.parse(orders);
-    for (const l of lines) if (l.model) usedModels.add(l.model.trim().toLowerCase());
+    for (const l of lines) if (l.model) addUsed(l.model);
     stats.withStart += startDate ? 1 : 0;
     stats.withTasks += spans.length ? 1 : 0;
     stats.board += Number(p.Price || 0) >= 10000 ? 1 : 0;   // report only -- matches the board's MIN_PRICE

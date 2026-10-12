@@ -272,7 +272,9 @@ export async function catalogReport(graph, getVendorMap, usedModels = new Set())
     rq: rqRaw(p), usable: p.rq,
     inRq: rqSkus.size ? (rqRaw(p) && rqSkus.has(norm(rqRaw(p))) ? 'yes' : 'no') : '',
     doNotOrder: p.doNotOrder ? 'yes' : '', type: qboType(p, rqSkus), id: p.id,
-    discontinued: isDiscontinued(p), used: usedModels.has(p.model.trim().toLowerCase()),
+    discontinued: isDiscontinued(p), updated: updatedOf(p),
+    // Either spelling counts -- see addUsed() in sync.mjs for why the stripped form matters.
+    used: usedModels.has(p.model.trim().toLowerCase()) || usedModels.has(norm(p.model)),
   });
 
   const all = products.sort((a, b) => a.model.localeCompare(b.model)).map(row);
@@ -280,11 +282,11 @@ export async function catalogReport(graph, getVendorMap, usedModels = new Set())
   writeCsv(`${OUT}/catalog-master.csv`,
     ['Model', 'Manufacturer', 'Description', 'Category', 'Vendor', 'Part number', 'Unit cost',
      'Unit price', 'RepairQ SKU', 'Usable for stock', 'In RepairQ', 'Do not order',
-     'Discontinued', 'Used on a job', 'QuickBooks item type', 'Problems', 'Import ready',
-     'D-Tools Id'],
+     'Discontinued', 'Used on a job', 'Last edited in SI', 'QuickBooks item type',
+     'Problems', 'Import ready', 'D-Tools Id'],
     all.map(r => [r.model, r.mfr, r.desc, r.category, r.vendor, r.part, r.cost || '', r.price || '',
       r.rq, r.usable ? 'yes' : '', r.inRq, r.doNotOrder,
-      r.discontinued ? 'yes' : '', r.used ? 'yes' : '', r.type,
+      r.discontinued ? 'yes' : '', r.used ? 'yes' : '', r.updated, r.type,
       issueCount.get(r.model.trim().toLowerCase()) ?? 0,
       importable(r, holdModels) ? 'yes' : 'no', r.id]));
 
@@ -348,6 +350,12 @@ function mfrOf(p) { const f = p?.full ?? {}; return str(f.Manufacturer || f.Mfr)
 function descOf(p) { const f = p?.full ?? {}; return str(f.Description || f.ShortDescription || f.LongDescription); }
 function priceOf(p) { const f = p?.full ?? {}; return Number(f.UnitPrice ?? f.Price) || 0; }
 function rqRaw(p) { const v = str(p?.full?.CustomField1); return (v && v !== '-') ? v : ''; }
+/* When SI last published a change to this product. Worth having in the export for two
+   reasons: it tells you whether a fix you remember making actually reached the feed, and
+   it separates products in live use from ones untouched for years. Sliced, not parsed --
+   D-Tools sends local wall-clock time with no zone, and constructing a Date here would
+   shift the day. */
+function updatedOf(p) { return str(p?.full?.UpdatedOn).slice(0, 10); }
 
 /* Category, as "Category:Subcategory" -- QuickBooks reads the colon as one level of
    nesting, per its own sample file. Any colon already inside either part is stripped,

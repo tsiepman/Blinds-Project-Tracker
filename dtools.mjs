@@ -16,6 +16,8 @@
 // Auth is a single API key header, generated per-user per-integration in
 // SI Control Panel → Manage Integrations.
 
+import { readFile } from 'node:fs/promises';
+
 const BASE = 'https://api.d-tools.com/si';
 
 export class DTools {
@@ -289,6 +291,17 @@ export async function catalogVendors(si, catalogs) {
   // CATALOG_IGNORE, comma-separated models, so removing one needs no code change.
   const ignore = new Set(String(process.env.CATALOG_IGNORE || '')
     .split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+  /* ghosts.txt is the same thing at scale: 194 of them, found by diffing a full SI catalog
+     export against this feed. A repository variable was fine for one or two; a list this
+     size belongs in a file where it can be reviewed and diffed. Both sources are merged, so
+     CATALOG_IGNORE stays useful for a ghost spotted between exports. */
+  try {
+    const text = await readFile(new URL('./ghosts.txt', import.meta.url), 'utf8');
+    for (const line of text.split('\n')) {
+      const m = line.split('#')[0].trim().toLowerCase();
+      if (m) ignore.add(m);
+    }
+  } catch { /* no ghosts.txt is fine -- CATALOG_IGNORE alone still works */ }
   // Where two live products share a RepairQ SKU, both normally lose it -- neither can be
   // trusted to mean the other's stock. CATALOG_SKU_OWNER says which product it really
   // belongs to: "AVARAF000179=RG6, AVARCF000085=C4-T4IW10-WH". The named product keeps

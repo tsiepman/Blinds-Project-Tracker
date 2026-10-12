@@ -1,0 +1,224 @@
+# Ghost products: in the D-Tools integration catalog feed, gone from SI.
+#
+# D-Tools does not reliably send a DeletedProductIds message when a catalog product is
+# deleted, so the feed serves it for ever. A ghost holding a RepairQ code blanks that code
+# on the live product sharing it -- which is how CS-206 cost the 16-2 speaker wire its
+# stock figure, and how a deleted Blaze record cost the Sonance PowerZone amp its own.
+#
+# One Model per line. Blank lines and # comments ignored, matching is case-insensitive.
+# Read by catalogVendors() in dtools.mjs, alongside the CATALOG_IGNORE repository variable.
+#
+# CAUTION: a Model listed here is suppressed whatever the reason. If one of these is ever
+# recreated in SI as a real product, delete its line or it will stay invisible.
+#
+# Built by diffing a full SI catalog export against the feed, 12 October 2026:
+#   SI export 5,223 products / feed 5,412. Excluded from this list:
+#     - the AC-BT-10KUHD family, renamed the same day and not yet published to the feed
+#       (a rename clears its own old key in dtools.mjs, so those are not ghosts)
+#
+# CW-1-RW, CW-2-RW and CW-4-RW ARE in the list. RW is not a colour in Lutron's CW range --
+# that is the SC range, SC-1-RW..SC-6-RW -- so they were mis-entered and correctly deleted.
+# Confirmed with Trevor, 12 October 2026. RepairQ still holds stock against them
+# (AVARLT000272/273/275), so if there are wallplates on that shelf they are SC-x-RW, and the
+# closing stocktake needs to count them against the right product.
+#
+# To refresh: export the catalog from SI (clear filters, select all, export) and re-run
+# the diff against catalog-master.csv from the catalog report.
+
+01303-001
+471104
+5.1 Surround Sound pre-wire
+5E-01253001
+5E-01273001
+5E-01280001
+6002-FMC-II
+65" Storm
+691
+7" All-In-One Pro Panel
+705S3
+A1061W
+Alexa Echo Dot
+AMP8100
+ANU-A650-US00
+BurialCat5e
+C2APC
+C2N-AMP-6X100
+C2N-CBD-P-W-S
+C3COM-3
+C3IO-16
+C3IR-8
+C4-BBDB-Z-DORB
+C4-BBDB-Z-LPB
+C4-BBDB-Z-VB
+C4-BBDBK-Z-ORB
+C4-BBDBKP-Z-DORB
+C4-BBDBKP-Z-LPB
+C4-BBDBKP-Z-ORB
+C4-BBDBKP-Z-VB
+C4-BBSHL-ORB
+C4-BBSHR-ORB
+C4-BSDBKP-Z-PC
+C4-BSDBKP-Z-SC
+C4-BSDBKP-Z-SN
+CAB-IR-LINK
+CAEN-7X2
+CAEN-BLOCK
+CAT5E
+CAT5E - FT6
+CAT5E Plenum
+CEN-CI3-1
+CEN-GWEXER
+CEN-IO-RY-104
+CEN-SW-POE-5
+CLC-1LEDPWM-RGBW-EX
+CLK-BD-8285-056-AC5
+CLK-YL-YRD210-CR-619
+CLK-YL-YRD226-CR2-619
+CLK-YL-YRD256-CR2
+CLT-1FAN4
+CLT-2DIMU8
+CLT-4HSW4
+CLX-1FAN4
+CLX-2DIMU8
+CLX-4HSW4
+CM-59/6
+CM60DTD
+CNPWS-75
+CNTBLOCK
+Connect 168
+Connect 354
+CONNECT164
+CONNECT88
+Corridor 8173
+Corridor 8175
+Corridor 8177
+CP3
+CP4
+CS-202
+CS-203
+CS-204
+CS-208
+CW-1-RW
+CW-2-RW
+CW-4-RW
+D-ALINP
+D-DIWAC
+D101
+D201
+D202
+DAI-310IPVF
+DAI-390AHDVF
+Debut DBR62 Black
+Debut DBR62 White
+DI-390AHDVF
+DN2181E63
+DVOL60
+E1200
+EILEEN 5156 chocolate stained walnut
+ELEMENTS 8777 MEDIA Ricochet/Walnut
+ER12W
+FLO
+FLO 1"
+FLO Senssing Cable
+FLO Water Bug
+FS81 Barrel Connector
+G5BLK
+GLF-RD-12V-30K-V2
+GLS-12150-TD
+H2-1076F0WH
+H2-1076V0WH
+H2-1078F5WH
+H2-107B5FWH
+H2-107F01WH
+H2-107F02WH
+H2-107F03WH
+HDMI Cable 0.5 Meter
+HDMI Cable 1 Meter
+HDMI Cable 10 Meter
+HDMI Cable 15 Meter
+HDMI Cable 2 Meter
+HDMI Cable 3 Meter
+HDMI Cable 35 Foot
+HDMI Cable 5 Meter
+HQWT-U-P3W-WH-E
+HQWT-U-P4W-BL-E
+HQWT-U-P4W-WH-E
+HZ-THSTAT-W
+I4-310IPVF
+I4-390AHDVF
+ICRG59182BCWHT
+JIB/BT8R
+Kaleidescape Streamer
+LUTRON Lighting Control System
+LUTRON RadioRA Lighting Control
+MA120
+MA240
+MA60
+MASK4CT-W
+MASK6CT-W
+Mic Wire 2 Con
+Microphone Package
+Microphone-Audio stereo mixer
+Motorized Bug Screens
+MTS RF Remote
+MW120F44
+MW120T44
+MW125C64
+MW175F74
+MW175T74
+MW74PIF175
+MW74PIT175
+MWER-18
+MWER-27
+MWER-42
+MWLFM12064
+MX-780
+MX-890
+MX-900
+Nest Aware
+Nest Cam
+OLA 8137 chocolate stained walnut
+OW-MICRO-LCR3.0
+OW-MICRO-SAT-2.0
+OW-MINI-LCR-3.0SE
+PE133E
+PREZONE2
+PRO4
+PV-NVR-4100P
+REVAMP1120T
+REVAMP4120T
+REVAMP4240T
+RG59 BNC
+RG59 Copper (Camera wire)
+RG59 F Con
+RG59 RCA
+RJ45 Cat5e Ends
+Robinhood Zero 10ft
+S20BLK
+SA-4050AHD-2(MMA)
+SG300-28P
+SM-802-UPE
+SP-8000-E1
+SP-8100-E1
+TC-50CS560
+TC-50CX600
+TC-55AS540
+TC-55AS660
+TC-55CX650
+TC-55CX800
+TC-55CX850
+TC55EX600
+TC55FX600
+TC55FX800
+TC55FZ950
+TC58EX750
+TEGS25
+TS-PAMP4-100
+TS-PAMP8-100
+VC60AW
+VC60SL
+VCSI
+VID-MUX-500822
+VID-MUX-500828
+VID-MUX-500829
+VPL-XW5000ES-W
