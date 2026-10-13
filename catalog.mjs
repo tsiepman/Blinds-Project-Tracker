@@ -5,7 +5,9 @@
 //
 // Four files land in catalog-report/ and come back as a workflow artifact:
 //
-//   catalog-issues.csv    the cleanup worklist, worst first
+//   catalog-issues.csv    the backlog: every problem in the catalog, worst first
+//   catalog-recent.csv    the weekly check: only what changed in SI lately, and what is
+//                         wrong with it. CATALOG_NEW_DAYS sets the window, default 7
 //   qbo-items-N.csv       QuickBooks item import, 1000 rows a file, bad rows left out
 //   qbo-suppliers.csv     the supplier names, which have to exist in QuickBooks FIRST
 //   catalog-master.csv    every product with every field, for reference
@@ -290,6 +292,53 @@ export async function catalogReport(graph, getVendorMap, usedModels = new Set())
       issueCount.get(r.model.trim().toLowerCase()) ?? 0,
       importable(r, holdModels) ? 'yes' : 'no', r.id]));
 
+  /* ---------- what changed lately ----------
+     The worklist above is the whole catalog, which is the right shape for clearing a
+     backlog and the wrong shape for keeping it clear. Once the backlog is gone the weekly
+     job is a handful of products somebody created this week -- and catching a mistake while
+     the person who made it still remembers the job is worth far more than catching it in a
+     5,000-row sweep six months later.
+
+     SI publishes UpdatedOn, not a created date, so this is "changed" rather than "new". No
+     bad thing: a product someone edited is worth the same glance as one they created. */
+  const days = Number(process.env.CATALOG_NEW_DAYS) || 7;
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  // Dates are YYYY-MM-DD strings from SI's local wall clock. Compared as strings on purpose
+  // -- parsing them into Dates here is how a day gets lost to a timezone.
+  const recent = all.filter(r => r.updated && r.updated >= cutoff)
+    .sort((a, b) => b.updated.localeCompare(a.updated) || a.model.localeCompare(b.model));
+
+  const issuesByModel = new Map();
+  for (const i of issues) {
+    if (!i.model) continue;
+    const k = i.model.trim().toLowerCase();
+    if (!issuesByModel.has(k)) issuesByModel.set(k, []);
+    issuesByModel.get(k).push(i);
+  }
+  const problemsOf = r => (issuesByModel.get(r.model.trim().toLowerCase()) ?? [])
+    .filter(i => i.sev !== 'info');
+
+  writeCsv(`${OUT}/catalog-recent.csv`,
+    ['Last edited in SI', 'Model', 'Manufacturer', 'Category', 'Vendor', 'Unit cost',
+     'QuickBooks item type', 'Import ready', 'Problems', 'What is wrong'],
+    recent.map(r => {
+      const probs = problemsOf(r);
+      return [r.updated, r.model, r.mfr, r.category, r.vendor, r.cost || '', r.type,
+        importable(r, holdModels) ? 'yes' : 'no', probs.length,
+        probs.map(p => p.issue).join('; ')];
+    }));
+
+  const recentBad = recent.filter(r => problemsOf(r).length);
+  console.log(`\n  changed in SI in the last ${days} days: ${recent.length} product(s), ${recentBad.length} with something wrong`);
+  for (const r of recentBad.slice(0, 20)) {
+    console.log(`    ${r.updated}  ${r.model.padEnd(32).slice(0, 32)}  ${problemsOf(r).map(p => p.issue).join('; ')}`);
+  }
+  if (recentBad.length > 20) console.log(`    … and ${recentBad.length - 20} more, all in catalog-recent.csv`);
+  if (!recent.length) {
+    console.log(`    (nothing changed, or the catalog feed has not published recent edits yet —` +
+      ` it can run several hours behind SI)`);
+  }
+
   /* Suppliers first, items second. Preferred Vendor only resolves if the vendor already
      exists in QuickBooks -- import items first and the column is dropped on every row
      without saying so, and 57 suppliers then have to be set by hand on 5,000 items. */
@@ -336,7 +385,8 @@ export async function catalogReport(graph, getVendorMap, usedModels = new Set())
                  '\n  Inventory rows carry no quantity (set CATALOG_QTY_AS_OF=MM/DD/YYYY for the live import)'));
   for (const f of files) console.log(`    ${f}`);
   console.log(`    ${OUT}/qbo-suppliers.csv (${suppliers.length})`);
-  console.log(`    ${OUT}/catalog-issues.csv (${issues.length} rows)  <- the worklist`);
+  console.log(`    ${OUT}/catalog-issues.csv (${issues.length} rows)  <- the backlog`);
+  console.log(`    ${OUT}/catalog-recent.csv (${recent.length} rows)  <- the weekly check`);
   console.log('  Download these from the Artifacts section at the bottom of this run page.');
 }
 

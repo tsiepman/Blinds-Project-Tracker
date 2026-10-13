@@ -263,25 +263,71 @@
       <code>?</code>.</li>
 </ul>
 
-<h2><span class="num">4</span> Who owns the catalog</h2>
+<h2><span class="num">4</span> Who does what</h2>
 
-<p>The person who reviews the weekly report and fixes or reassigns what's on it:</p>
+<table>
+  <thead><tr><th>Who</th><th>Does what</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Whoever is quoting</b><br><span style="color:var(--text-dim);font-size:12.5px">Lyall, Bruno</span></td>
+      <td><b>Creates the product</b>, following rules 1 to 3 above. You don't wait for
+          anyone — a quote should never be held up by a catalog queue.</td>
+    </tr>
+    <tr>
+      <td><b>Catalog owner</b></td>
+      <td><b>Keeps it clean.</b> Works the weekly report, fixes what's wrong or passes it
+          back to whoever created it. Does not have to be asked first.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Catalog owner right now:</p>
 
 <p><span class="owner" id="owner"></span></p>
+<p id="handover" style="font-size:13px;color:var(--text-dim);margin-top:-2px"></p>
 
 <p>
-  Anyone may still create a product when they need it to quote — this plus the weekly report
-  is the backstop, not a request queue that holds up a quote. But without a named owner the
-  catalog drifts back within a few months. That is how it reached 5,400 products with
-  61 duplicate stock codes.
+  The split matters both ways. A request queue would slow down quoting, which is the last
+  thing worth slowing down. But without one named person the catalog drifts back within a
+  few months — that is how it reached 5,400 products with 61 duplicate stock codes and
+  197 products that no longer exist.
+</p>
+
+<p>
+  Which is also why rules 1 to 3 are the important part of this page. The weekly report is a
+  backstop, not a cleaning service: every product created properly is one nobody has to come
+  back to.
 </p>
 
 <h2><span class="num">5</span> The weekly check</h2>
 
 <p>
   The project board sync produces a catalog report on request. In GitHub:
-  <b>Actions → Project board sync → Run workflow</b>, tick <b>Catalog report</b>, then
-  download <code>catalog-issues.csv</code> from the Artifacts box at the bottom of the run.
+  <b>Actions → Project board sync → Run workflow</b>, tick <b>Catalog report</b>, then open
+  the <b>Artifacts</b> box at the bottom of the finished run.
+</p>
+
+<p>Two files, and they do different jobs:</p>
+
+<table>
+  <thead><tr><th>File</th><th>What it's for</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>catalog-recent.csv</code></td>
+      <td><b>The weekly check.</b> Only products changed in SI in the last seven days, and
+          what's wrong with them. Usually a handful — this is the one to actually work</td>
+    </tr>
+    <tr>
+      <td><code>catalog-issues.csv</code></td>
+      <td><b>The backlog.</b> Every problem in the whole catalog. For clearing history, not
+          for weekly use</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  The weekly one matters most because it catches a mistake while the person who made it still
+  remembers the job. The same mistake found six months later is archaeology.
 </p>
 
 <p>Each row names the product, the problem, and what to do. Two columns to read first:</p>
@@ -293,7 +339,7 @@
       until it's fixed</li>
 </ul>
 
-<h3>How to work it</h3>
+<h3>How to work the backlog</h3>
 <ol>
   <li><b>Duplicates first.</b> They're the only ones that corrupt invoicing, and they get
       harder to untangle as more jobs are quoted against both halves.</li>
@@ -302,6 +348,12 @@
   <li><b>Re-run the report.</b> The blocker count going down is the measure. Fixed items drop
       off on their own — it's generated fresh each time, not a list anyone maintains.</li>
 </ol>
+
+<p>
+  One thing that catches people out: the catalog feed can run <b>several hours behind SI</b>.
+  Fix something and re-run the report straight away and it will still look broken. Leave it
+  until the next day.
+</p>
 
 </main>
 
@@ -316,8 +368,12 @@
 
    CATALOG_OWNER — the name shown in section 4. Leave it empty and the page says
    so in amber, which is the honest state until somebody is actually named.
+
+   HANDOVER — the line under it. Written down because a handover nobody wrote down
+   is a handover that quietly never happens.
    ───────────────────────────────────────────────────────────────────────────── */
-const CATALOG_OWNER = '';
+const CATALOG_OWNER = 'Trevor Siepman';
+const HANDOVER = 'Handing to Brian once the backlog is clear and RepairQ is retired — January 2027.';
 
 /* Real pairs from the catalog, for section 1. Each is one product entered twice.
    Swap these for whatever is current — they are only examples, and recognisable
@@ -374,6 +430,7 @@ if (CATALOG_OWNER.trim()) {
   ownerEl.textContent = 'not set yet';
   ownerEl.className = 'owner unset';
 }
+document.getElementById('handover').textContent = CATALOG_OWNER.trim() ? HANDOVER.trim() : '';
 
 /* The length converter. Not decoration: it is the step where someone otherwise does
    the arithmetic in their head and writes 03M for 0.3 m. */
