@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#14161c">
+<title>Product Standard — ART</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; height: 52px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 40; }
+  .mark { background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 12px; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px; }
+  .hname { font-size: 14px; font-weight: 600; }
+  .hname span { color: var(--text3); font-weight: 400; }
+  .spacer { margin-left: auto; }
+
+  main { max-width: 760px; margin: 0 auto; padding: 30px 20px 70px; }
+
+  .lede { font-size: 15px; line-height: 1.6; color: var(--text-mid); }
+  .lede b { color: var(--text); font-weight: 600; }
+
+  h2 {
+    font-size: 19px; font-weight: 700; letter-spacing: -0.01em;
+    margin: 38px 0 4px; display: flex; align-items: baseline; gap: 10px;
+  }
+  h2 .num {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: var(--on-accent);
+    font-size: 13px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    position: relative; top: -1px;
+  }
+  h3 { font-size: 14px; font-weight: 600; margin: 24px 0 8px; color: var(--text); }
+  p { font-size: 14px; line-height: 1.65; color: var(--text-mid); margin: 10px 0; }
+  p b, li b { color: var(--text); font-weight: 600; }
+  ul, ol { margin: 10px 0 10px 20px; font-size: 14px; line-height: 1.65; color: var(--text-mid); }
+  li { margin: 5px 0; }
+  code {
+    font-family: var(--mono); font-size: 12.5px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px; color: var(--text);
+    white-space: nowrap;
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px; margin: 16px 0;
+  }
+  .card.warn { border-color: var(--yellow); background: var(--yellow-dim); }
+  .card.warn p, .card.warn li { color: var(--text); }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  th {
+    text-align: left; font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim);
+    padding: 0 10px 7px 0; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--border); color: var(--text-mid); vertical-align: top; line-height: 1.5; }
+  td:last-child, th:last-child { padding-right: 0; }
+  tr:last-child td { border-bottom: none; }
+  td b { color: var(--text); }
+
+  .no { color: var(--red); }
+  .yes { color: var(--green); }
+  .no code { border-color: rgba(255,128,128,.4); }
+  .yes code { border-color: rgba(62,207,122,.4); }
+
+  /* length converter */
+  .conv { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  .conv label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); display: block; margin-bottom: 5px; }
+  .conv input { width: 110px; padding: 8px 10px; font-size: 14px; color: var(--text); }
+  .conv .out { font-family: var(--mono); font-size: 17px; font-weight: 600; color: var(--green); padding-bottom: 7px; }
+  .conv .out.bad { color: var(--yellow); font-family: var(--font); font-size: 13px; font-weight: 400; line-height: 1.4; max-width: 330px; }
+  .conv-note { font-size: 12.5px; color: var(--text-dim); margin-top: 10px; line-height: 1.5; }
+
+  .owner {
+    font-family: var(--mono); font-size: 15px; color: var(--text);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px; display: inline-block;
+  }
+  .owner.unset { color: var(--yellow); border-color: var(--yellow); background: var(--yellow-dim); }
+
+  footer { max-width: 760px; margin: 0 auto; padding: 0 20px 50px; font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+
+  @media (max-width: 640px) {
+    main { padding: 22px 16px 50px; }
+    footer { padding: 0 16px 36px; }
+    h2 { font-size: 17px; }
+    table { font-size: 13px; }
+    .conv input { width: 92px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="mark">ART</span><span class="hname">Product Standard <span>creating product in D-Tools</span></span>
+  <span class="spacer"></span>
+  <a class="art-back" href="index.html">← All tools</a>
+</div>
+
+<main>
+
+<p class="lede">
+  The <b>Model</b> is not just a label. It is the one thing that ties our three systems
+  together, so getting it right at creation saves a lot of unpicking later.
+</p>
+
+<table>
+  <thead><tr><th>System</th><th>What it does with the Model</th></tr></thead>
+  <tbody>
+    <tr><td><b>D-Tools</b></td><td>What you pick when you spec a job</td></tr>
+    <tr><td><b>QuickBooks</b></td><td>Becomes the item SKU — what gets invoiced</td></tr>
+    <tr><td><b>Pull Log</b></td><td>What the installer scans when product leaves the shop</td></tr>
+  </tbody>
+</table>
+
+<p>
+  One product entered twice means a job invoices off two items and the numbers never
+  reconcile. Two products sharing a stock code means the Orders page shows the wrong stock,
+  or none at all. And once QuickBooks has transactions against an item it cannot simply be
+  merged away.
+</p>
+
+<h2><span class="num">1</span> Search before you create</h2>
+
+<p>
+  <b>Most catalog problems are a product that already existed.</b> Before creating anything,
+  search three ways:
+</p>
+
+<ol>
+  <li>The manufacturer's part number</li>
+  <li>The part number <b>without</b> hyphens or spaces</li>
+  <li>Two or three words from the product name</li>
+</ol>
+
+<p>Real pairs sitting in our catalog right now, each one product entered more than once:</p>
+
+<table>
+  <tbody id="dupes"></tbody>
+</table>
+
+<p>
+  If you find it, use it. If something about it is wrong, <b>fix that product</b> — don't
+  create a second one beside it.
+</p>
+
+<h2><span class="num">2</span> The Model is the part number, nothing else</h2>
+
+<p>
+  Type it <b>exactly as the manufacturer prints it</b>. Keep their hyphens and their
+  spacing. Don't add anything.
+</p>
+
+<table>
+  <thead><tr><th>Don't</th><th>Do</th><th>Why</th></tr></thead>
+  <tbody id="dodont"></tbody>
+</table>
+
+<h3>Hard limits, because QuickBooks enforces them</h3>
+<ul>
+  <li><b>No colon</b> (<code>:</code>) — QuickBooks reserves it for sub-items and will reject the item</li>
+  <li><b>No quote marks</b> — write inches as <code>IN</code> or leave them out</li>
+  <li><b>Under 100 characters</b></li>
+  <li>No double spaces, no leading or trailing space</li>
+  <li>Two Models must differ by more than punctuation or capitalisation</li>
+</ul>
+
+<h3>Cable lengths: write them the way RepairQ does</h3>
+
+<p>
+  RepairQ already numbers these properly — its manufacturer SKU for the 0.3 m AVPro cable is
+  <code>ACBT10KUHD003</code>. Tenths of a metre, zero-padded. So copy RQ's digits rather
+  than inventing anything.
+</p>
+
+<div class="card">
+  <div class="conv">
+    <div>
+      <label for="metres">Length in metres</label>
+      <input id="metres" type="number" step="0.1" min="0" placeholder="0.3" inputmode="decimal">
+    </div>
+    <div class="out" id="convOut">003M</div>
+  </div>
+  <div class="conv-note" id="convNote"></div>
+</div>
+
+<p>
+  So <code>AC-BT-10KUHD-003M</code>, not <code>AC-BT-10KUHD .3M</code>.
+</p>
+
+<p>
+  <b>Why pad at all:</b> <code>1.5M</code> and <code>15M</code> are the same string once
+  punctuation is stripped — and punctuation does get stripped, both by the duplicate check
+  on the catalog and by the near-match prompt in the Pull Log. A decimal length is a part
+  number that will eventually be taken for a different product. Padded digits can't collide.
+</p>
+
+<p>
+  <b>Pad to the width the longest cable in that family needs.</b> Three digits covers 0.1 m
+  to 99.9 m, which is nearly everything. Blustream's HDMI18G range runs to 100 m, so that
+  family needs four — <code>HDMI18G-0010M</code> through <code>HDMI18G-1000M</code>. Pick
+  the width once per family and use it for every member, or renaming the 10 m collides with
+  the existing 100 m.
+</p>
+
+<p>
+  This applies only where a length is genuinely part of the identifier.
+  <code>AT-UHD-PRO3-88M</code> is Atlona's model number for the 8&times;8 matrix, not an
+  88 metre cable — leave that kind alone.
+</p>
+
+<h2><span class="num">3</span> Fill in every field</h2>
+
+<p>A product created with only a Model and a price is a product someone has to come back to.</p>
+
+<table>
+  <thead><tr><th>Field</th><th>What goes in it</th></tr></thead>
+  <tbody id="fields"></tbody>
+</table>
+
+<h3>PartNumber is the one people skip</h3>
+
+<p>
+  The Model is ours; <b>PartNumber is the manufacturer's</b>. Put RepairQ's manufacturer
+  SKU in it, character for character — <code>ACBT10KUHD003</code>.
+</p>
+
+<p>
+  It matters because the Orders page matches a product to its stock figure by RepairQ code
+  first and <b>PartNumber second</b>. So when a code is wrong, missing, or shared between two
+  products, PartNumber is what saves it.
+</p>
+
+<div class="card warn">
+  <p>
+    <b>CustomField1 (the RepairQ code) is retiring on January 1, 2027.</b> RepairQ is
+    switched off when the new company starts trading. After that stock comes from QuickBooks
+    and the match is QuickBooks SKU straight to D-Tools Model — no separate code to keep in
+    step.
+  </p>
+  <p>
+    Two things follow. <b>Don't spend time tidying RepairQ codes</b> — it's cleanup on a
+    system being turned off; fix one only where a missing stock figure is costing an order
+    now. And <b>the Model is the identifier that survives</b>, so time spent getting Models
+    right pays off permanently.
+  </p>
+</div>
+
+<h3>Until then, the RepairQ code rules still apply</h3>
+<ul>
+  <li>Leave it <b>empty</b> unless the product is genuinely stocked.</li>
+  <li>Use the <b>real RepairQ code</b> — never a quantity, a dash, or a guess. Values like
+      <code>1.00</code> and <code>2.00</code> are in the catalog today and do nothing but
+      break things.</li>
+  <li><b>Never put the same code on two products.</b> If you do, both lose their stock
+      figure — neither can be trusted to mean the other's stock, so the Orders page shows
+      <code>?</code>.</li>
+</ul>
+
+<h2><span class="num">4</span> Who owns the catalog</h2>
+
+<p>The person who reviews the weekly report and fixes or reassigns what's on it:</p>
+
+<p><span class="owner" id="owner"></span></p>
+
+<p>
+  Anyone may still create a product when they need it to quote — this plus the weekly report
+  is the backstop, not a request queue that holds up a quote. But without a named owner the
+  catalog drifts back within a few months. That is how it reached 5,400 products with
+  61 duplicate stock codes.
+</p>
+
+<h2><span class="num">5</span> The weekly check</h2>
+
+<p>
+  The project board sync produces a catalog report on request. In GitHub:
+  <b>Actions → Project board sync → Run workflow</b>, tick <b>Catalog report</b>, then
+  download <code>catalog-issues.csv</code> from the Artifacts box at the bottom of the run.
+</p>
+
+<p>Each row names the product, the problem, and what to do. Two columns to read first:</p>
+
+<ul>
+  <li><b>Severity</b> — <code>blocker</code> is worth fixing now, <code>warn</code> is worth
+      fixing, <code>info</code> is a look</li>
+  <li><b>Holds import</b> — <code>yes</code> means this product won't go into QuickBooks
+      until it's fixed</li>
+</ul>
+
+<h3>How to work it</h3>
+<ol>
+  <li><b>Duplicates first.</b> They're the only ones that corrupt invoicing, and they get
+      harder to untangle as more jobs are quoted against both halves.</li>
+  <li><b>Then the warnings, batched by manufacturer.</b> Fixing every Lutron product in one
+      sitting beats hopping around the catalog.</li>
+  <li><b>Re-run the report.</b> The blocker count going down is the measure. Fixed items drop
+      off on their own — it's generated fresh each time, not a list anyone maintains.</li>
+</ol>
+
+</main>
+
+<footer>
+  The Model is the join key across D-Tools, QuickBooks and the Pull Log. Everything on this
+  page exists to keep it unique and readable.
+</footer>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   EDIT HERE. The whole configuration.
+
+   CATALOG_OWNER — the name shown in section 4. Leave it empty and the page says
+   so in amber, which is the honest state until somebody is actually named.
+   ───────────────────────────────────────────────────────────────────────────── */
+const CATALOG_OWNER = '';
+
+/* Real pairs from the catalog, for section 1. Each is one product entered twice.
+   Swap these for whatever is current — they are only examples, and recognisable
+   ones land better than invented ones. */
+const DUPES = [
+  ['ES550TSNDBR50B', 'ES-550T-SNDBR-50-B', 'ES-550-SNDBAR-50-BLK'],
+  ['LF-PEXA-120', 'LF-PEXA120 PERFED', 'LF-PEXA-120 PERFED'],
+  ['C4-IOXV2', 'C4-IOX-V2'],
+  ['UBPX700', 'UBP-X700'],
+  ['FT-USB', 'FT-USB-CABLE'],
+  ['Apple TV 4K HDR (128GB Ethernet)', 'Apple TV 4K HDR 128GB'],
+];
+
+const DO_DONT = [
+  ['LF-PEXA-120 PERFED', 'LF-PEXA-120', 'Descriptive words belong in the description'],
+  ['FRAME 55\'\'BEIGE WOOD', 'VG-SCFM55WM', 'Quote marks break import files and scans'],
+  ['AC-BT-10KUHD 3M <span style="opacity:.6">vs</span> .3M', 'AC-BT-10KUHD-030M <span style="opacity:.6">/</span> -003M', 'A dropped dot must not change which product you get'],
+  ['Smart Blu-ray Disc Player', 'BD-J5100', 'A product name is not a part number'],
+];
+
+const FIELDS = [
+  ['Model', 'The manufacturer\'s part number, exactly — see rule 2'],
+  ['Manufacturer', 'Pick from the existing list. Don\'t retype a brand that\'s already there'],
+  ['Description', 'What the thing <b>is</b>, in plain words. <b>This prints on the customer\'s invoice</b> — a bare part number tells them nothing'],
+  ['Category / Subcategory', 'From the existing list. A new category needs the catalog owner — it carries into QuickBooks'],
+  ['Vendor', 'Who we buy it from. Becomes the Preferred Vendor in QuickBooks'],
+  ['PartNumber', 'The manufacturer\'s own code, and RepairQ\'s manufacturer SKU where there is one'],
+  ['Unit cost', 'The real buy price'],
+  ['Unit price', 'The sell price'],
+  ['Phase', 'Rough-in or finish — this drives the schedule and the order timing'],
+  ['CustomField1', 'The RepairQ stock code. <b>Only if we actually stock it</b>, and only the real code'],
+];
+
+/* ───────────────────────────────────────────────────────────────────────────── */
+
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+document.getElementById('dupes').innerHTML = DUPES.map(group =>
+  '<tr><td>' + group.map(m => '<code>' + esc(m) + '</code>').join(' <span style="color:var(--text-dim)">·</span> ') + '</td></tr>'
+).join('');
+
+document.getElementById('dodont').innerHTML = DO_DONT.map(([bad, good, why]) =>
+  `<tr><td class="no"><code>${bad}</code></td><td class="yes"><code>${good}</code></td><td>${why}</td></tr>`
+).join('');
+
+document.getElementById('fields').innerHTML = FIELDS.map(([f, d]) =>
+  `<tr><td><b>${f}</b></td><td>${d}</td></tr>`
+).join('');
+
+const ownerEl = document.getElementById('owner');
+if (CATALOG_OWNER.trim()) {
+  ownerEl.textContent = CATALOG_OWNER.trim();
+} else {
+  ownerEl.textContent = 'not set yet';
+  ownerEl.className = 'owner unset';
+}
+
+/* The length converter. Not decoration: it is the step where someone otherwise does
+   the arithmetic in their head and writes 03M for 0.3 m. */
+const inp = document.getElementById('metres');
+const out = document.getElementById('convOut');
+const note = document.getElementById('convNote');
+
+function convert() {
+  const raw = inp.value.trim();
+  const m = raw === '' ? 0.3 : Number(raw);
+
+  if (raw !== '' && (!isFinite(m) || m <= 0)) {
+    out.className = 'out bad';
+    out.textContent = 'Enter a length in metres.';
+    note.textContent = '';
+    return;
+  }
+
+  /* Rounding is the trap here, and it has to be refused rather than hidden. 0.05 m times
+     ten is 0.5, which rounds UP to 1 and would confidently print 003M-style output for a
+     length the scheme cannot express. 0.25 m is worse: it rounds to 3 tenths and looks
+     entirely correct. So anything that is not a whole number of tenths is rejected by
+     name, not quietly approximated. */
+  const exact = m * 10;
+  if (m < 0.1) {
+    out.className = 'out bad';
+    out.textContent = 'Under 0.1 m — this scheme can\'t express it. Check the length, then ask the catalog owner.';
+    note.textContent = '';
+    return;
+  }
+  if (Math.abs(exact - Math.round(exact)) > 1e-9) {
+    out.className = 'out bad';
+    out.textContent = m + ' m isn\'t a whole number of tenths, so it has no code here. Check the length — it is usually a typo.';
+    note.textContent = '';
+    return;
+  }
+
+  const tenths = Math.round(exact);
+  const digits = tenths > 999 ? 4 : 3;
+  const pad = String(tenths).padStart(digits, '0') + 'M';
+
+  out.className = 'out';
+  out.textContent = pad;
+
+  let n = `${m} m &rarr; ${tenths} tenths &rarr; <code>${pad}</code>, so a part number ends <code>-${pad}</code>.`;
+  if (digits === 4) {
+    n += ' Over 99.9 m, so this family needs <b>four</b> digits — and every other member of'
+       + ' the same family has to be four digits too, or the 10 m collides with the 100 m.';
+  }
+  note.innerHTML = n;
+}
+
+inp.addEventListener('input', convert);
+convert();
+</script>
+
+</body>
+</html>
