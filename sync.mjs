@@ -117,10 +117,20 @@ async function main() {
      C4-IOX-V2 is exactly that case, and it is about to happen eighteen times.
      Stripping punctuation costs nothing: the worst a false match can do is keep an item
      that nobody needed. */
-  const addUsed = m => {
+  /* usedRaw keeps the EXACT spelling and which jobs carry it, which usedModels cannot:
+     it deliberately holds both the plain and stripped forms, so C4-IOXV2 and C4-IOX-V2
+     are indistinguishable in it. That is right for deciding what to import and useless for
+     the question "is this exact model quoted anywhere", which is what you need before
+     deleting a catalog product -- or after deleting one without checking. */
+  const usedRaw = new Map();                        // exact model -> Set of job numbers
+  const addUsed = (m, job) => {
     const s = String(m).trim();
+    if (!s) return;
     usedModels.add(s.toLowerCase());
     usedModels.add(s.replace(/[^A-Za-z0-9]/g, '').toUpperCase());
+    const k = s.toLowerCase();
+    if (!usedRaw.has(k)) usedRaw.set(k, { model: s, jobs: new Set() });
+    if (job) usedRaw.get(k).jobs.add(String(job));
   };
   // How many projects were read in full this run. A project that did not need rebuilding
   // contributes only its buyable lines from the cached copy, so the catalog report says
@@ -164,7 +174,7 @@ async function main() {
       // are ordered, but all of them get INVOICED, so all of them need an item in
       // QuickBooks. Taken from the raw detail for that reason.
       detailRead++;
-      for (const it of detail.Items ?? []) if (it.Model) addUsed(it.Model);
+      for (const it of detail.Items ?? []) if (it.Model) addUsed(it.Model, p.Number || p.Name);
     }
 
     // Tasks change independently of the project, so refresh them every run -- but only for
@@ -212,7 +222,7 @@ async function main() {
 
     // Tallies for the end-of-run report.
     const lines = JSON.parse(orders);
-    for (const l of lines) if (l.model) addUsed(l.model);
+    for (const l of lines) if (l.model) addUsed(l.model, p.Number || p.Name);
     stats.withStart += startDate ? 1 : 0;
     stats.withTasks += spans.length ? 1 : 0;
     stats.board += Number(p.Price || 0) >= 10000 ? 1 : 0;   // report only -- matches the board's MIN_PRICE
@@ -347,7 +357,7 @@ async function main() {
   if (String(process.env.CATALOG_REPORT || '') === 'true') {
     console.log(`\n  (models quoted: ${usedModels.size}, from ${detailRead} of ${projects.length} projects read in full` +
       `${detailRead < projects.length ? ' -- the rest contributed their buyable lines only' : ''})`);
-    try { await catalogReport(graph, getVendorMap, usedModels); }
+    try { await catalogReport(graph, getVendorMap, usedModels, usedRaw); }
     catch (e) { failed.push('catalog report'); console.log(`  ! catalog report: ${e.message.slice(0, 200)}`); }
   }
 

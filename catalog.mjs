@@ -69,7 +69,7 @@ const QTY_AS_OF = String(process.env.CATALOG_QTY_AS_OF || '').trim();
    anybody actually quoted? A product nobody has used in the synced history is a row in the
    QuickBooks item list for ever and a product to clean up now, for no return. Reported, not
    filtered: where to draw that line is a decision, not a rule. */
-export async function catalogReport(graph, getVendorMap, usedModels = new Set()) {
+export async function catalogReport(graph, getVendorMap, usedModels = new Set(), usedRaw = new Map()) {
   const cat = await getVendorMap();
 
   /* RepairQ, for two separate jobs.
@@ -337,6 +337,34 @@ export async function catalogReport(graph, getVendorMap, usedModels = new Set())
   if (!recent.length) {
     console.log(`    (nothing changed, or the catalog feed has not published recent edits yet —` +
       ` it can run several hours behind SI)`);
+  }
+
+  /* ---------- orphans: quoted, but no longer in the catalog ----------
+     A product deleted from the catalog leaves every project that quoted it untouched --
+     a project item is a COPY, carrying its own Model. So nothing breaks today, and that is
+     exactly why a mistaken deletion is invisible until January, when the estimate pushes to
+     QuickBooks and the item is not there.
+
+     This is the check that catches it, and it is the one to look at after deleting anything:
+     every exact Model that appears on a job and has no catalog product behind it. Matched on
+     the stripped form, so a rename is not mistaken for a deletion. */
+  const catNorm = new Set(products.map(p => norm(p.model)));
+  const orphans = [...usedRaw.values()]
+    .filter(u => !catNorm.has(norm(u.model)))
+    .sort((a, b) => b.jobs.size - a.jobs.size || a.model.localeCompare(b.model));
+
+  if (orphans.length) {
+    writeCsv(`${OUT}/catalog-orphans.csv`,
+      ['Model', 'Jobs', 'Job numbers'],
+      orphans.map(o => [o.model, o.jobs.size, [...o.jobs].sort().join(' ')]));
+    console.log(`\n  quoted but NOT in the catalog: ${orphans.length} model(s)` +
+      ' — deleted from SI, or never in it. Each one needs a QuickBooks item or its estimate push has nothing to bill against:');
+    for (const o of orphans.slice(0, 25)) {
+      console.log(`    ${String(o.jobs.size).padStart(3)} job(s)  ${o.model.padEnd(34).slice(0, 34)}  ${[...o.jobs].sort().slice(0, 6).join(' ')}`);
+    }
+    if (orphans.length > 25) console.log(`    … and ${orphans.length - 25} more, all in catalog-orphans.csv`);
+  } else if (usedRaw.size) {
+    console.log('\n  quoted but not in the catalog: none — every model on a job has a catalog product behind it');
   }
 
   /* Suppliers first, items second. Preferred Vendor only resolves if the vendor already
