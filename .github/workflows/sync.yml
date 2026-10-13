@@ -73,6 +73,8 @@ jobs:
           # zero and the closing stocktake sets the real figures. Unset leaves both the
           # quantity and the date blank, which is what you want while only reading the data.
           CATALOG_QTY_AS_OF: ${{ vars.CATALOG_QTY_AS_OF }}
+          # How far back catalog-recent.csv looks, in days. Default 7 — the weekly check.
+          CATALOG_NEW_DAYS: ${{ vars.CATALOG_NEW_DAYS }}
         # Scheduled runs have no inputs, so this is empty and they always write.
         run: node sync.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
 
