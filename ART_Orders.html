@@ -191,6 +191,9 @@ let ordered = new Map();            // "job|model" -> { id, qty } -- see "markin
 let usingSample = false;
 let horizonWeeks = 8;
 let showCovered = false;          // lines fully covered by stock are hidden unless asked for
+// Jobs with every line marked ordered are folded away by default. There is nothing to do
+// on them, and on a long list they bury the jobs that still need buying.
+let showDoneJobs = false;
 // Suppliers expanded on the By supplier view, remembered per browser.
 let openVendors = (() => { try { return new Set(JSON.parse(localStorage.getItem('orders.openVendors') || '[]')); } catch { return new Set(); } })();
 let vendorRefs = [];
@@ -654,11 +657,45 @@ function jobsView() {
   const jobs = jobList();
   jobRefs = jobs;
   const untouched = jobs.filter(j => !j.lines.some(l => l.have > 0)).length;
-  const full = jobs.filter(j => j.done === j.lines.length).length;
+
+  /* Fully-ordered jobs fold into a section of their own. There is nothing left to do on
+     them, and leaving them in line means scrolling past jobs that are finished to reach the
+     ones that are not.
+
+     The index is carried through rather than recomputed: jobToggle() and jobLine() index
+     into jobRefs, which is the WHOLE list. Re-indexing either group would wire every
+     checkbox in the collapsed section to the wrong line. */
+  const indexed = jobs.map((j, i) => [j, i]);
+  const live = indexed.filter(([j]) => j.done < j.lines.length);
+  const doneJobs = indexed.filter(([j]) => j.done === j.lines.length);
+
+  const doneSection = doneJobs.length
+    ? '<div class="job all">' +
+        '<div class="job-head" role="button" tabindex="0" aria-expanded="' + showDoneJobs + '"' +
+          ' onclick="toggleDoneJobs()"' +
+          ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();toggleDoneJobs()}">' +
+          '<span class="job-chev">' + (showDoneJobs ? '▾' : '▸') + '</span>' +
+          // Not "Everything ordered" -- that is already the label on each job's bulk button,
+          // and two different controls reading the same would be a coin toss to click.
+          '<span class="job-num">Fully ordered</span>' +
+          '<span class="job-name">' + doneJobs.length + ' job' + (doneJobs.length === 1 ? '' : 's') +
+            ' with nothing left to buy</span>' +
+          '<span class="tag t-done">all marked</span>' +
+        '</div>' +
+      '</div>' +
+      (showDoneJobs ? doneJobs.map(([j, i]) => jobCard(j, i)).join('') : '')
+    : '';
+
+  const liveBody = live.length
+    ? live.map(([j, i]) => jobCard(j, i)).join('')
+    : '<div class="empty">' + (jobSearch ? 'No open job matches "' + esc(jobSearch) + '".'
+        : doneJobs.length ? 'Everything is ordered on every open job.'
+        : 'No open jobs with anything to order.') + '</div>';
+
   return '<div class="hint"><b>Catching up on jobs already underway:</b> for each job, mark what has already been ordered or installed so it stays off the order list. ' +
     'Usually that is <b>Rough-in ordered</b>, then open the job and untick anything still to buy. Marks count for that job only — the same product on another job still shows up.</div>' +
-    '<div class="totals">' + tot('', jobs.length, 'open jobs') + tot('soon', untouched, 'nothing marked yet') + tot('', full, 'fully marked') + '</div>' +
-    (jobs.length ? jobs.map(jobCard).join('') : '<div class="empty">' + (jobSearch ? 'No open job matches "' + esc(jobSearch) + '".' : 'No open jobs with anything to order.') + '</div>');
+    '<div class="totals">' + tot('', jobs.length, 'open jobs') + tot('soon', untouched, 'nothing marked yet') + tot('', doneJobs.length, 'fully ordered') + '</div>' +
+    liveBody + doneSection;
 }
 
 function jobCard(j, i) {
@@ -1365,6 +1402,7 @@ function lineHtml(r) {
 
 function setHorizon(w) { horizonWeeks = Number(w); render(); }
 function toggleCovered() { showCovered = !showCovered; render(); }
+function toggleDoneJobs() { showDoneJobs = !showDoneJobs; render(); }
 
 function saveOpenVendors() { try { localStorage.setItem('orders.openVendors', JSON.stringify([...openVendors])); } catch {} }
 function toggleVendor(i) {
