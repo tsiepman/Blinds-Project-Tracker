@@ -396,11 +396,22 @@ function phaseDate(p, phase) {
   return roughEnd ? iso(addDays(parseD(roughEnd), 7)) : null;   // nominal gap between phases
 }
 
-// A job marked Completed in D-Tools has nothing left to buy, but it stays approved, so the
-// sync still carries it. 74 of 125 approved jobs were Completed when this was added --
-// left in, they would swamp the list with things already installed. Hidden here rather
-// than in the sync so the list keeps the full history.
-function isCompleted(p) { return String(p.Progress || '').trim().toLowerCase().startsWith('complete'); }
+/* What belongs on the ordering board.
+
+   A whitelist, not a blacklist. This used to hide only Completed, which meant Lost, On Hold
+   and Estimating jobs stayed on the board and their product kept counting toward what
+   needed buying -- parts for jobs nobody won. Any new status in D-Tools would have done the
+   same thing, silently.
+
+   D-Tools' statuses are Estimating, Approved, Installing, Completed, On Hold and Lost. Only
+   Approved and Installing have product worth buying now.
+
+   A blank status is SHOWN, not hidden. That is a data problem rather than a decision, and
+   quietly dropping those jobs is the exact failure this change exists to stop. It is
+   counted in the hidden line below so it can be spotted and fixed. */
+const ORDER_STATUSES = ['approved', 'installing'];
+function statusOf(p) { return String(p.Progress || '').trim().toLowerCase(); }
+function onBoard(p) { const s = statusOf(p); return !s || ORDER_STATUSES.includes(s); }
 
 // A job's buyable lines. l.ordered is D-Tools' own ordered flag, unused today but honoured.
 function linesOf(p) {
@@ -413,7 +424,7 @@ function build() {
   const byKey = new Map();
 
   for (const p of projects) {
-    if (isCompleted(p)) continue;
+    if (!onBoard(p)) continue;
     for (const l of linesOf(p)) {
       // Only what is still unordered on THIS job counts. A change order that adds three
       // more of something already marked shows up as just those three.
@@ -498,8 +509,22 @@ function renderSignIn() {
 }
 
 function render() {
-  const completedCount = projects.filter(isCompleted).length;
-  const hidden = completedCount ? ' ' + completedCount + ' job' + (completedCount === 1 ? '' : 's') + ' marked Completed in D-Tools ' + (completedCount === 1 ? 'is' : 'are') + ' hidden.' : '';
+  /* Say what is being hidden and why, broken down by status. Silent filtering is how a job
+     goes missing and nobody finds out until someone asks why its parts were never ordered —
+     which is the bug this replaced. If a status appears here that should be on the board,
+     add it to ORDER_STATUSES. */
+  const off = new Map();
+  for (const p of projects) {
+    if (onBoard(p)) continue;
+    const s = String(p.Progress || '').trim() || 'no status';
+    off.set(s, (off.get(s) ?? 0) + 1);
+  }
+  const shownCount = projects.filter(onBoard).length;
+  const hidden = off.size
+    ? ' ' + projects.length + ' projects, showing ' + shownCount + '. Hidden: ' +
+      [...off].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([s, n]) => esc(s) + ' ' + n).join(', ') + '.'
+    : '';
   const switcher =
     '<div><label class="fld">View</label><div class="seg" role="tablist">' +
       '<button role="tab" aria-selected="' + (view === 'supplier') + '" class="' + (view === 'supplier' ? 'on' : '') + '" onclick="setView(\'supplier\')">By supplier</button>' +
@@ -612,7 +637,7 @@ function render() {
 
 function jobList() {
   const q = jobSearch.trim().toLowerCase();
-  return projects.filter(p => !isCompleted(p))
+  return projects.filter(onBoard)
     .map(p => {
       const lines = linesOf(p).map(l => {
         const need = Math.ceil(Number(l.qty) || 0), key = lineKey(p, l);
@@ -727,7 +752,7 @@ async function jobLine(i, n, on) {
 // supplier has something to buy, not only once it falls inside the next few weeks.
 function openJobVendors() {
   const s = new Set();
-  for (const p of projects) { if (isCompleted(p)) continue; for (const l of linesOf(p)) if (l.vendor) s.add(l.vendor); }
+  for (const p of projects) { if (!onBoard(p)) continue; for (const l of linesOf(p)) if (l.vendor) s.add(l.vendor); }
   return [...s].sort((a, b) => a.localeCompare(b));
 }
 
@@ -955,17 +980,42 @@ function stockClear() { stockMap = {}; stockOrder = {}; stockStatuses = []; stoc
 
 // RQ exports a genuine old-format .xls, which a browser cannot read on its own. SheetJS
 // can; it is ~900 KB, so it loads only when someone actually picks a spreadsheet.
+// Three CDNs, tried in order: one host being blocked by an extension or a content filter
+// should not be what stops Brian loading a stock report.
+const SHEETJS_CDNS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+];
 let sheetJs = null;
 function loadSheetJs() {
   if (window.XLSX) return Promise.resolve();
-  if (!sheetJs) sheetJs = new Promise((ok, bad) => {
+  if (sheetJs) return sheetJs;
+  sheetJs = (async () => {
+    const tried = [];
+    for (const url of SHEETJS_CDNS) {
+      try {
+        await loadScript(url);
+        if (window.XLSX) return;
+      } catch (e) { /* try the next one */ }
+      tried.push(url.split('/')[2]);
+    }
+    throw new Error('the spreadsheet reader did not load (tried ' + tried.join(', ') +
+      '). Save the report as CSV and load that instead — CSV needs no reader.');
+  })();
+  // A cached rejection would make every later attempt fail instantly without retrying.
+  sheetJs.catch(() => { sheetJs = null; });
+  return sheetJs;
+}
+
+function loadScript(src) {
+  return new Promise((ok, bad) => {
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.src = src;
     s.onload = ok;
-    s.onerror = () => { sheetJs = null; bad(new Error('the spreadsheet reader did not load — check the connection and try again')); };
+    s.onerror = () => bad(new Error(src));
     document.head.appendChild(s);
   });
-  return sheetJs;
 }
 
 async function stockFile(input) {
@@ -1085,7 +1135,7 @@ function stockLoadText(raw) {
   // (~105,000 characters against the list's limit), and nothing else is ever looked up.
   const wanted = new Set(), models = new Set();
   for (const p of projects) {
-    if (isCompleted(p)) continue;
+    if (!onBoard(p)) continue;
     for (const l of linesOf(p)) {
       models.add(norm(l.model));
       for (const k of [l.rq, l.mfr, l.model]) { const n = norm(k); if (n) wanted.add(n); }
@@ -1103,7 +1153,7 @@ function stockLoadText(raw) {
   // report, cannot be called zero -- we simply could not look it up.
   const unknown = new Set();
   for (const p of projects) {
-    if (isCompleted(p)) continue;
+    if (!onBoard(p)) continue;
     for (const l of linesOf(p)) {
       const model = norm(l.model);
       if (stockOverrides[model]) continue;
