@@ -84,6 +84,7 @@
   .job-num { font-family: var(--mono); font-size: 12.5px; color: var(--text3); }
   .job-name { font-weight: 600; font-size: 14px; min-width: 0; }
   .job-client { font-size: 12.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .job-dates { font-size: 11.5px; color: var(--text3); white-space: nowrap; flex-shrink: 0; }
   .job-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
   .job-body { border-top: 1px solid var(--border); }
   .job-phase { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 700; padding: 9px 16px 4px; background: var(--surface2); }
@@ -332,6 +333,13 @@ function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padSta
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function dayDiff(a, b) { return Math.round((b - a) / 86400000); }
 function fmt(d) { return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
+// Same, but carries the year when it is not this one. "3 Feb" reads as weeks away when it
+// is actually sixteen months, which is the whole confusion this is meant to clear up.
+function fmtY(d) {
+  const opts = { day: 'numeric', month: 'short' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
+}
 
 /* ---------- lead times ----------
    Per vendor with overrides, because a supplier is not one number: Lutron shades run
@@ -646,7 +654,25 @@ function jobList() {
         const need = Math.ceil(Number(l.qty) || 0), key = lineKey(p, l);
         return { ...l, need, key, have: Math.min(orderedQty(key), need), phase: l.phase === 'roughIn' ? 'roughIn' : 'finish' };
       }).filter(l => l.need > 0);
-      return { p, lines, done: lines.filter(l => l.have >= l.need).length };
+      /* When each phase is actually scheduled. The By job view lists everything unordered
+         on a job with no sense of timing -- which is right for marking things off, and
+         baffling when a job shows finish product that is not needed until February. The
+         dates do not change what is listed; they explain it.
+
+         A real task beats a placeholder. Salespeople add "Finish Placeholder" when a quote
+         is approved to mark roughly when a phase starts, and once real tasks exist the
+         placeholder is the less accurate of the two. Placeholder dates are marked with ~
+         so a rough date never reads as a firm one. */
+      let spans = [];
+      try { spans = JSON.parse(p.TasksJson || '[]'); } catch { spans = []; }
+      const phaseStart = ph => {
+        const all = spans.filter(t => t.phase === ph && t.start);
+        const real = all.filter(t => !t.placeholder);
+        const pick = (real.length ? real : all).map(t => t.start).sort()[0] || '';
+        return { date: pick, placeholder: !real.length && all.length > 0 };
+      };
+      return { p, lines, done: lines.filter(l => l.have >= l.need).length,
+               rough: phaseStart('roughIn'), finish: phaseStart('finish') };
     })
     .filter(j => j.lines.length)
     .filter(j => !q || [j.p.ProjectNumber, j.p.ProjectName, j.p.Client].join(' ').toLowerCase().includes(q))
@@ -698,6 +724,22 @@ function jobsView() {
     liveBody + doneSection;
 }
 
+/* When each phase is scheduled, shown on the job head. The lines below are listed whatever
+   the dates say -- this view is for marking off what has been bought, not for deciding what
+   to buy -- so without the dates a job can look like it is demanding finish product that is
+   not wanted for another year.
+   A ~ means the date comes from a placeholder task rather than real scheduling. */
+function phaseDates(j) {
+  const bit = (label, d) => d && d.date
+    ? label + ' ' + (d.placeholder ? '~' : '') + fmtY(parseD(d.date))
+    : '';
+  const parts = [bit('Rough-in', j.rough), bit('Finish', j.finish)].filter(Boolean);
+  if (!parts.length) return '';
+  const tip = (j.rough && j.rough.placeholder) || (j.finish && j.finish.placeholder)
+    ? ' title="~ is a placeholder date, not real scheduling"' : '';
+  return '<span class="job-dates"' + tip + '>' + esc(parts.join(' · ')) + '</span>';
+}
+
 function jobCard(j, i) {
   const open = openJobs.has(jobId(j.p));
   const total = j.lines.length;
@@ -735,6 +777,7 @@ function jobCard(j, i) {
       '<span class="job-name">' + esc(j.p.ProjectName || '') + '</span>' +
       // Project names alone don't say whose house it is; the client does.
       (j.p.Client ? '<span class="job-client">' + esc(j.p.Client) + '</span>' : '') +
+      phaseDates(j) +
       (j.p.Progress ? '<span class="tag t-ok">' + esc(j.p.Progress) + '</span>' : '') + state +
       '<span class="job-acts">' +
         btn('Rough-in ordered', 'jobMark(' + i + ',\'rough\')', !rough.length || roughDone) +
