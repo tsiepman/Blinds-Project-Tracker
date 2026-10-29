@@ -101,6 +101,10 @@
   .week-info .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--text2); }
   .week-info .val { font-size: 14px; font-weight: 600; margin-top: 2px; }
   .archived-badge { font-size: 12px; color: var(--text2); }
+  /* Returns in the archive: negative quantities, marked so a minus sign is never read as a typo. */
+  .row-return { background: rgba(62,207,122,0.05); }
+  .tag-return { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+                color: var(--green); background: var(--green-dim); border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
 
   /* FILTERS */
   .filter-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 20px; margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -293,7 +297,7 @@
       <span class="table-total" id="arch-total"></span>
     </div>
     <div style="overflow-x:auto;"><table>
-      <thead><tr><th>Week Of</th><th>Installer</th><th>Barcode</th><th>Product Name</th><th>SKU</th><th>Vendor</th><th style="text-align:right">Unit Cost</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th><th>Date</th><th>Job</th></tr></thead>
+      <thead><tr><th>Week Of</th><th></th><th>Installer</th><th>Barcode</th><th>Product Name</th><th>SKU</th><th>Vendor</th><th style="text-align:right">Unit Cost</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th><th>Date</th><th>Job</th></tr></thead>
       <tbody id="arch-tbody"></tbody>
     </table></div>
     <div class="empty-state" id="arch-empty" style="display:none">No records match your filters.</div>
@@ -328,7 +332,7 @@
 <div class="modal-overlay" id="archive-modal">
   <div class="modal">
     <h3>📦 Archive This Week & Clear All Logs</h3>
-    <p style="color:var(--text2);font-size:13px;line-height:1.6;">All current pull entries for every installer will be saved to the archive, then cleared. Returns logs are not affected.</p>
+    <p style="color:var(--text2);font-size:13px;line-height:1.6;">All current pull <strong>and return</strong> entries for every installer will be saved to the archive, then cleared. Returns are archived as negative quantities, so the week's totals are what actually went out.</p>
     <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);display:block;margin-top:14px;">Week Label</label>
     <input type="text" id="modal-week-input">
     <div class="progress-bar" id="archive-progress"><div class="progress-fill" id="archive-fill"></div></div>
@@ -786,7 +790,9 @@ async function loadArchive() {
   document.getElementById('arch-count').textContent='Loading…';
   try {
     const items=await getItems(LIST.archive);
-    archiveRows=items.map(i=>{ const f=i.fields||{}; return { weekOf: f.WeekOf||f.Title||''  , installer: f.Installer||'', barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: parseInt(f.Qty)||1, total: parseFloat(f.LineTotal)||0, date: f.DateScanned||f.Date||f.DatePulled||'', job: f.Job||''  }; });
+    // Rows archived before returns were included have no Type; they are all pulls.
+    // A negative quantity is the other tell, for anything written by an older version.
+    archiveRows=items.map(i=>{ const f=i.fields||{}; const q=parseInt(f.Qty)||1; return { weekOf: f.WeekOf||f.Title||''  , type: (f.PullType||f.Type||(q<0?'return':'pull')).toLowerCase(), installer: f.Installer||'', barcode: f.Barcode||'', name: f.ProductName||'', sku: f.SKU||'', vendor: f.Vendor||'', cost: parseFloat(f.UnitCost)||0, qty: q, total: parseFloat(f.LineTotal)||0, date: f.DateScanned||f.Date||f.DatePulled||'', job: f.Job||''  }; });
     // Merge seed archive data for weeks not already in SP
     const spWeeks=new Set(archiveRows.map(r=>r.weekOf));
     SEED_ARCHIVE.forEach(r=>{ if (!spWeeks.has(r.weekOf)) archiveRows.push(r); });
@@ -806,11 +812,14 @@ function renderArchive() {
   const tbody=document.getElementById('arch-tbody'), empty=document.getElementById('arch-empty');
   const tot=rows.reduce((s,r)=>s+(r.total||0),0);
   document.getElementById('arch-count').textContent=rows.length+' record'+(rows.length!==1?'s':'');
-  document.getElementById('arch-total').textContent=tot>0?'$'+tot.toFixed(2):'';
+  // Not tot>0: a week of returns nets negative, and hiding the figure then would be the
+  // one time the number mattered most.
+  document.getElementById('arch-total').textContent=tot!==0?(tot<0?'-$'+Math.abs(tot).toFixed(2):'$'+tot.toFixed(2)):'';
   if (!rows.length) { tbody.innerHTML=''; empty.style.display=''; return; }
   empty.style.display='none';
-  tbody.innerHTML=rows.map(r=>`<tr>
+  tbody.innerHTML=rows.map(r=>`<tr${r.type==='return'?' class="row-return"':''}>
     <td class="td-sku">${esc(r.weekOf)}</td>
+    <td>${r.type==='return'?'<span class="tag-return">return</span>':''}</td>
     <td><strong>${esc(r.installer)}</strong></td>
     <td class="td-sku">${esc(r.barcode)}</td>
     <td class="td-name ${r.name.startsWith('⚠')?'td-notfound':''}">${esc(r.name)}</td>
@@ -832,18 +841,41 @@ async function doArchive() {
   const pb=document.getElementById('archive-progress'), fill=document.getElementById('archive-fill');
   pb.style.display='block'; fill.style.width='0%';
   try {
+    /* Returns are archived too, which they were not before. The archive held only what
+       left the shop, so anything brought back stayed in ReturnsLog for ever and never
+       reached the week's record -- ten DIN modules came back in October and the archive
+       still showed all twenty-one as gone.
+
+       A return is written with NEGATIVE Qty and LineTotal, so every sum over the archive
+       is net movement without anything else needing to know about returns. Type says
+       which it is, for reading and filtering. */
     const allPulls=await getItems(LIST.pull);
-    if (!allPulls.length) { toast('No active entries to archive','warning'); closeArchiveModal(); btn.disabled=false; btn.innerHTML='Archive & Clear'; return; }
-    const total=allPulls.length; let done=0;
+    const allRets=await getItems(LIST.returns);
+    if (!allPulls.length && !allRets.length) { toast('No active entries to archive','warning'); closeArchiveModal(); btn.disabled=false; btn.innerHTML='Archive & Clear'; return; }
+    const total=allPulls.length+allRets.length; let done=0;
+    const step=()=>{ done++; fill.style.width=Math.round(done/(total*2)*100)+'%'; };
+    const neg=v=>{ const n=parseFloat(v)||0; return String(-Math.abs(n)); };
+
     for (const item of allPulls) {
       const f=item.fields||{};
-      await createItem(LIST.archive, { WeekOf: weekLabel, Installer: f.Installer||''  , Barcode: f.Barcode||''  , ProductName: f.ProductName||''  , SKU: f.SKU||''  , MfrSKU: f.MfrSKU||''  , Vendor: f.Vendor||''  , UnitCost: f.UnitCost||'0', Qty: f.Qty||'1', LineTotal: f.LineTotal||'0', DateScanned: f.DateScanned||''  , Job: f.Job||''   });
-      done++; fill.style.width=Math.round(done/(total*2)*100)+'%';
+      await createItem(LIST.archive, { WeekOf: weekLabel, PullType: 'pull', Installer: f.Installer||''  , Barcode: f.Barcode||''  , ProductName: f.ProductName||''  , SKU: f.SKU||''  , MfrSKU: f.MfrSKU||''  , Vendor: f.Vendor||''  , UnitCost: f.UnitCost||'0', Qty: f.Qty||'1', LineTotal: f.LineTotal||'0', DateScanned: f.DateScanned||''  , Job: f.Job||''   });
+      step();
     }
-    for (const item of allPulls) { await deleteItem(LIST.pull, item.id); done++; fill.style.width=Math.round(done/(total*2)*100)+'%'; }
+    for (const item of allRets) {
+      const f=item.fields||{};
+      // ReturnsLog carries no LineTotal, so it is derived the same way a pull's is.
+      const line=(parseFloat(f.UnitCost)||0)*(parseInt(f.Qty)||1);
+      await createItem(LIST.archive, { WeekOf: weekLabel, PullType: 'return', Installer: f.Installer||''  , Barcode: f.Barcode||''  , ProductName: f.ProductName||''  , SKU: f.SKU||''  , MfrSKU: f.MfrSKU||''  , Vendor: f.Vendor||''  , UnitCost: f.UnitCost||'0', Qty: neg(f.Qty||'1'), LineTotal: neg(line), DateScanned: f.DateScanned||''  , Job: f.Job||''   });
+      step();
+    }
+    for (const item of allPulls) { await deleteItem(LIST.pull, item.id); step(); }
+    for (const item of allRets) { await deleteItem(LIST.returns, item.id); step(); }
+
     localStorage.setItem('art_last_archived', new Date().toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}));
-    pullEntries=[]; renderPull(); updateWeekLabel(); setStatus('connected','Connected');
-    closeArchiveModal(); toast('Archived '+total+' entries for '+weekLabel,'success');
+    pullEntries=[]; retEntries=[]; renderPull(); if (typeof renderReturns==='function') renderReturns();
+    updateWeekLabel(); setStatus('connected','Connected');
+    closeArchiveModal();
+    toast('Archived '+allPulls.length+' pull'+(allPulls.length===1?'':'s')+' and '+allRets.length+' return'+(allRets.length===1?'':'s')+' for '+weekLabel,'success');
   } catch(e) { toast('Archive failed: '+e.message,'error'); }
   pb.style.display='none'; btn.disabled=false; btn.innerHTML='Archive & Clear';
 }
@@ -908,7 +940,9 @@ async function importProductsCSV(event) {
 function exportProductsCSV() { const rows=[['Bar Code','Product Name','Product SKU','Mfr SKU','Unit Cost','Vendor']]; for (const [k,v] of Object.entries(products)) rows.push([k,v.name,v.sku,v.mfrSku,v.cost,v.vendor]); downloadCSV('ART_Product_Lookup.csv',rows); }
 function exportPullCSV() { if (!pullEntries.length){toast('No entries','warning');return;} const rows=[['Bar Code','Product Name','SKU','Mfr SKU','Vendor','Unit Cost','Qty','Total','Date','Job']]; pullEntries.forEach(e=>rows.push([e.barcode,e.name,e.sku,e.mfrSku,e.vendor,e.cost,e.qty,e.total,e.date,e.job])); downloadCSV('ART_PullLog_'+activeInstaller+'_'+new Date().toISOString().slice(0,10)+'.csv',rows); }
 function exportRetCSV() { if (!retEntries.length){toast('No returns','warning');return;} const rows=[['Bar Code','Product Name','SKU','Mfr SKU','Vendor','Unit Cost','Qty','Date','Job','CO','Install Later','Notes']]; retEntries.forEach(e=>rows.push([e.barcode,e.name,e.sku,e.mfrSku,e.vendor,e.cost,e.qty,e.date,e.job,e.co,e.installLater,e.notes])); downloadCSV('ART_Returns_'+activeInstaller+'_'+new Date().toISOString().slice(0,10)+'.csv',rows); }
-function exportArchiveCSV() { if (!archiveRows.length){toast('No archive data','warning');return;} const rows=[['Week Of','Installer','Bar Code','Product Name','SKU','Vendor','Unit Cost','Qty','Total','Date','Job']]; archiveRows.forEach(r=>rows.push([r.weekOf,r.installer,r.barcode,r.name,r.sku,r.vendor,r.cost,r.qty,r.total,r.date,r.job])); downloadCSV('ART_Archive_'+new Date().toISOString().slice(0,10)+'.csv',rows); }
+// Type is second so a glance down the exported sheet separates pulls from returns, and the
+// negative Qty makes a total over the column net rather than gross.
+function exportArchiveCSV() { if (!archiveRows.length){toast('No archive data','warning');return;} const rows=[['Week Of','Type','Installer','Bar Code','Product Name','SKU','Vendor','Unit Cost','Qty','Total','Date','Job']]; archiveRows.forEach(r=>rows.push([r.weekOf,r.type,r.installer,r.barcode,r.name,r.sku,r.vendor,r.cost,r.qty,r.total,r.date,r.job])); downloadCSV('ART_Archive_'+new Date().toISOString().slice(0,10)+'.csv',rows); }
 function downloadCSV(filename,rows) { const csv=rows.map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url); }
 
 // ── HOME GRID ──
