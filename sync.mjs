@@ -186,6 +186,7 @@ async function main() {
     let spans;
     if (active || !prior) {
       const tasks = await si.tasks(p.Id);
+      showTaskShape(tasks);
       spans = taskSpans(tasks);
       // The same fetch feeds the field-visit log: who was scheduled where, recorded while
       // the task still exists.
@@ -430,6 +431,43 @@ async function main() {
       '\nNo projects in the queue. The Subscribe feed is delta-based, so a project\n' +
       'appears only once it has been edited in SI since publishing was enabled.'
     );
+  }
+}
+
+/* What a task record actually carries, printed once when the repository variable
+   TASK_SHAPE is set to true. Set it, let one run go, read the log, then delete it.
+
+   The question it answers: do site notes come down the API at all? Today the write-ups
+   reach us only as EMAIL -- Mobile Install notifies, Terry forwards to workorders@, Power
+   Automate copies it into a list. If an installer does not tick "send an email" when they
+   publish their notes, nothing arrives and the field log records them as having written
+   nothing. Adrian is on 19% and Kevin on 14% where everyone else is 52-79%, which is what
+   that looks like.
+
+   If the note text is on the task record, the whole email chain can go: no checkbox to
+   forget, no forwarding, and notes for the installers who have been marked down for
+   months. If it is not there, this is a habit to enforce rather than a thing to build. */
+let taskShapeShown = false;
+function showTaskShape(tasks) {
+  if (taskShapeShown || String(process.env.TASK_SHAPE || '') !== 'true') return;
+  const t = (tasks ?? [])[0];
+  if (!t) return;
+  taskShapeShown = true;
+  console.log(`\n  TASK_SHAPE — fields on a task record:\n    ${Object.keys(t).sort().join(', ')}`);
+  // Anything that might hold note text, with a sample, so an empty field is not mistaken
+  // for a missing one.
+  const maybe = Object.keys(t).filter(k => /note|comment|site|remark|log|detail|descr/i.test(k));
+  if (maybe.length) {
+    console.log('  fields that might hold site notes:');
+    for (const k of maybe) {
+      const v = t[k];
+      const show = v == null ? '(null)'
+        : typeof v === 'object' ? JSON.stringify(v).slice(0, 160)
+        : String(v).trim() ? JSON.stringify(String(v).slice(0, 160)) : '(empty)';
+      console.log(`    ${k.padEnd(22)} ${show}`);
+    }
+  } else {
+    console.log('  nothing on the task looks like a note field.');
   }
 }
 
