@@ -85,6 +85,11 @@
   .t-svc { background: var(--surface2); color: var(--text2); }
 
   .banner { background: var(--yellow-dim); color: var(--yellow); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+  /* Quieter than the banner: permanent context, not a problem to fix. */
+  .note-caveat { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--yellow);
+                 border-radius: var(--radius); padding: 9px 13px; font-size: 12px; line-height: 1.55;
+                 color: var(--text2); margin-bottom: 16px; }
+  .note-caveat b { color: var(--text); }
   .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
   .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
@@ -570,6 +575,15 @@ function render() {
     '<p class="page-sub">Every visit D-Tools had scheduled, recorded as it happened. Rescheduled or deleted work keeps its record here.</p>' +
     (visits.some(f => f.WriteUpAt) ? '' :
       '<div class="banner"><b>Write-ups aren\'t being matched yet.</b> Once the work-order emails reach the shared mailbox, each visit will show whether its write-up came in and what it said. Until then every past visit reads “no write-up”.</div>') +
+    /* Said plainly, because this page gets used to judge people and the number does not
+       mean what it looks like. Site notes reach us only as the notification email from
+       Mobile Install -- they are not on the task record in the API, so if the box is not
+       ticked the note stays in D-Tools and nothing here ever sees it.
+       Two of the crew were sitting at 14% and 19% against everyone else's 52-79% for
+       exactly this reason. */
+    '<div class="note-caveat"><b>“No write-up” means no email arrived — not that nothing was written.</b> ' +
+      'Site notes only reach this page if <b>“send an email”</b> is ticked when they are published in Mobile Install. ' +
+      'Untick it and the note stays in D-Tools, invisible here. Check with the installer before reading anything into a low count.</div>' +
     '<div class="controls">' +
       '<div><label class="fld">View</label><div class="seg" role="tablist">' +
         '<button role="tab" aria-selected="' + (view === 'day') + '" class="' + (view === 'day' ? 'on' : '') + '" onclick="setView(\'day\')">By day</button>' +
