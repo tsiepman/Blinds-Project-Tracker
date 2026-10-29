@@ -290,6 +290,8 @@ async function main() {
           Site: String(v.site).slice(0, 250),
           VisitName: String(v.name).slice(0, 250),
           SchedDate: v.date,
+          // The last day of the visit, not just the first. Equals SchedDate on a one-day task.
+          SchedEnd: v.endDate || v.date,
           SchedFrom: v.from,
           SchedTo: v.to,
           Crew: v.crew.join(', ').slice(0, 250),
@@ -305,7 +307,7 @@ async function main() {
           else {
             // Only the fields that can move -- so a re-run doesn't rewrite every row, and
             // the write-up columns the field log fills in later are never touched.
-            const moved = ['SchedDate', 'SchedFrom', 'SchedTo', 'Crew', 'Progress', 'PercentComplete', 'Instructions', 'SourceUpdatedOn']
+            const moved = ['SchedDate', 'SchedEnd', 'SchedFrom', 'SchedTo', 'Crew', 'Progress', 'PercentComplete', 'Instructions', 'SourceUpdatedOn']
               .some(k => String(prior[k] ?? '') !== String(fields[k] ?? ''));
             if (moved) { if (!dryRun) await graph.update(VISIT_LIST, prior.itemId, fields); visitsChanged++; }
           }

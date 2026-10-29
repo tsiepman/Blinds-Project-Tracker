@@ -143,6 +143,11 @@ export function visitFromTask(t, project) {
     site: addressOf(t.SiteAddress),
     name: t.Name || '',
     date: day(t.ScheduledStart),
+    // The END day, not just the end time. A task scheduled 28 Sep 09:00 to 2 Oct 17:00
+    // was being stored as a one-day visit on the 28th: the start day with 17:00 against it,
+    // indistinguishable from a single day of work. Every day after the first went missing
+    // from the field log, and from anything matching product to the job it went to.
+    endDate: day(t.ScheduledEnd || t.ScheduledStart),
     from: clock(t.ScheduledStart),
     to: clock(t.ScheduledEnd),
     crew: crewOf(t),
@@ -166,6 +171,7 @@ export function visitFromServiceOrder(s) {
     site: addressOf(s.SiteAddress),
     name: s.Name || '',
     date: day(s.ScheduledStart),
+    endDate: day(s.ScheduledEnd || s.ScheduledStart),
     from: clock(s.ScheduledStart),
     to: clock(s.ScheduledEnd),
     crew: crewOf(s),

@@ -49,6 +49,7 @@
   .row { display: flex; gap: 12px; align-items: flex-start; padding: 11px 16px; border-top: 1px solid var(--border); }
   .row:first-of-type { border-top: none; }
   .when { min-width: 5.5em; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums; }
+  .cont { display: block; font-size: 11px; color: var(--text3); font-style: italic; }
   .what { flex: 1; min-width: 0; }
   .job { font-weight: 600; }
   .job .num { font-family: var(--mono); font-size: 12.5px; color: var(--text3); margin-right: 6px; }
@@ -272,7 +273,7 @@ function shape(f) {
     id: f.VisitId || '', kind: f.Kind || 'task', number: f.Number || '',
     jobNumber: f.JobNumber || '', jobName: f.JobName || '', client: f.Client || '',
     site: f.Site || '', name: f.VisitName || '',
-    date, from: f.SchedFrom || '', to: f.SchedTo || '',
+    date, endDate: f.SchedEnd || date, from: f.SchedFrom || '', to: f.SchedTo || '',
     crew: String(f.Crew || '').split(',').map(s => s.trim()).filter(Boolean),
     progress: f.Progress || '', instructions: f.Instructions || '',
     writeUpAt: f.WriteUpAt || '', writeUpBy: f.WriteUpBy || '', writeUpText: f.WriteUpText || '',
@@ -292,9 +293,27 @@ function parseSummaries(s) {
   try { const x = JSON.parse(s); return Array.isArray(x) ? x : [x]; } catch { return [{ summary: String(s) }]; }
 }
 
+/* Every day a visit covers, inclusive. One entry for an ordinary visit; capped at 30 so a
+   task with a mistyped end date cannot spray a year of rows across the page. */
+function visitDays(v) {
+  const out = [v.date];
+  if (!v.date || !v.endDate || v.endDate <= v.date) return out;
+  let d = v.date;
+  for (let i = 0; i < 30; i++) {
+    const t = parseD(d); t.setDate(t.getDate() + 1);
+    d = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    if (d > v.endDate) break;
+    out.push(d);
+  }
+  return out;
+}
+
 function inWindow(v) {
   if (!v.date) return false;
-  if (v.age > days) return false;
+  // Measured from the LAST day. A fortnight-long install that started before the window
+  // but ran into it is still work somebody did this week.
+  const ageEnd = v.endDate && v.endDate > v.date ? dayDiff(v.endDate, today()) : v.age;
+  if (ageEnd > days) return false;
   if (!search) return true;
   const hay = [v.jobNumber, v.jobName, v.client, v.site, v.name, v.crew.join(' ')].join(' ').toLowerCase();
   return hay.includes(search.toLowerCase());
@@ -325,8 +344,15 @@ function statusTag(v) {
 
 function rowHtml(v, showDate) {
   const time = v.from ? v.from + (v.to ? '–' + v.to : '') : '—';
+  // Days 2+ of a multi-day task. The times belong to the task as a whole, so showing
+  // 09:00–17:00 against every day would be inventing detail we do not have.
+  const span = v.endDate && v.endDate > v.date;
+  const when = v.contDay
+    ? '<span class="cont">cont.</span>'
+    : (showDate ? parseD(v.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '<br>' : '') +
+      time + (span ? '<span class="cont">to ' + parseD(v.endDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '</span>' : '');
   return '<div class="row">' +
-    '<div class="when">' + (showDate ? parseD(v.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '<br>' : '') + time + '</div>' +
+    '<div class="when">' + when + '</div>' +
     '<div class="what">' +
       '<div class="job">' + (v.jobNumber ? '<span class="num">' + esc(v.jobNumber) + '</span>' : '') + esc(v.jobName || v.name || v.client) +
         (v.kind === 'service' ? ' <span class="tag t-svc">service</span>' : '') + '</div>' +
@@ -467,8 +493,20 @@ function render() {
   if (!all.length) {
     body = '<div class="empty">Nothing scheduled in the last ' + days + ' days' + (search ? ' matching “' + esc(search) + '”' : '') + '.</div>';
   } else if (view === 'day') {
+    /* A task scheduled over several days belongs on every one of them. The sync used to
+       record only the start day, so a five-day install showed the crew on site once and
+       absent for the rest of the week -- and anything asking "who was at this job on the
+       29th" got the wrong answer. SchedEnd fixes the data; this puts it on each day.
+
+       Only the day grouping expands. The write-up is for the whole visit, not per day, so
+       every other view still sees one entry and the outstanding counts stay right. */
     const byDay = new Map();
-    for (const v of all) { if (!byDay.has(v.date)) byDay.set(v.date, []); byDay.get(v.date).push(v); }
+    for (const v of all) {
+      for (const d of visitDays(v)) {
+        if (!byDay.has(d)) byDay.set(d, []);
+        byDay.get(d).push(d === v.date ? v : { ...v, contDay: d });
+      }
+    }
     body = [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([date, vs]) => {
       vs.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
       const miss = vs.filter(v => v.state === 'missing' || v.state === 'late').length;
