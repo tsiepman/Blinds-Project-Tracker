@@ -624,14 +624,15 @@ const Store={
 
 /* ---------------- date helpers ---------------- */
 const DAY=86400000;
-const iso=d=>{const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");};
+const iso=d=>{if(typeof d==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(d))return d;   /* already a plain date: new Date() would read it as UTC and slip a day */
+  const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");};
 const parse=s=>{const[a,b,c]=String(s).split("-").map(Number);return new Date(a,b-1,c);};
 const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
-const addD=(d,n)=>new Date(parse(iso(d)).getTime()+n*DAY);
+const addD=(d,n)=>{const x=parse(iso(d));x.setDate(x.getDate()+n);return x;};   /* calendar maths: safe across clock changes */
 const days=(a,b)=>Math.round((parse(iso(b))-parse(iso(a)))/DAY);
 const fmt=s=>{if(!s)return"—";const d=parse(s);return d.toLocaleDateString("en-CA",{month:"short",day:"numeric",year:"numeric"});};
 const fmtShort=s=>{if(!s)return"—";const d=parse(s);return d.toLocaleDateString("en-CA",{month:"short",day:"numeric"});};
-const rangeDays=(a,b)=>{const o=[];let d=parse(a),e=parse(b);while(d<=e){o.push(iso(d));d=new Date(d.getTime()+DAY);}return o;};
+const rangeDays=(a,b)=>{const o=[];let d=parse(a),e=parse(b);while(d<=e){o.push(iso(d));d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);}return o;};
 const yrs=s=>{if(!s)return 0;return Math.floor(days(s,today())/365.25);};
 const uid=()=>Math.random().toString(36).slice(2,10);
 
@@ -1247,13 +1248,23 @@ function vDash(){
 /* =========================================================================
    VIEW: TIME OFF  (season board + availability + queues)
    ========================================================================= */
+let boardShift=0;   /* weeks the board is scrolled away from the season. View only: allocation never reads it. */
 function seasonWeeks(){
   const s=db.settings;
   let d=parse(s.seasonStart);
-  while(d.getDay()!==1) d=new Date(d.getTime()-DAY);   /* back up to Monday */
+  while(d.getDay()!==1) d=new Date(d.getFullYear(),d.getMonth(),d.getDate()-1);   /* back up to Monday */
   const w=[], end=parse(s.seasonEnd);
-  while(d<=end){ w.push(iso(d)); d=new Date(d.getTime()+7*DAY); }
-  return w;
+  while(d<=end){ w.push(iso(d)); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+7); }
+  return w.map(x=>iso(addD(x,boardShift*7)));
+}
+function boardMove(n){ boardShift+=n; render(); }
+function boardTo(where){
+  if(where==="season") boardShift=0;
+  else{
+    let d=today(); while(d.getDay()!==1) d=addD(d,-1);
+    boardShift=0; boardShift=Math.round(days(seasonWeeks()[0],iso(d))/7);
+  }
+  render();
 }
 function weekLoad(wkStart){
   const d1=rangeDays(wkStart,iso(addD(wkStart,6)));
@@ -1269,7 +1280,9 @@ function vTimeOff(){
   const s=db.settings, ph=phase(), weeks=seasonWeeks();
   const bids=db.timeOff.filter(r=>r.status==="bid");
   const pend=db.timeOff.filter(r=>r.status==="pending");
-  const stats=statHolidays(parse(s.seasonStart).getFullYear()).filter(h=>h.d>=weeks[0]&&h.d<=s.seasonEnd);
+  const wkEnd=iso(addD(weeks[weeks.length-1],6));
+  const stats=[...new Set([parse(weeks[0]).getFullYear(),parse(wkEnd).getFullYear()])]
+    .flatMap(y=>statHolidays(y)).filter(h=>h.d>=weeks[0]&&h.d<=wkEnd);
   const crew=db.employees.filter(e=>e.active).sort((a,b)=>a.hired<b.hired?-1:1);
 
   /* --- season board rows --- */
@@ -1314,7 +1327,13 @@ function vTimeOff(){
     <div><b>Bidding closed ${fmt(s.bidDeadline)} — awaiting allocation</b>Trevor still needs to run the seniority allocation before this season's requests are final.</div></div>`:""}
 
   <div class="card" style="margin-bottom:16px">
-    <div class="hd"><h3>Season board</h3><span class="sm2">${fmt(s.seasonStart)} – ${fmt(s.seasonEnd)}</span>
+    <div class="hd"><h3>Season board</h3><span class="sm2">${fmt(weeks[0])} – ${fmt(wkEnd)}</span>
+      <div class="btnrow" style="margin-left:6px">
+        <button class="btn sm" onclick="boardMove(-4)" title="Back 4 weeks" aria-label="Back 4 weeks">◀</button>
+        <button class="btn sm" onclick="boardMove(4)" title="Forward 4 weeks" aria-label="Forward 4 weeks">▶</button>
+        <button class="btn sm" onclick="boardTo('today')">Today</button>
+        <button class="btn sm" onclick="boardTo('season')"${boardShift?"":" disabled"}>Season</button>
+      </div>
       <div style="margin-left:auto" class="btnrow">
         <button class="btn sm" onclick="openReq()">Request time off</button>
         <button class="btn sm" onclick="openCheck()">Check a date</button>
@@ -1610,6 +1629,20 @@ function openReq(){
     `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveReq()">Submit request</button>`);
   setTimeout(()=>{document.getElementById("r_emp").onchange=liveCheck;liveCheck();},0);
 }
+/* Who already has approved time off inside a range, and how many slots that uses.
+   "Open" only means under the caps, so this is what shows who is actually off. */
+function offNote(a,b){
+  const s=db.settings;
+  const spans=db.timeOff.filter(r=>r.status==="approved"&&r.start<=b&&r.end>=a)
+    .map(r=>({who:emp(r.empId),from:r.start<a?a:r.start,to:r.end>b?b:r.end}))
+    .filter(x=>x.who&&x.who.active!==false)
+    .sort((p,q)=>p.from<q.from?-1:1);
+  if(!spans.length) return "";
+  let peak=0,peakKey=0;
+  rangeDays(a,b).forEach(d=>{const o=offOn(db,d);peak=Math.max(peak,o.length);peakKey=Math.max(peakKey,o.filter(e=>e.keyTech).length);});
+  return `<ul>${spans.map(x=>`<li>${esc(x.who.name)}${x.who.keyTech?" (lead)":""} — ${fmtShort(x.from)}${x.from!==x.to?" – "+fmtShort(x.to):""}</li>`).join("")}</ul>
+    <div class="mini">Most off at once in this range: ${peak} of ${s.maxOffTotal}${peakKey?" · leads "+peakKey+" of "+s.maxKeyOff:""}.</div>`;
+}
 function liveCheck(){
   const box=document.getElementById("r_live"); if(!box)return;
   const e=val("r_emp"), a=val("r_start"), b=val("r_end"), s=db.settings, ph=phase();
@@ -1620,7 +1653,9 @@ function liveCheck(){
   if(ph!=="bidding"&&notice<s.noticeDays)
     html+=`<div class="avail a-warn"><b>Short notice</b>That's ${notice} days out; ${s.noticeDays} are normally required. It'll go through as a request for approval.</div>`;
   if(chk.ok)
-    html+=`<div class="avail a-ok"><b>Those dates are open</b>${days(a,b)+1} days, no clash with anything already approved.</div>`;
+    html+=offNote(a,b)
+      ?`<div class="avail a-ok"><b>Those dates fit — others are already off</b>${days(a,b)+1} days, still under the crew limits.${offNote(a,b)}</div>`
+      :`<div class="avail a-ok"><b>Those dates are open</b>${days(a,b)+1} days, and nobody else is off.</div>`;
   else
     html+=`<div class="avail a-no"><b>Not available</b>The schedule is already full on:
       <ul>${chk.conflicts.map(c=>`<li>${fmtShort(c.start)}${c.start!==c.end?" – "+fmtShort(c.end):""} — ${c.why} (${esc(c.who.join(", "))})</li>`).join("")}</ul></div>`;
@@ -1654,7 +1689,9 @@ function doCheck(){
   if(!a||!b||b<a){box.innerHTML="";return;}
   const chk=checkRange(db,e,a,b);
   box.innerHTML=chk.ok
-    ?`<div class="avail a-ok"><b>Open</b>All ${days(a,b)+1} days are clear.</div>`
+    ?(offNote(a,b)
+      ?`<div class="avail a-ok"><b>Fits — but others are off</b>All ${days(a,b)+1} days are under the crew limits.${offNote(a,b)}</div>`
+      :`<div class="avail a-ok"><b>Open</b>All ${days(a,b)+1} days are clear — nobody is off.</div>`)
     :`<div class="avail a-no"><b>${chk.dayCount} of ${days(a,b)+1} days are full</b>
       <ul>${chk.conflicts.map(c=>`<li>${fmtShort(c.start)}${c.start!==c.end?" – "+fmtShort(c.end):""} — ${c.why} (${esc(c.who.join(", "))})</li>`).join("")}</ul></div>`;
 }
