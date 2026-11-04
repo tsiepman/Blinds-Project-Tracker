@@ -618,7 +618,7 @@ const Store={
       for(const key of COLLECTIONS){ if(!UNAVAILABLE.has(key)) await saveCollection(key,db[key]||[]); }
       await saveSettings(db.settings);
       return true;
-    }catch(e){ console.error(e); toast("Sync failed: "+e.message); return false; }
+    }catch(e){ console.error(e); Store.lastError=e.message; return false; }
   }
 };
 
@@ -1089,7 +1089,7 @@ async function bootstrapSelf(){
   db.employees.push(rec);
   phaseAuth="loading"; render();
   const saved=await Store.save(db);
-  if(!saved){ authErr="Couldn't create your employee record — check the SharePoint lists exist and try again."; phaseAuth="error"; render(); return; }
+  if(!saved){ authErr="Couldn't create your employee record: "+(Store.lastError||"unknown error"); phaseAuth="error"; render(); return; }
   me=rec; isManager=true; phaseAuth="ready"; render();
 }
 
@@ -1102,13 +1102,19 @@ function phase(){
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function emp(id){return db.employees.find(e=>e.id===id);}
 function empName(id){const e=emp(id);return e?e.name:"—";}
-async function commit(msg){ await Store.save(db); if(msg) toast(msg); render(); }
-function toast(m){
+async function commit(msg){
+  const ok=await Store.save(db);
+  if(ok){ if(msg) toast(msg); }
+  else toast("NOT SAVED to SharePoint: "+(Store.lastError||"unknown error")+" — this change exists only on this screen and will be lost on reload.",15000);
+  render();
+}
+function toast(m,ms){
   clearTimeout(toastT);
   let el=document.getElementById("toast");
   if(!el){el=document.createElement("div");el.id="toast";el.className="toast";document.body.appendChild(el);}
   el.textContent=m; el.style.display="block";
-  toastT=setTimeout(()=>{el.style.display="none";},2600);
+  el.style.background=ms>3000?"var(--red)":"";
+  toastT=setTimeout(()=>{el.style.display="none";},ms||2600);
 }
 
 /* =========================================================================
