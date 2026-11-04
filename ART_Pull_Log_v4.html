@@ -563,6 +563,7 @@ function setStatus(type, label) {
 // ── INSTALLER SELECT ──
 async function selectInstaller(name) {
   activeInstaller = name;
+  restoreJobs();
   document.getElementById('header-installer-badge').textContent = name;
   document.getElementById('header-installer-badge').style.display = '';
   document.getElementById('nav-pull').style.display = '';
@@ -670,6 +671,32 @@ document.getElementById('barcode-input').addEventListener('input', function() {
 document.getElementById('barcode-input').addEventListener('keydown', e => { if(e.key==='Enter') addPullEntry(); });
 document.getElementById('pull-job').addEventListener('keydown', e => { if(e.key==='Enter') addPullEntry(); });
 
+// ── STICKY JOB ──
+// The job name stays in the box between scans so a guy scanning 30 pieces for one job types it once.
+// It is remembered per installer in this browser and drops the next day, so yesterday's job
+// can't get tagged onto this morning's pulls.
+function localDay() { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function jobKey() { return 'art_sticky_job_' + activeInstaller; }
+function saveJobs() {
+  if (!activeInstaller) return;
+  try { localStorage.setItem(jobKey(), JSON.stringify({ day: localDay(), pull: document.getElementById('pull-job').value, ret: document.getElementById('ret-job').value })); } catch(e) {}
+}
+function restoreJobs() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(jobKey())); } catch(e) {}
+  const fresh = !!s && s.day === localDay();
+  document.getElementById('pull-job').value = fresh ? (s.pull || '') : '';
+  document.getElementById('ret-job').value = fresh ? (s.ret || '') : '';
+}
+// A phone left unlocked overnight keeps the old text on screen, so drop it when the page wakes on a new day.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !activeInstaller) return;
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(jobKey())); } catch(e) {}
+  if (s && s.day !== localDay()) { document.getElementById('pull-job').value=''; document.getElementById('ret-job').value=''; try { localStorage.removeItem(jobKey()); } catch(e) {} }
+});
+['pull-job','ret-job'].forEach(id => document.getElementById(id).addEventListener('input', saveJobs));
+
 async function addPullEntry() {
   const bc = document.getElementById('barcode-input').value.trim();
   if (!bc || !activeInstaller) return;
@@ -685,7 +712,7 @@ async function addPullEntry() {
     pullEntries.push({ spId: item.id, barcode: bc, name: fields.ProductName, sku: fields.SKU, mfrSku: fields.MfrSKU, vendor: fields.Vendor, cost: p?p.cost:0, qty, total: p?p.cost*qty:0, date: today, job });
     renderPull();
     document.getElementById('barcode-input').value=''; document.getElementById('lookup-result').style.display='none';
-    document.getElementById('pull-qty').value=1; document.getElementById('pull-job').value='';
+    document.getElementById('pull-qty').value=1;   // Job is left alone on purpose: it stays until the installer clears it
     document.getElementById('barcode-input').focus();
     toast(p?'Added: '+p.name.slice(0,40):'Added (not in database)', p?'success':'warning');
   } catch(e) { toast('Save failed: '+e.message,'error'); }
@@ -753,7 +780,7 @@ async function addReturnEntry() {
     const item=await createItem(LIST.returns, fields);
     retEntries.push({ spId: item.id, barcode: bc, name: fields.ProductName, sku: fields.SKU, mfrSku: fields.MfrSKU, vendor: fields.Vendor, cost: p?p.cost:0, qty, date: today, job, co, installLater, notes });
     renderReturns();
-    ['ret-barcode','ret-job','ret-notes'].forEach(id=>document.getElementById(id).value='');
+    ['ret-barcode','ret-notes'].forEach(id=>document.getElementById(id).value='');   // ret-job stays, same as pulls
     document.getElementById('ret-qty').value=1; document.getElementById('ret-co').value=''; document.getElementById('ret-install-later').value='';
     document.getElementById('ret-lookup-result').style.display='none';
     document.getElementById('ret-barcode').focus();
