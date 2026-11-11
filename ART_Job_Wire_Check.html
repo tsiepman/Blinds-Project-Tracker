@@ -75,7 +75,8 @@
   .proj input { padding: 5px 8px; font-size: 12px; width: 240px; max-width: 100%; }
   .mini { font-size: 11.5px; color: var(--text3); }
   details.look { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--yellow); border-radius: var(--radius-lg); margin-bottom: 16px; padding: 10px 16px; }
-  details.look > summary { cursor: pointer; font-size: 13.5px; }
+  details.look > summary, details.before > summary { cursor: pointer; font-size: 13.5px; }
+  details.before { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-top: 16px; padding: 10px 16px; }
   details.look p.mini { margin: 2px 0 6px; }
   .look-i { padding: 7px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
   .look-i:first-of-type { border-top: none; }
@@ -139,6 +140,7 @@ const OVER_PCT = 1.10, OVER_MIN_FT = 100, UNQUOTED_MIN_FT = 50, UNDER_PCT = 0.60
 let msal_ = null, siteId = null, listIds = {};
 let rawProjects = [], rawVisits = [], usingSample = false;
 let groups = [], filter = 'all', search = '';
+let trackStart = '';   // the earliest visit with a write-up: before this date nobody was collecting counts
 let attention = [], lostCounts = [];   // projects the page couldn't place with confidence, and counts that matched no project
 let links = (() => { try { return JSON.parse(localStorage.getItem('wirecheck.links') || '{}'); } catch { return {}; } })();
 
@@ -282,6 +284,7 @@ function build() {
     let lines = []; try { lines = JSON.parse(f.OrderLinesJson || '[]'); } catch { /* leave empty */ }
     return {
       num: String(f.ProjectNumber || f.Title || '').trim(), name: f.ProjectName || '', client: f.Client || '', progress: f.Progress || '',
+      start: String(f.StartDate || '').slice(0, 10),
       lines: lines.filter(l => l.bulk).map(l => ({ type: wireType(l.model, l.desc), ft: Number(l.qty) || 0, cost: Number(l.cost) || 0 })).filter(l => l.type && l.ft > 0)
     };
   }).filter(p => p.num);
@@ -339,6 +342,7 @@ function build() {
   });
   const keyed = new Map(groups.map(g => [g.key, g]));
   const seen = new Set(); const today = new Date().toISOString().slice(0, 10);
+  trackStart = rawVisits.filter(v => String(v.WriteUpText || '').trim() && /^\d{4}-\d{2}-\d{2}/.test(v.SchedDate || '')).map(v => v.SchedDate.slice(0, 10)).sort()[0] || '';
   for (const v of rawVisits) {
     const num = String(v.JobNumber || '').trim(); const g = projGroup.get(num);
     if (!g) {                                   // counts for a job we have no quote for would otherwise vanish silently
@@ -381,11 +385,21 @@ function build() {
     g.quotedTotal = Object.values(g.quoted).reduce((s, x) => s + x.ft, 0);
     g.countedTotal = Object.values(g.counted).reduce((s, x) => s + x, 0);
     g.exposure = exposure;
-    const pastVisits = g.visits.filter(v => v.past).length;
+    /* Write-ups only exist from trackStart on. A job whose wire work happened before then has no
+       counts because nobody was collecting them yet, not because anybody forgot, so it is
+       set aside instead of being reported as a miss. No footage is guessed for it. */
+    const starts = [...g.projects.map(p => p.start), ...g.visits.map(v => String(v.date).slice(0, 10))].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+    g.start = starts[0] || '';
+    const tracked = g.visits.filter(v => v.past && trackStart && String(v.date).slice(0, 10) >= trackStart);
+    const wireWorkTracked = tracked.some(v => /pre-?wire|rough/i.test(v.progress));
+    g.partial = !!(g.countedTotal && trackStart && g.start && g.start < trackStart);
     g.status = over ? 'over'
       : g.countedTotal ? 'counted'
-      : g.quotedTotal >= NOCOUNT_MIN_FT && pastVisits ? 'nocount'
-      : g.quotedTotal ? 'notstarted' : 'nowire';
+      : g.quotedTotal < NOCOUNT_MIN_FT ? (g.quotedTotal ? 'notstarted' : 'nowire')
+      : wireWorkTracked ? 'nocount'
+      : trackStart && g.start && g.start < trackStart ? 'before'
+      : tracked.length ? 'nocount'
+      : 'notstarted';
   }
   groups = groups.filter(g => g.quotedTotal || g.countedTotal);
   window.__keyed = keyed;
@@ -414,15 +428,17 @@ function exportCsv() {
   a.download = 'ART_wire_check_' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
 }
 
-const STATUS_TAG = { over: ['over', 'Over quote'], nocount: ['miss', 'No count written'], counted: ['ok', 'Counted'], notstarted: ['grey', 'Not started'] };
+const STATUS_TAG = { over: ['over', 'Over quote'], nocount: ['miss', 'No count written'], counted: ['ok', 'Counted'], notstarted: ['grey', 'Not started'], before: ['grey', 'Before write-ups began'] };
 function render() {
   const app = document.getElementById('app');
   const withWire = groups.length, counted = groups.filter(g => g.countedTotal).length;
   const over = groups.filter(g => g.status === 'over'), nocount = groups.filter(g => g.status === 'nocount');
+  const before = groups.filter(g => g.status === 'before');
   const extra = over.reduce((s, g) => s + g.exposure, 0);
   const q = search.trim().toLowerCase();
-  let list = groups.filter(g => (filter === 'all' || (filter === 'over' && g.status === 'over') || (filter === 'nocount' && g.status === 'nocount') || (filter === 'counted' && g.countedTotal))
-    && (!q || (g.name + ' ' + g.client + ' ' + g.projects.map(p => p.num + ' ' + p.name).join(' ')).toLowerCase().includes(q)));
+  const hit = g => !q || (g.name + ' ' + g.client + ' ' + g.projects.map(p => p.num + ' ' + p.name).join(' ')).toLowerCase().includes(q);
+  let list = groups.filter(g => g.status !== 'before' && hit(g) && (filter === 'all' || (filter === 'over' && g.status === 'over') || (filter === 'nocount' && g.status === 'nocount') || (filter === 'counted' && g.countedTotal)));
+  const beforeList = before.filter(hit).sort((a, b) => (b.start < a.start ? -1 : 1));
   const order = { over: 0, nocount: 1, counted: 2, notstarted: 3 };
   list.sort((a, b) => order[a.status] - order[b.status] || b.exposure - a.exposure || b.quotedTotal - a.quotedTotal);
 
@@ -430,12 +446,13 @@ function render() {
     '<h1 class="page">Quoted vs counted wire</h1>' +
     '<p class="page-sub">What each job was quoted in D-Tools against what the installers wrote down in their work-order write-ups.</p>' +
     (usingSample ? '<div class="banner"><b>Sample data.</b> Nothing here is from SharePoint — it is Jayas, Niakwa and Alair as of Nov 10 plus one made-up job. Sign in (no <code>?demo</code>) to see the real thing.</div>' : '') +
-    '<div class="note-caveat"><b>How to read this.</b> Counts come from the free text installers type ("Cat 6 total= 2522 ft") and are <b>added up per visit</b>; a write-up attached to two visits is counted once. Only ' + counted + ' of ' + withWire + ' jobs with quoted wire have any count, so <b>no count means unchecked, not fine</b>. “Under” is normal while a job is in progress. Cat6 burial is folded into Cat6. Extra-wire cost uses the quoted unit cost.</div>' +
+    '<div class="note-caveat"><b>How to read this.</b> Counts come from the free text installers type ("Cat 6 total= 2522 ft") and are <b>added up per visit</b>; a write-up attached to two visits is counted once. Write-ups only exist from <b>' + (trackStart ? esc(trackStart) : 'an unknown date') + '</b> on, so jobs that started earlier are set aside instead of being called misses. Only ' + counted + ' of ' + withWire + ' jobs with quoted wire have any count, so <b>no count means unchecked, not fine</b>. “Under” is normal while a job is in progress. Cat6 burial is folded into Cat6. Extra-wire cost uses the quoted unit cost.</div>' +
     '<div class="totals">' +
       '<div class="tot"><div class="tot-n">' + withWire + '</div><div class="tot-l">Jobs with wire</div></div>' +
       '<div class="tot"><div class="tot-n">' + counted + '</div><div class="tot-l">Have a count</div></div>' +
       '<div class="tot bad"><div class="tot-n">' + over.length + '</div><div class="tot-l">Over quote</div></div>' +
       '<div class="tot warn"><div class="tot-n">' + nocount.length + '</div><div class="tot-l">No count written</div></div>' +
+      '<div class="tot"><div class="tot-n">' + before.length + '</div><div class="tot-l">Before write-ups</div></div>' +
       '<div class="tot bad"><div class="tot-n">$' + fn(extra) + '</div><div class="tot-l">Extra wire, at cost</div></div>' +
     '</div>' +
     lookBox() +
@@ -448,6 +465,9 @@ function render() {
     '</div>' +
     '<datalist id="glist"><option value="(own job)">' + groups.map(g => '<option value="' + esc(groupLabel(g)) + '">').join('') + '</datalist>' +
     (list.length ? list.map(jobCard).join('') : '<div class="empty">Nothing matches.</div>') +
+    (beforeList.length ? '<details class="before"><summary><b>Before write-ups began</b> <span class="mini">' + beforeList.length + ' job' + (beforeList.length > 1 ? 's' : '') +
+      ' started before ' + esc(trackStart) + ' with no counts. Not checked, and nothing is guessed for them.</span></summary>' +
+      beforeList.map(g => '<div class="look-i"><div><b>' + esc(g.name) + '</b> <span class="mini">· ' + esc(g.client) + ' · started ' + esc(g.start) + ' · ' + fn(g.quotedTotal) + ' ft wire quoted</span></div></div>').join('') + '</details>' : '') +
     '</div>';
 }
 
@@ -489,7 +509,7 @@ function jobCard(g) {
     '<input list="glist" placeholder="Move to another job…" onchange="moveProject(\'' + esc(p.num).replace(/'/g, '') + '\', this.value)"></div>').join('');
   const vis = g.visits.length;
   return '<details class="job"><summary><span class="chev"></span><span class="jname">' + esc(g.name) + '</span><span class="jsub">' + esc(g.client) + ' · ' + g.projects.length + ' project' + (g.projects.length > 1 ? 's' : '') + ' · ' + vis + ' visit' + (vis === 1 ? '' : 's') + '</span>' +
-    '<span class="tag t-' + cls + '">' + label + '</span><span class="jsum">' + esc(summary) + '</span></summary><div class="jbody">' +
+    '<span class="tag t-' + cls + '">' + label + '</span>' + (g.partial ? '<span class="tag t-grey" title="This job started before write-ups were collected, so the counts only cover work since ' + esc(trackStart) + '.">Counts partial</span>' : '') + '<span class="jsum">' + esc(summary) + '</span></summary><div class="jbody">' +
     (rows ? '<table class="wt"><thead><tr><th>Wire</th><th>Quoted ft</th><th>Counted ft</th><th>Difference</th><th>Used</th></tr></thead><tbody>' + rows + '</tbody></table>' : '') +
     (ents ? '<div class="sec-h">Counts found in write-ups (' + g.entries.length + ')</div>' + ents : '<div class="mini">No wire count found in any write-up for this job.</div>') +
     '<div class="sec-h">Projects in this job — fix the grouping here</div>' + projs + '</div></details>';
@@ -499,7 +519,7 @@ function jobCard(g) {
 function loadSample() {
   usingSample = true;
   const L = (model, qty, cost) => ({ model, qty, cost, bulk: true });
-  const P = (num, name, client, lines) => ({ ProjectNumber: num, ProjectName: name, Client: client, OrderLinesJson: JSON.stringify(lines) });
+  const P = (num, name, client, lines, start) => ({ ProjectNumber: num, ProjectName: name, Client: client, StartDate: start || '', OrderLinesJson: JSON.stringify(lines) });
   rawProjects = [
     P('ADVAN-4019', 'Jayas - Yam, Ravi & Samantha', 'Yam, Ravi & Samantha', [L('CAT6', 3150, .2), L('16-2 Speaker Wire', 2760, .32), L('Z224 Wire', 1905, .15), L('16-4   Speaker Wire', 225, .58), L('RG6', 80, .12), L('INTERFLEXSD (RG59)', 30, .31)]),
     P('DEMO-LIGHT-J', 'Lutron Lighting - Main Floor Package', 'Yam, Ravi & Samantha', [L('LUTRON GREEN', 600, .42)]),
@@ -510,7 +530,8 @@ function loadSample() {
     P('ADVAN-4145', 'New Maric Home 7374 Henderson Hwy. A/V', 'Maric Homes', [L('CAT6', 1800, .2), L('Z224 Wire', 900, .15)]),
     P('DEMO-LIGHT-M', 'Lutron Lighting Package', 'Maric Homes', [L('LUTRON GREEN', 300, .42)]),
     P('DEMO-BLIND-M', 'New Maric Home 7374 Henderson Highway Blinds', 'Maric Homes', [L('LUTRON GREEN', 500, .42)]),
-    P('ADVAN-4187', 'New Alair Home, 14 Du Monastere Street Audio-Video', 'Bouchard, Rori & Heather', [L('CAT6', 1375, .2), L('LUTRON GREEN', 1250, .42), L('16-2 Speaker Wire', 890, .32), L('164CDLIB Direct Burial 16-4', 125, .67)]),
+    P('ADVAN-4187', 'New Alair Home, 14 Du Monastere Street Audio-Video', 'Bouchard, Rori & Heather', [L('CAT6', 1375, .2), L('LUTRON GREEN', 1250, .42), L('16-2 Speaker Wire', 890, .32), L('164CDLIB Direct Burial 16-4', 125, .67)], '2026-08-20'),
+    P('ADVAN-3116', "39 Bishops Lane Parent's Home", 'Nelson, Rob & Jennifer', [L('CAT6', 1200, .2), L('LUTRON GREEN', 520, .42)], '2026-05-10'),
     P('ADVAN-4218', 'New Alair Home, 14 Du Monastere Street Window Coverings version 2', 'Bouchard, Rori & Heather', [L('LUTRON GREEN', 250, .42)]),
     P('ADVAN-9999', 'Made-up house with no write-up', 'Test Client', [L('CAT6', 1000, .2), L('16-2 Speaker Wire', 600, .32)])
   ];
@@ -523,6 +544,7 @@ function loadSample() {
     V('ADVAN-4187', '2026-10-26', 'Prewire', 'Andrew Lindquist · 11/02/2026\nAL 10/26/2026 (4.75 hrs).\nWire count**\nCat 6 total= 572 ft\n16-2 total= 26 ft\nLutron total= 314 ft'),
     V('ADVAN-4187', '2026-11-04', 'Prewire', 'Andrew Lindquist · 11/09/2026\nAL 11/4/2026 (3 hrs).\nWire count**\nCat 6 total=618 ft\n16-4 total=84 ft'),
     { JobNumber: 'ADVAN-5555', JobName: 'Service call, 1700 McCreary', SchedDate: '2026-09-18', Progress: 'Service', WriteUpBy: 'Andrew Lindquist', Crew: 'Andrew Lindquist', WriteUpText: 'Andrew Lindquist · 09/28/2026\nAL 9/18/2026\nInstalled a phone jack.\nCat 6 total= 15 ft' },
+    V('ADVAN-3116', '2026-10-13', 'Install', 'Andrew Lindquist · 10/14/2026\nAL 10/13/2026 (6 hrs)\nInstalled keypads and trim. Wire was run in the spring.'),
     V('ADVAN-9999', '2026-10-20', 'Prewire', 'Barry Keeper · 10/21/2026\nBK 10/20/2026 (7 hrs)\nRan 6 cat 6 and 3 speaker lines. Rough-in complete.')
   ];
 }
