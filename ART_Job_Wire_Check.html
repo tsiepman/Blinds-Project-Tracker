@@ -279,22 +279,28 @@ function build() {
   }).filter(p => p.num);
   projects.forEach(p => { p.core = coreName(p.name); p.cn = normClient(p.client); });
 
+  /* Installers log by client, not by D-Tools project. So a client with ONE main project
+     (anything that isn't lighting or blinds) is one job, however many projects it has.
+     A client with several main projects (a builder with many houses) is split by the
+     address in the project name instead. Anything that still lands wrong can be moved. */
+  const isMain = p => !/lighting|window|shade|blind|shading/i.test(p.name);
+  const byClient = {};
+  projects.forEach(p => (byClient[p.cn] = byClient[p.cn] || []).push(p));
+  const auto = new Map();                       // project number -> the job it falls into by default
+  for (const [cn, ps] of Object.entries(byClient)) {
+    const single = ps.filter(isMain).length <= 1;
+    for (const p of ps) auto.set(p.num, !cn ? 'noclient|' + p.num : single ? cn + '|all' : p.core ? cn + '|' + p.core : cn + '|(unassigned)');
+  }
+  const validKeys = new Set(auto.values());
   const byKey = new Map();
   const put = (key, p) => { if (!byKey.has(key)) byKey.set(key, { key, projects: [] }); byKey.get(key).projects.push(p); };
-  const named = projects.filter(p => p.core);
-  const clientKeys = {};
-  named.forEach(p => { (clientKeys[p.cn] = clientKeys[p.cn] || new Set()).add(p.cn + '|' + p.core); });
   for (const p of projects) {
-    let key = p.core ? p.cn + '|' + p.core : null;
-    if (!key) {                                  // "Lighting Control System": no address in the name, so join the client's one job if it has exactly one
-      const ks = clientKeys[p.cn];
-      key = ks && ks.size === 1 ? [...ks][0] : p.cn + '|(unassigned)';
-    }
-    if (links[p.num] && links[p.num] !== 'own') { if (byKey.has(links[p.num]) || projects.some(q => q !== p && autoKey(q) === links[p.num])) key = links[p.num]; }
-    if (links[p.num] === 'own') key = 'own|' + p.num;
+    let key = auto.get(p.num);
+    const l = links[p.num];
+    if (l === 'own') key = 'own|' + p.num;
+    else if (l && validKeys.has(l)) key = l;
     put(key, p);
   }
-  function autoKey(q) { return q.core ? q.cn + '|' + q.core : null; }
 
   const projGroup = new Map();
   groups = [...byKey.values()].map(g => {
@@ -444,11 +450,12 @@ function loadSample() {
   const P = (num, name, client, lines) => ({ ProjectNumber: num, ProjectName: name, Client: client, OrderLinesJson: JSON.stringify(lines) });
   rawProjects = [
     P('ADVAN-4019', 'Jayas - Yam, Ravi & Samantha', 'Yam, Ravi & Samantha', [L('CAT6', 3150, .2), L('16-2 Speaker Wire', 2760, .32), L('Z224 Wire', 1905, .15), L('16-4   Speaker Wire', 225, .58), L('RG6', 80, .12), L('INTERFLEXSD (RG59)', 30, .31)]),
-    P('DEMO-LIGHT-J', 'Lighting Control System', 'Yam, Ravi & Samantha', [L('LUTRON GREEN', 600, .42)]),
+    P('DEMO-LIGHT-J', 'Lutron Lighting - Main Floor Package', 'Yam, Ravi & Samantha', [L('LUTRON GREEN', 600, .42)]),
     P('DEMO-BLIND-J', 'Motorized & Manual Window Coverings', 'Yam, Ravi & Samantha', [L('LUTRON GREEN', 1125, .42)]),
     P('ADVAN-4031', 'New Maric Home, 625 Niakwa Road A/V & Security', 'Maric Homes', [L('Z224 Wire', 2300, .15), L('CAT6', 2575, .2), L('16-2 Speaker Wire', 1250, .32), L('CAT6BURIAL', 500, .25), L('INTERFLEXSD (RG59)', 40, .31)]),
     P('DEMO-LIGHT-N', 'New Maric Home 625 Niakwa Road Lighting Control System', 'Maric Homes', [L('LUTRON GREEN', 600, .42)]),
     P('DEMO-BLIND-N', 'New Maric Home 625 Niakwa Road Motorized Window Coverings', 'Maric Homes', [L('LUTRON GREEN', 1500, .42)]),
+    P('ADVAN-4145', 'New Maric Home 7374 Henderson Hwy. A/V', 'Maric Homes', [L('CAT6', 1800, .2), L('Z224 Wire', 900, .15)]),
     P('ADVAN-4187', 'New Alair Home, 14 Du Monastere Street Audio-Video', 'Bouchard, Rori & Heather', [L('CAT6', 1375, .2), L('LUTRON GREEN', 1250, .42), L('16-2 Speaker Wire', 890, .32), L('164CDLIB Direct Burial 16-4', 125, .67)]),
     P('ADVAN-4218', 'New Alair Home, 14 Du Monastere Street Window Coverings version 2', 'Bouchard, Rori & Heather', [L('LUTRON GREEN', 250, .42)]),
     P('ADVAN-9999', 'Made-up house with no write-up', 'Test Client', [L('CAT6', 1000, .2), L('16-2 Speaker Wire', 600, .32)])
