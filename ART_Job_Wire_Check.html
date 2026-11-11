@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ART — Job Wire Check</title>
+<link rel="stylesheet" href="art-theme.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; height: 52px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 40; }
+  .mark { background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 12px; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px; }
+  .hname { font-size: 14px; font-weight: 600; }
+  .hname span { color: var(--text3); font-weight: 400; }
+  .spacer { margin-left: auto; }
+  .sp-status { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; display: none; }
+  .sp-status.connected { display: inline; background: var(--green-dim); color: var(--green); }
+  .sp-status.error { display: inline; background: var(--red-dim); color: var(--red); }
+  .sp-status.loading { display: inline; background: var(--accent-dim); color: var(--accent); }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 80px; }
+  h1.page { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  p.page-sub { color: var(--text2); font-size: 13px; margin-bottom: 16px; max-width: 70ch; }
+
+  .controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+  label.fld { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); margin-bottom: 5px; font-weight: 600; }
+  select, input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); padding: 9px 11px; font-size: 14px; font-family: inherit; }
+  .btn { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn:hover { border-color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .seg button { background: var(--bg); color: var(--text2); border: none; padding: 9px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--surface2); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+
+  .totals { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tot { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 11px 15px; min-width: 120px; }
+  .tot-n { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tot-l { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 600; }
+  .tot.bad .tot-n { color: var(--accent); }
+  .tot.warn .tot-n { color: var(--yellow); }
+
+  .note-caveat { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--yellow); border-radius: var(--radius); padding: 9px 13px; font-size: 12px; line-height: 1.55; color: var(--text2); margin-bottom: 16px; }
+  .note-caveat b { color: var(--text); }
+  .banner { background: var(--yellow-dim); color: var(--yellow); border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+
+  details.job { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 10px; overflow: hidden; }
+  details.job > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: var(--surface2); flex-wrap: wrap; }
+  details.job > summary::-webkit-details-marker { display: none; }
+  details.job > summary:hover .jname { color: var(--accent); }
+  .chev { color: var(--text3); font-size: 11px; width: 1em; }
+  details.job[open] .chev::before { content: '▾'; }
+  details.job:not([open]) .chev::before { content: '▸'; }
+  .jname { font-size: 14.5px; font-weight: 700; }
+  .jsub { font-size: 12px; color: var(--text3); }
+  .jsum { margin-left: auto; font-size: 12.5px; color: var(--text2); font-variant-numeric: tabular-nums; text-align: right; }
+  .jbody { padding: 12px 16px 16px; }
+
+  table.wt { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-bottom: 12px; }
+  table.wt th { text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); font-weight: 600; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  table.wt th:first-child, table.wt td:first-child { text-align: left; }
+  table.wt td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  table.wt tr:last-child td { border-bottom: none; }
+  .over { color: var(--accent); font-weight: 700; }
+  .unq { color: var(--accent); font-weight: 700; }
+  .under { color: var(--text3); }
+  .ok { color: var(--green); }
+
+  .sec-h { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 600; margin: 10px 0 5px; }
+  .ent { font-size: 12.5px; color: var(--text2); padding: 4px 0; border-top: 1px solid var(--border); }
+  .ent:first-of-type { border-top: none; }
+  .ent b { color: var(--text); }
+  .proj { display: flex; gap: 10px; align-items: center; font-size: 12.5px; padding: 4px 0; flex-wrap: wrap; }
+  .proj .pn { font-family: var(--mono); font-size: 12px; color: var(--text3); }
+  .proj input { padding: 5px 8px; font-size: 12px; width: 240px; max-width: 100%; }
+  .mini { font-size: 11.5px; color: var(--text3); }
+
+  .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; display: inline-block; }
+  .t-over { background: var(--accent-dim); color: var(--accent); }
+  .t-miss { background: var(--yellow-dim); color: var(--yellow); }
+  .t-ok { background: var(--green-dim); color: var(--green); }
+  .t-grey { background: var(--surface2); color: var(--text3); }
+
+  .empty { text-align: center; color: var(--text3); padding: 40px 16px; font-size: 13px; }
+  .centre { display: flex; align-items: center; justify-content: center; min-height: 70vh; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 400px; text-align: center; }
+  .card h2 { font-size: 20px; margin-bottom: 8px; }
+  .card p { color: var(--text2); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+  .card .btn { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+</head>
+<body>
+
+<div class="header">
+  <span class="mark">ART</span><span class="hname">Job Wire Check <span>quoted vs counted</span></span>
+  <span id="spStatus" class="sp-status"></span>
+  <span class="spacer"></span>
+  <a class="art-back" href="index.html">← All tools</a>
+</div>
+
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   ART Job Wire Check
+   Read-only. Compares the wire each job was QUOTED (D-Tools, as cached in
+   SchedProjects.OrderLinesJson, where Quantity on bulk wire is already feet) with the
+   wire the installers COUNTED in their work-order write-ups (FieldVisits.WriteUpText).
+
+   - Counts are summed PER VISIT (Trevor: each "Wire count" block is that visit's work).
+   - A write-up attached to more than one visit is counted once.
+   - A job's A/V, lighting and blinds quotes are separate D-Tools projects, so projects
+     are grouped by client + name; the grouping can be corrected on screen and is
+     remembered in this browser.
+   Nothing here writes to SharePoint.
+   ============================================================ */
+
+const TENANT_ID = '2e6ff905-d709-43db-94a5-c11d318118ee';
+const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
+const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
+const SITE_PATH = '/sites/ART43';
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
+const LIST_PROJECTS = 'SchedProjects', LIST_VISITS = 'FieldVisits';
+
+const TYPES = ['Cat6', 'Z', '16-2', '16-4', '14-2', '14-4', 'Lutron', 'Coax', 'Fiber'];
+const TNAME = { Cat6: 'Cat6', Z: 'Z wire', '16-2': '16-2 speaker', '16-4': '16-4 speaker', '14-2': '14-2 speaker', '14-4': '14-4 speaker', Lutron: 'Lutron green', Coax: 'Coax (RG6/59)', Fiber: 'Fiber' };
+/* Typical cost per foot, used only to put a rough price on wire that was never quoted. */
+const TYPICAL_COST = { Cat6: 0.20, Z: 0.15, '16-2': 0.32, '16-4': 0.58, '14-2': 0.52, '14-4': 0.93, Lutron: 0.42, Coax: 0.20, Fiber: 0.5 };
+const OVER_PCT = 1.10, OVER_MIN_FT = 100, UNQUOTED_MIN_FT = 50, UNDER_PCT = 0.60, NOCOUNT_MIN_FT = 200;
+
+let msal_ = null, siteId = null, listIds = {};
+let rawProjects = [], rawVisits = [], usingSample = false;
+let groups = [], filter = 'all', search = '';
+let links = (() => { try { return JSON.parse(localStorage.getItem('wirecheck.links') || '{}'); } catch { return {}; } })();
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fn = n => Math.round(n).toLocaleString();
+function toast(msg, isErr) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'toast';
+    el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;font-size:13px;z-index:200;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+    document.body.appendChild(el);
+  }
+  el.style.color = isErr ? 'var(--red)' : 'var(--text)';
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(window.__t); window.__t = setTimeout(() => { el.style.display = 'none'; }, 3200);
+}
+
+/* ---------- auth / graph (same pattern as the Field Log) ---------- */
+async function init() {
+  if (location.search.includes('demo')) { loadSample(); build(); render(); return; }
+  msal_ = new msal.PublicClientApplication({
+    auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/' + TENANT_ID, redirectUri: location.href.split('?')[0].split('#')[0] },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msal_.initialize();
+  await msal_.handleRedirectPromise();
+  if (!msal_.getAllAccounts().length) { renderSignIn(); return; }
+  await load();
+}
+function signIn() { msal_.loginRedirect({ scopes: SCOPES }); }
+async function token() {
+  const a = msal_.getAllAccounts();
+  if (!a.length) return null;
+  try { return (await msal_.acquireTokenSilent({ scopes: SCOPES, account: a[0] })).accessToken; }
+  catch { await msal_.acquireTokenRedirect({ scopes: SCOPES, account: a[0] }); return null; }
+}
+async function graph(path) {
+  const t = await token();
+  if (!t) return null;
+  const res = await fetch('https://graph.microsoft.com/v1.0' + path, { headers: { Authorization: 'Bearer ' + t, Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' } });
+  if (!res.ok) throw new Error('Graph ' + res.status + ' on ' + path.split('?')[0]);
+  return res.json();
+}
+async function items(name) {
+  if (!siteId) siteId = (await graph('/sites/' + SITE_HOSTNAME + ':' + SITE_PATH)).id;
+  if (!listIds[name]) listIds[name] = (await graph('/sites/' + siteId + '/lists/' + name)).id;
+  const out = [];
+  let url = '/sites/' + siteId + '/lists/' + listIds[name] + '/items?expand=fields&$top=999';
+  for (;;) {
+    const d = await graph(url);
+    if (!d) return out;
+    out.push(...(d.value || []).map(i => i.fields || {}));
+    if (!d['@odata.nextLink']) break;
+    url = d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '');
+  }
+  return out;
+}
+function setStatus(cls, txt) { const e = document.getElementById('spStatus'); e.className = 'sp-status ' + cls; e.textContent = txt; }
+async function load() {
+  setStatus('loading', 'Loading…');
+  try {
+    [rawProjects, rawVisits] = await Promise.all([items(LIST_PROJECTS), items(LIST_VISITS)]);
+    usingSample = false;
+    setStatus('connected', 'SharePoint');
+    build(); render();
+  } catch (e) {
+    console.error(e);
+    setStatus('error', 'Error');
+    document.getElementById('app').innerHTML = '<div class="wrap"><div class="banner">Couldn\'t read SharePoint: ' + esc(e.message) + '</div></div>';
+  }
+}
+function renderSignIn() {
+  document.getElementById('app').innerHTML =
+    '<div class="centre"><div class="card"><h2>ART Job Wire Check</h2>' +
+    '<p>Sign in with your Advance Electronics account.</p>' +
+    '<button class="btn" onclick="signIn()">Sign in with Microsoft</button></div></div>';
+}
+
+/* ---------- wire types ---------- */
+function wireType(model, desc) {
+  const m = (String(model || '') + ' ' + String(desc || '')).toLowerCase();
+  if (/lutron/.test(m)) return 'Lutron';
+  if (/\bz\s?-?224|zwire|z[ -]wire|station z/.test(m)) return 'Z';
+  if (/cat\s?-?6/.test(m)) return 'Cat6';
+  if (/16\s?-?\s?2\b|\b162/.test(m)) return '16-2';
+  if (/16\s?-?\s?4\b|\b164/.test(m)) return '16-4';
+  if (/14\s?-?\s?2\b|\b142/.test(m)) return '14-2';
+  if (/14\s?-?\s?4\b|\b144/.test(m)) return '14-4';
+  if (/rg\s?-?6|rg\s?-?59|coax|interflex/.test(m)) return 'Coax';
+  if (/fib(er|re)/.test(m)) return 'Fiber';
+  return null;
+}
+/* The label as an installer writes it: "Cat 6", "Zwire", "Rg6", "16-2", "Lutron". */
+function labelType(label) {
+  const l = String(label).toLowerCase().replace(/[\s_]/g, '');
+  if (/^cat-?6/.test(l)) return 'Cat6';
+  if (/^z-?wire|^z$/.test(l)) return 'Z';
+  if (/^16-?2/.test(l)) return '16-2';
+  if (/^16-?4/.test(l)) return '16-4';
+  if (/^14-?2/.test(l)) return '14-2';
+  if (/^14-?4/.test(l)) return '14-4';
+  if (/^lutron/.test(l)) return 'Lutron';
+  if (/^rg-?6|^rg-?59|^coax/.test(l)) return 'Coax';
+  if (/^fib(er|re)/.test(l)) return 'Fiber';
+  return null;
+}
+
+/* ---------- write-up parsing ---------- */
+/* A write-up is several entries joined together, each starting "Name · MM/DD/YYYY". */
+function splitEntries(text, fallbackAuthor) {
+  const lines = String(text || '').split(/\r?\n/);
+  const out = []; let cur = null;
+  for (const ln of lines) {
+    const m = ln.match(/^\s*(.+?)\s·\s(\d{1,2}\/\d{1,2}\/\d{4})\s*$/);
+    if (m) { cur = { author: m[1], date: m[2], body: [] }; out.push(cur); }
+    else { if (!cur) { cur = { author: fallbackAuthor || '', date: '', body: [] }; out.push(cur); } cur.body.push(ln); }
+  }
+  return out.map(e => ({ ...e, body: e.body.join('\n') }));
+}
+const COUNT_LINE = /^\s*[-*•]?\s*(cat\s?-?6|z\s?-?wire|16\s?-?2|16\s?-?4|14\s?-?2|14\s?-?4|lutron|rg\s?-?6|rg\s?-?59|coax|fib(?:er|re))\b[^=\n]*=\s*([\d,]+)/i;
+function extractCounts(body) {
+  const c = {};
+  for (const ln of String(body).split('\n')) {
+    const m = ln.match(COUNT_LINE);
+    if (!m) continue;
+    const t = labelType(m[1]); if (!t) continue;
+    c[t] = Number(m[2].replace(/,/g, '')) || 0;     // last one in an entry wins (a correction)
+  }
+  return c;
+}
+function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); }
+function mdy(s) { const m = String(s).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0') : ''; }
+
+/* ---------- grouping ---------- */
+const STRIP = /\b(a\/v|a v|av|audio[- ]?video|security|lighting control system|lighting control|lighting|motorized and manual window coverings|motorized window coverings|window coverings?|shading|shades?|blinds?|system upgrades?|upgrades?|version \d+|v\d+|pre[- ]?wire)\b/g;
+function coreName(n) { return String(n).toLowerCase().replace(/&/g, ' and ').replace(/\s+/g, ' ').replace(STRIP, ' ').replace(/\band\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function normClient(c) { return String(c).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+function build() {
+  const projects = rawProjects.map(f => {
+    let lines = []; try { lines = JSON.parse(f.OrderLinesJson || '[]'); } catch { /* leave empty */ }
+    return {
+      num: String(f.ProjectNumber || f.Title || '').trim(), name: f.ProjectName || '', client: f.Client || '', progress: f.Progress || '',
+      lines: lines.filter(l => l.bulk).map(l => ({ type: wireType(l.model, l.desc), ft: Number(l.qty) || 0, cost: Number(l.cost) || 0 })).filter(l => l.type && l.ft > 0)
+    };
+  }).filter(p => p.num);
+  projects.forEach(p => { p.core = coreName(p.name); p.cn = normClient(p.client); });
+
+  const byKey = new Map();
+  const put = (key, p) => { if (!byKey.has(key)) byKey.set(key, { key, projects: [] }); byKey.get(key).projects.push(p); };
+  const named = projects.filter(p => p.core);
+  const clientKeys = {};
+  named.forEach(p => { (clientKeys[p.cn] = clientKeys[p.cn] || new Set()).add(p.cn + '|' + p.core); });
+  for (const p of projects) {
+    let key = p.core ? p.cn + '|' + p.core : null;
+    if (!key) {                                  // "Lighting Control System": no address in the name, so join the client's one job if it has exactly one
+      const ks = clientKeys[p.cn];
+      key = ks && ks.size === 1 ? [...ks][0] : p.cn + '|(unassigned)';
+    }
+    if (links[p.num] && links[p.num] !== 'own') { if (byKey.has(links[p.num]) || projects.some(q => q !== p && autoKey(q) === links[p.num])) key = links[p.num]; }
+    if (links[p.num] === 'own') key = 'own|' + p.num;
+    put(key, p);
+  }
+  function autoKey(q) { return q.core ? q.cn + '|' + q.core : null; }
+
+  const projGroup = new Map();
+  groups = [...byKey.values()].map(g => {
+    g.projects.forEach(p => projGroup.set(p.num, g));
+    const main = g.projects.find(p => !/lighting|window|shade|blind|shading/i.test(p.name)) || g.projects[0];
+    g.name = main.name || main.num; g.client = main.client; g.primary = main.num;
+    g.quoted = {}; g.counted = {}; g.entries = []; g.visits = [];
+    for (const p of g.projects) for (const l of p.lines) {
+      const q = g.quoted[l.type] = g.quoted[l.type] || { ft: 0, costFt: 0 };
+      q.ft += l.ft; q.costFt += l.ft * l.cost;
+    }
+    return g;
+  });
+  const keyed = new Map(groups.map(g => [g.key, g]));
+  const seen = new Set(); const today = new Date().toISOString().slice(0, 10);
+  for (const v of rawVisits) {
+    const num = String(v.JobNumber || '').trim(); const g = projGroup.get(num);
+    if (!g) continue;
+    const hasWU = !!String(v.WriteUpText || '').trim();
+    g.visits.push({ date: v.SchedDate || '', progress: v.Progress || '', past: (v.SchedDate || '') < today, hasWU, crew: v.Crew || '' });
+    if (!hasWU) continue;
+    for (const e of splitEntries(v.WriteUpText, v.WriteUpBy)) {
+      const counts = extractCounts(e.body);
+      if (!Object.keys(counts).length) continue;
+      const k = g.key + '|' + e.author + '|' + e.date + '|' + hash(e.body.trim());
+      if (seen.has(k)) continue;               // same write-up hanging off a second visit
+      seen.add(k);
+      g.entries.push({ author: e.author, written: mdy(e.date), visit: v.SchedDate || '', job: num, counts });
+      for (const [t, ft] of Object.entries(counts)) g.counted[t] = (g.counted[t] || 0) + ft;
+    }
+  }
+
+  for (const g of groups) {
+    g.rows = []; let exposure = 0, over = false, unq = false;
+    for (const t of TYPES) {
+      const q = g.quoted[t] ? g.quoted[t].ft : 0, c = g.counted[t] || 0;
+      if (!q && !c) continue;
+      const diff = c - q; let flag = '';
+      if (q && c > q * OVER_PCT && diff >= OVER_MIN_FT) flag = 'over';
+      else if (!q && c >= UNQUOTED_MIN_FT) flag = 'unquoted';
+      else if (q && c && c < q * UNDER_PCT) flag = 'under';
+      const unitCost = g.quoted[t] && g.quoted[t].ft ? g.quoted[t].costFt / g.quoted[t].ft : TYPICAL_COST[t];
+      if (flag === 'over' || flag === 'unquoted') { exposure += diff * unitCost; over = true; unq = unq || flag === 'unquoted'; }
+      g.rows.push({ t, q, c, diff, flag, pct: q ? c / q : null });
+    }
+    g.quotedTotal = Object.values(g.quoted).reduce((s, x) => s + x.ft, 0);
+    g.countedTotal = Object.values(g.counted).reduce((s, x) => s + x, 0);
+    g.exposure = exposure;
+    const pastVisits = g.visits.filter(v => v.past).length;
+    g.status = over ? 'over'
+      : g.countedTotal ? 'counted'
+      : g.quotedTotal >= NOCOUNT_MIN_FT && pastVisits ? 'nocount'
+      : g.quotedTotal ? 'notstarted' : 'nowire';
+  }
+  groups = groups.filter(g => g.quotedTotal || g.countedTotal);
+  window.__keyed = keyed;
+}
+
+/* ---------- screen ---------- */
+function setFilter(f) { filter = f; render(); }
+function setSearch(v) { search = v; render(); const el = document.getElementById('q'); if (el) { el.focus(); el.setSelectionRange(v.length, v.length); } }
+function moveProject(num, label) {
+  const g = groups.find(x => x.projects.some(p => p.num === num));
+  label = String(label || '').trim();
+  const target = label === '(own job)' ? 'own' : (groups.find(x => groupLabel(x) === label) || {}).key;
+  if (!target) { if (label) toast('No job called that — pick one from the list', true); return; }
+  links[num] = target;
+  try { localStorage.setItem('wirecheck.links', JSON.stringify(links)); } catch {}
+  build(); render(); toast('Moved ' + num);
+}
+function resetLinks() { links = {}; try { localStorage.removeItem('wirecheck.links'); } catch {} build(); render(); toast('Grouping reset'); }
+function groupLabel(g) { return g.name + ' · ' + g.client + ' [' + g.primary + ']'; }
+
+function exportCsv() {
+  const rows = [['Job', 'Client', 'Projects', 'Wire', 'Quoted ft', 'Counted ft', 'Diff ft', 'Flag']];
+  for (const g of groups) for (const r of g.rows) rows.push([g.name, g.client, g.projects.map(p => p.num).join(' '), TNAME[r.t], Math.round(r.q), Math.round(r.c), Math.round(r.diff), r.flag]);
+  const csv = rows.map(r => r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'ART_wire_check_' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+}
+
+const STATUS_TAG = { over: ['over', 'Over quote'], nocount: ['miss', 'No count written'], counted: ['ok', 'Counted'], notstarted: ['grey', 'Not started'] };
+function render() {
+  const app = document.getElementById('app');
+  const withWire = groups.length, counted = groups.filter(g => g.countedTotal).length;
+  const over = groups.filter(g => g.status === 'over'), nocount = groups.filter(g => g.status === 'nocount');
+  const extra = over.reduce((s, g) => s + g.exposure, 0);
+  const q = search.trim().toLowerCase();
+  let list = groups.filter(g => (filter === 'all' || (filter === 'over' && g.status === 'over') || (filter === 'nocount' && g.status === 'nocount') || (filter === 'counted' && g.countedTotal))
+    && (!q || (g.name + ' ' + g.client + ' ' + g.projects.map(p => p.num + ' ' + p.name).join(' ')).toLowerCase().includes(q)));
+  const order = { over: 0, nocount: 1, counted: 2, notstarted: 3 };
+  list.sort((a, b) => order[a.status] - order[b.status] || b.exposure - a.exposure || b.quotedTotal - a.quotedTotal);
+
+  app.innerHTML = '<div class="wrap">' +
+    '<h1 class="page">Quoted vs counted wire</h1>' +
+    '<p class="page-sub">What each job was quoted in D-Tools against what the installers wrote down in their work-order write-ups.</p>' +
+    (usingSample ? '<div class="banner"><b>Sample data.</b> Nothing here is from SharePoint — it is Jayas, Niakwa and Alair as of Nov 10 plus one made-up job. Sign in (no <code>?demo</code>) to see the real thing.</div>' : '') +
+    '<div class="note-caveat"><b>How to read this.</b> Counts come from the free text installers type ("Cat 6 total= 2522 ft") and are <b>added up per visit</b>; a write-up attached to two visits is counted once. Only ' + counted + ' of ' + withWire + ' jobs with quoted wire have any count, so <b>no count means unchecked, not fine</b>. “Under” is normal while a job is in progress. Cat6 burial is folded into Cat6. Extra-wire cost uses the quoted unit cost.</div>' +
+    '<div class="totals">' +
+      '<div class="tot"><div class="tot-n">' + withWire + '</div><div class="tot-l">Jobs with wire</div></div>' +
+      '<div class="tot"><div class="tot-n">' + counted + '</div><div class="tot-l">Have a count</div></div>' +
+      '<div class="tot bad"><div class="tot-n">' + over.length + '</div><div class="tot-l">Over quote</div></div>' +
+      '<div class="tot warn"><div class="tot-n">' + nocount.length + '</div><div class="tot-l">No count written</div></div>' +
+      '<div class="tot bad"><div class="tot-n">$' + fn(extra) + '</div><div class="tot-l">Extra wire, at cost</div></div>' +
+    '</div>' +
+    '<div class="controls">' +
+      '<div class="seg">' + [['all', 'All'], ['over', 'Over quote'], ['nocount', 'No count'], ['counted', 'Has a count']].map(([k, l]) => '<button class="' + (filter === k ? 'on' : '') + '" onclick="setFilter(\'' + k + '\')">' + l + '</button>').join('') + '</div>' +
+      '<div><label class="fld" for="q">Find</label><input id="q" placeholder="Job, client or number" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
+      '<span class="spacer"></span>' +
+      '<button class="btn" onclick="exportCsv()">Download CSV</button>' +
+      (Object.keys(links).length ? '<button class="btn" onclick="resetLinks()">Reset grouping</button>' : '') +
+    '</div>' +
+    '<datalist id="glist"><option value="(own job)">' + groups.map(g => '<option value="' + esc(groupLabel(g)) + '">').join('') + '</datalist>' +
+    (list.length ? list.map(jobCard).join('') : '<div class="empty">Nothing matches.</div>') +
+    '</div>';
+}
+
+function jobCard(g) {
+  const [cls, label] = STATUS_TAG[g.status] || ['grey', g.status];
+  const bad = g.rows.filter(r => r.flag === 'over' || r.flag === 'unquoted').sort((a, b) => b.diff - a.diff).slice(0, 2);
+  const summary = bad.length ? bad.map(r => TNAME[r.t] + ' +' + fn(r.diff) + ' ft').join(' · ') + (g.exposure ? ' · ≈$' + fn(g.exposure) : '')
+    : g.countedTotal ? fn(g.countedTotal) + ' ft counted of ' + fn(g.quotedTotal) + ' quoted' : fn(g.quotedTotal) + ' ft quoted';
+  const rows = g.rows.map(r => {
+    const pct = r.pct == null ? '—' : Math.round(r.pct * 100) + '%';
+    const c = r.flag === 'over' || r.flag === 'unquoted' ? 'over' : r.flag === 'under' ? 'under' : r.c ? 'ok' : 'under';
+    return '<tr><td>' + TNAME[r.t] + (r.flag === 'unquoted' ? ' <span class="tag t-over">not quoted</span>' : '') + '</td><td>' + (r.q ? fn(r.q) : '—') + '</td><td>' + (r.c ? fn(r.c) : '—') +
+      '</td><td class="' + c + '">' + (r.q || r.c ? (r.diff > 0 ? '+' : '') + fn(r.diff) : '') + '</td><td class="' + c + '">' + pct + '</td></tr>';
+  }).join('');
+  const ents = g.entries.slice().sort((a, b) => (a.visit < b.visit ? -1 : 1)).map(e =>
+    '<div class="ent"><b>' + esc(e.visit || e.written) + '</b> · ' + esc(e.author) + ' · ' + esc(e.job) + ' — ' +
+    Object.entries(e.counts).map(([t, ft]) => TNAME[t] + ' ' + fn(ft)).join(', ') + ' ft</div>').join('');
+  const projs = g.projects.map(p =>
+    '<div class="proj"><span class="pn">' + esc(p.num) + '</span><span>' + esc(p.name) + '</span><span class="mini">' + p.lines.reduce((s, l) => s + l.ft, 0).toLocaleString() + ' ft wire</span>' +
+    '<input list="glist" placeholder="Move to another job…" onchange="moveProject(\'' + esc(p.num).replace(/'/g, '') + '\', this.value)"></div>').join('');
+  const vis = g.visits.length;
+  return '<details class="job"><summary><span class="chev"></span><span class="jname">' + esc(g.name) + '</span><span class="jsub">' + esc(g.client) + ' · ' + g.projects.length + ' project' + (g.projects.length > 1 ? 's' : '') + ' · ' + vis + ' visit' + (vis === 1 ? '' : 's') + '</span>' +
+    '<span class="tag t-' + cls + '">' + label + '</span><span class="jsum">' + esc(summary) + '</span></summary><div class="jbody">' +
+    (rows ? '<table class="wt"><thead><tr><th>Wire</th><th>Quoted ft</th><th>Counted ft</th><th>Difference</th><th>Used</th></tr></thead><tbody>' + rows + '</tbody></table>' : '') +
+    (ents ? '<div class="sec-h">Counts found in write-ups (' + g.entries.length + ')</div>' + ents : '<div class="mini">No wire count found in any write-up for this job.</div>') +
+    '<div class="sec-h">Projects in this job — fix the grouping here</div>' + projs + '</div></details>';
+}
+
+/* ---------- sample (?demo) ---------- */
+function loadSample() {
+  usingSample = true;
+  const L = (model, qty, cost) => ({ model, qty, cost, bulk: true });
+  const P = (num, name, client, lines) => ({ ProjectNumber: num, ProjectName: name, Client: client, OrderLinesJson: JSON.stringify(lines) });
+  rawProjects = [
+    P('ADVAN-4019', 'Jayas - Yam, Ravi & Samantha', 'Yam, Ravi & Samantha', [L('CAT6', 3150, .2), L('16-2 Speaker Wire', 2760, .32), L('Z224 Wire', 1905, .15), L('16-4   Speaker Wire', 225, .58), L('RG6', 80, .12), L('INTERFLEXSD (RG59)', 30, .31)]),
+    P('DEMO-LIGHT-J', 'Lighting Control System', 'Yam, Ravi & Samantha', [L('LUTRON GREEN', 600, .42)]),
+    P('DEMO-BLIND-J', 'Motorized & Manual Window Coverings', 'Yam, Ravi & Samantha', [L('LUTRON GREEN', 1125, .42)]),
+    P('ADVAN-4031', 'New Maric Home, 625 Niakwa Road A/V & Security', 'Maric Homes', [L('Z224 Wire', 2300, .15), L('CAT6', 2575, .2), L('16-2 Speaker Wire', 1250, .32), L('CAT6BURIAL', 500, .25), L('INTERFLEXSD (RG59)', 40, .31)]),
+    P('DEMO-LIGHT-N', 'New Maric Home 625 Niakwa Road Lighting Control System', 'Maric Homes', [L('LUTRON GREEN', 600, .42)]),
+    P('DEMO-BLIND-N', 'New Maric Home 625 Niakwa Road Motorized Window Coverings', 'Maric Homes', [L('LUTRON GREEN', 1500, .42)]),
+    P('ADVAN-4187', 'New Alair Home, 14 Du Monastere Street Audio-Video', 'Bouchard, Rori & Heather', [L('CAT6', 1375, .2), L('LUTRON GREEN', 1250, .42), L('16-2 Speaker Wire', 890, .32), L('164CDLIB Direct Burial 16-4', 125, .67)]),
+    P('ADVAN-4218', 'New Alair Home, 14 Du Monastere Street Window Coverings version 2', 'Bouchard, Rori & Heather', [L('LUTRON GREEN', 250, .42)]),
+    P('ADVAN-9999', 'Made-up house with no write-up', 'Test Client', [L('CAT6', 1000, .2), L('16-2 Speaker Wire', 600, .32)])
+  ];
+  const V = (job, date, prog, text) => ({ JobNumber: job, SchedDate: date, Progress: prog, WriteUpText: text || '', WriteUpBy: 'Andrew Lindquist', Crew: 'Andrew Lindquist' });
+  const AL = 'Andrew Lindquist · 10/13/2026\nAL 10/08/2026 (6 hrs).\nRan 3 cat 6 for primary tv\nWIRE COUNT**\n16-2 total=1062 ft\n16-4 total=86 ft\nZwire total= 1326 ft\nCat 6 total= 2604 ft\nLutron total=3288 ft\nRg6 total=132 ft\nCompleted wire management';
+  rawVisits = [
+    V('ADVAN-4019', '2026-09-23', 'Prewire', 'Andrew Lindquist · 09/29/2026\nAL 9/24/2026 (7 hrs).\nWire count**\nZ wire total=802 ft\nCat 6 total=3066 ft\n16-2 total=1338 ft\n16-4 total= 70 ft\nLutron total=1542 ft\nRg6 total= 158 ft'),
+    V('ADVAN-4031', '2026-10-06', 'Prewire', AL), V('ADVAN-4031', '2026-10-08', 'Prewire', 'Yoan Zamora · 10/08/2026\nYR 10/08/2026 (6 hrs)\n- Wire count completed (see AL notes)\n\n' + AL),
+    V('ADVAN-4187', '2026-10-14', 'Prewire', 'Andrew Lindquist · 10/15/2026\nAL 10/14/2026 (7.5 hrs).\nWire count**\nCat 6 total= 2522 ft\nLutron total=1580 ft\n16-2 total=68 ft\n16-4 total=52 ft'),
+    V('ADVAN-4187', '2026-10-26', 'Prewire', 'Andrew Lindquist · 11/02/2026\nAL 10/26/2026 (4.75 hrs).\nWire count**\nCat 6 total= 572 ft\n16-2 total= 26 ft\nLutron total= 314 ft'),
+    V('ADVAN-4187', '2026-11-04', 'Prewire', 'Andrew Lindquist · 11/09/2026\nAL 11/4/2026 (3 hrs).\nWire count**\nCat 6 total=618 ft\n16-4 total=84 ft'),
+    V('ADVAN-9999', '2026-10-20', 'Prewire', 'Barry Keeper · 10/21/2026\nBK 10/20/2026 (7 hrs)\nRan 6 cat 6 and 3 speaker lines. Rough-in complete.')
+  ];
+}
+
+init();
+</script>
+</body>
+</html>
