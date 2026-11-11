@@ -74,6 +74,13 @@
   .proj .pn { font-family: var(--mono); font-size: 12px; color: var(--text3); }
   .proj input { padding: 5px 8px; font-size: 12px; width: 240px; max-width: 100%; }
   .mini { font-size: 11.5px; color: var(--text3); }
+  details.look { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--yellow); border-radius: var(--radius-lg); margin-bottom: 16px; padding: 10px 16px; }
+  details.look > summary { cursor: pointer; font-size: 13.5px; }
+  details.look p.mini { margin: 2px 0 6px; }
+  .look-i { padding: 7px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+  .look-i:first-of-type { border-top: none; }
+  .look-i .pn { font-family: var(--mono); font-size: 12px; color: var(--text3); }
+  .look-i input { margin-top: 5px; padding: 5px 8px; font-size: 12px; width: 260px; max-width: 100%; }
 
   .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; display: inline-block; }
   .t-over { background: var(--accent-dim); color: var(--accent); }
@@ -132,6 +139,7 @@ const OVER_PCT = 1.10, OVER_MIN_FT = 100, UNQUOTED_MIN_FT = 50, UNDER_PCT = 0.60
 let msal_ = null, siteId = null, listIds = {};
 let rawProjects = [], rawVisits = [], usingSample = false;
 let groups = [], filter = 'all', search = '';
+let attention = [], lostCounts = [];   // projects the page couldn't place with confidence, and counts that matched no project
 let links = (() => { try { return JSON.parse(localStorage.getItem('wirecheck.links') || '{}'); } catch { return {}; } })();
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -292,6 +300,21 @@ function build() {
     for (const p of ps) auto.set(p.num, !cn ? 'noclient|' + p.num : single ? cn + '|all' : p.core ? cn + '|' + p.core : cn + '|(unassigned)');
   }
   const validKeys = new Set(auto.values());
+
+  /* "Needs a look": projects with wire on them that the rules above could not place with
+     confidence. Anything already moved by hand counts as resolved. */
+  attention = []; lostCounts = [];
+  for (const [cn, ps] of Object.entries(byClient)) {
+    const mains = ps.filter(isMain), mainCores = new Set(mains.map(p => p.core).filter(Boolean));
+    for (const p of ps) {
+      if (links[p.num] || !p.lines.length) continue;
+      const add = why => attention.push({ num: p.num, name: p.name, client: p.client, why });
+      if (!cn) add('There is no client name on this project, so it cannot be matched to a job.');
+      else if (mains.length > 1 && !isMain(p) && !p.core) add(p.client + ' has ' + mains.length + ' main projects and this lighting/blinds project has no address in its name, so there is no telling which house it belongs to.');
+      else if (mains.length > 1 && !isMain(p) && !mainCores.has(p.core)) add('A lighting/blinds project whose name ("' + p.core + '") does not match any of ' + p.client + '\'s ' + mains.length + ' main projects.');
+      else if (mains.length > 1 && isMain(p) && !p.core) add(p.client + ' has several main projects and this name has no address to tell them apart.');
+    }
+  }
   const byKey = new Map();
   const put = (key, p) => { if (!byKey.has(key)) byKey.set(key, { key, projects: [] }); byKey.get(key).projects.push(p); };
   for (const p of projects) {
@@ -318,7 +341,16 @@ function build() {
   const seen = new Set(); const today = new Date().toISOString().slice(0, 10);
   for (const v of rawVisits) {
     const num = String(v.JobNumber || '').trim(); const g = projGroup.get(num);
-    if (!g) continue;
+    if (!g) {                                   // counts for a job we have no quote for would otherwise vanish silently
+      for (const e of splitEntries(v.WriteUpText, v.WriteUpBy)) {
+        const counts = extractCounts(e.body);
+        if (!Object.keys(counts).length) continue;
+        const k = 'lost|' + num + '|' + e.author + '|' + e.date + '|' + hash(e.body.trim());
+        if (seen.has(k)) continue; seen.add(k);
+        lostCounts.push({ job: num || '(no job number)', jobName: v.JobName || '', visit: v.SchedDate || mdy(e.date), author: e.author, counts });
+      }
+      continue;
+    }
     const hasWU = !!String(v.WriteUpText || '').trim();
     g.visits.push({ date: v.SchedDate || '', progress: v.Progress || '', past: (v.SchedDate || '') < today, hasWU, crew: v.Crew || '' });
     if (!hasWU) continue;
@@ -406,6 +438,7 @@ function render() {
       '<div class="tot warn"><div class="tot-n">' + nocount.length + '</div><div class="tot-l">No count written</div></div>' +
       '<div class="tot bad"><div class="tot-n">$' + fn(extra) + '</div><div class="tot-l">Extra wire, at cost</div></div>' +
     '</div>' +
+    lookBox() +
     '<div class="controls">' +
       '<div class="seg">' + [['all', 'All'], ['over', 'Over quote'], ['nocount', 'No count'], ['counted', 'Has a count']].map(([k, l]) => '<button class="' + (filter === k ? 'on' : '') + '" onclick="setFilter(\'' + k + '\')">' + l + '</button>').join('') + '</div>' +
       '<div><label class="fld" for="q">Find</label><input id="q" placeholder="Job, client or number" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
@@ -416,6 +449,25 @@ function render() {
     '<datalist id="glist"><option value="(own job)">' + groups.map(g => '<option value="' + esc(groupLabel(g)) + '">').join('') + '</datalist>' +
     (list.length ? list.map(jobCard).join('') : '<div class="empty">Nothing matches.</div>') +
     '</div>';
+}
+
+/* The projects and counts the page could not place. Fixing the names in D-Tools clears
+   them for good; "Move to…" fixes them in this browser only. */
+function lookBox() {
+  if (!attention.length && !lostCounts.length) return '';
+  const projs = attention.map(a =>
+    '<div class="look-i"><div><span class="pn">' + esc(a.num) + '</span> <b>' + esc(a.name) + '</b> <span class="mini">· ' + esc(a.client || 'no client') + '</span></div>' +
+    '<div class="mini">' + esc(a.why) + '</div>' +
+    '<input list="glist" placeholder="Move to a job…" onchange="moveProject(\'' + esc(a.num).replace(/'/g, '') + '\', this.value)"></div>').join('');
+  const lost = lostCounts.map(l =>
+    '<div class="look-i"><div><span class="pn">' + esc(l.job) + '</span> <b>' + esc(l.jobName) + '</b> <span class="mini">· ' + esc(l.visit) + ' · ' + esc(l.author) + '</span></div>' +
+    '<div class="mini">' + Object.entries(l.counts).map(([t, ft]) => TNAME[t] + ' ' + fn(ft)).join(', ') + ' ft</div></div>').join('');
+  return '<details class="look" open><summary><b>Needs a look</b> <span class="mini">' +
+    (attention.length ? attention.length + ' project' + (attention.length > 1 ? 's' : '') + ' not placed with confidence' : '') +
+    (attention.length && lostCounts.length ? ' · ' : '') + (lostCounts.length ? lostCounts.length + ' wire count' + (lostCounts.length > 1 ? 's' : '') + ' on jobs with no quote' : '') + '</span></summary>' +
+    (projs ? '<div class="sec-h">Projects the page could not place</div><p class="mini">Rename them in D-Tools as “address - system” with the client spelled the same, or move them here.</p>' + projs : '') +
+    (lost ? '<div class="sec-h">Wire counts that match no project (not in any total below)</div><p class="mini">The job number has no quote in SchedProjects: a service call, an old job, or missing from the sync.</p>' + lost : '') +
+    '</details>';
 }
 
 function jobCard(g) {
@@ -456,6 +508,8 @@ function loadSample() {
     P('DEMO-LIGHT-N', 'New Maric Home 625 Niakwa Road Lighting Control System', 'Maric Homes', [L('LUTRON GREEN', 600, .42)]),
     P('DEMO-BLIND-N', 'New Maric Home 625 Niakwa Road Motorized Window Coverings', 'Maric Homes', [L('LUTRON GREEN', 1500, .42)]),
     P('ADVAN-4145', 'New Maric Home 7374 Henderson Hwy. A/V', 'Maric Homes', [L('CAT6', 1800, .2), L('Z224 Wire', 900, .15)]),
+    P('DEMO-LIGHT-M', 'Lutron Lighting Package', 'Maric Homes', [L('LUTRON GREEN', 300, .42)]),
+    P('DEMO-BLIND-M', 'New Maric Home 7374 Henderson Highway Blinds', 'Maric Homes', [L('LUTRON GREEN', 500, .42)]),
     P('ADVAN-4187', 'New Alair Home, 14 Du Monastere Street Audio-Video', 'Bouchard, Rori & Heather', [L('CAT6', 1375, .2), L('LUTRON GREEN', 1250, .42), L('16-2 Speaker Wire', 890, .32), L('164CDLIB Direct Burial 16-4', 125, .67)]),
     P('ADVAN-4218', 'New Alair Home, 14 Du Monastere Street Window Coverings version 2', 'Bouchard, Rori & Heather', [L('LUTRON GREEN', 250, .42)]),
     P('ADVAN-9999', 'Made-up house with no write-up', 'Test Client', [L('CAT6', 1000, .2), L('16-2 Speaker Wire', 600, .32)])
@@ -468,6 +522,7 @@ function loadSample() {
     V('ADVAN-4187', '2026-10-14', 'Prewire', 'Andrew Lindquist · 10/15/2026\nAL 10/14/2026 (7.5 hrs).\nWire count**\nCat 6 total= 2522 ft\nLutron total=1580 ft\n16-2 total=68 ft\n16-4 total=52 ft'),
     V('ADVAN-4187', '2026-10-26', 'Prewire', 'Andrew Lindquist · 11/02/2026\nAL 10/26/2026 (4.75 hrs).\nWire count**\nCat 6 total= 572 ft\n16-2 total= 26 ft\nLutron total= 314 ft'),
     V('ADVAN-4187', '2026-11-04', 'Prewire', 'Andrew Lindquist · 11/09/2026\nAL 11/4/2026 (3 hrs).\nWire count**\nCat 6 total=618 ft\n16-4 total=84 ft'),
+    { JobNumber: 'ADVAN-5555', JobName: 'Service call, 1700 McCreary', SchedDate: '2026-09-18', Progress: 'Service', WriteUpBy: 'Andrew Lindquist', Crew: 'Andrew Lindquist', WriteUpText: 'Andrew Lindquist · 09/28/2026\nAL 9/18/2026\nInstalled a phone jack.\nCat 6 total= 15 ft' },
     V('ADVAN-9999', '2026-10-20', 'Prewire', 'Barry Keeper · 10/21/2026\nBK 10/20/2026 (7 hrs)\nRan 6 cat 6 and 3 speaker lines. Rough-in complete.')
   ];
 }
