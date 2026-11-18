@@ -144,7 +144,13 @@ async function main() {
     // The full project record runs to well over a megabyte because it carries every
     // line item. Only refetch when SI says the project actually changed -- otherwise a
     // twenty-minute cron would pull tens of megabytes an hour to learn nothing.
-    const changed = !prior || String(prior.SourceUpdatedOn || '') !== String(p.UpdatedOn || '');
+    // The project LIST carries no UpdatedOn (only the full record does), so this used to
+    // compare '' with '' on every run and never see a change: a job set to Completed in SI
+    // kept its old status here until the catalog happened to move and rebuilt everything.
+    // PublishedOnUnixTimeMs is what moves each time SI publishes the project -- the same
+    // field dtools.mjs already uses to pick the newest message per project.
+    const stamp = String(p.UpdatedOn || p.PublishedOnUnixTimeMs || p.PublishedOn || '');
+    const changed = !prior || String(prior.SourceUpdatedOn || '') !== stamp;
     // A catalog vendor fix changes no project, so order lines would go stale if we only
     // watched the project. Rebuild them when the catalog feed has moved as well.
     const catalogMoved = !prior || String(prior.CatalogSeen || '') !== catalogPrint;
@@ -217,7 +223,7 @@ async function main() {
       TasksJson: JSON.stringify(spans),
       TaskCount: String(spans.length),
       OrderLinesJson: orders,
-      SourceUpdatedOn: p.UpdatedOn || '',
+      SourceUpdatedOn: stamp,
       CatalogSeen: catalogPrint,
       SyncedAt: new Date().toISOString(),
     };
@@ -245,7 +251,9 @@ async function main() {
         if (!dryRun) await graph.create(LIST, fields);
         created++;
         console.log(`  + ${String(fields.Title).padEnd(11)} start ${(startDate || '—').padEnd(10)}  tasks ${String(spans.length).padStart(3)}  lines ${String(lines.length).padStart(3)}  ${fields.ProjectName}`);
-      } else if (rebuild || String(prior.TasksJson || '') !== fields.TasksJson) {
+      } else if (rebuild || String(prior.TasksJson || '') !== fields.TasksJson || String(prior.Progress || '') !== String(fields.Progress || '')) {
+        // Progress is the status the Orders page filters on, so a change to it is always
+        // written, even if nothing else about the project moved.
         if (!dryRun) await graph.update(LIST, prior.itemId, fields);
         updated++;
         console.log(`  ~ ${fields.Title} — ${spans.length} task(s)`);
@@ -472,8 +480,11 @@ function showTaskShape(tasks) {
   }
 }
 
-/* How a CHANGE ORDER looks in the feed, printed on a manual dry run (or when the repository
-   variable PROJECT_SHAPE is true). A change order stays Approved after the job it belongs
+/* How a CHANGE ORDER looks in the feed, printed when the repository variable PROJECT_SHAPE
+   is true. (First use, 2026-11: it showed ADVAN-3705 as ONE record, IsChangeOrder false,
+   every CO* field null, so approved change orders are merged into their project rather than
+   published separately -- there is nothing to skip. The stale status was the sync's change
+   detection, fixed above.) A change order was suspected of staying Approved after the job it belongs
    to is Completed, so the Orders page keeps showing it -- and its products are already in
    the main project, so they are counted twice. To skip change orders the sync needs the
    field that marks one, or that points at its parent. The task and project records are
@@ -487,7 +498,7 @@ function showTaskShape(tasks) {
    PROJECT_SHAPE_NUMBER picks the job to look at (default ADVAN-3705, the first known case).
    Read the log, then delete the variable. */
 async function showProjectShape(si, projects) {
-  if (!(dryRun || String(process.env.PROJECT_SHAPE || '') === 'true')) return;
+  if (String(process.env.PROJECT_SHAPE || '') !== 'true') return;   // off by default: the full records run to hundreds of lines
   const target = process.env.PROJECT_SHAPE_NUMBER || 'ADVAN-3705';
   const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const ids = new Set(projects.map(p => String(p.Id)));
