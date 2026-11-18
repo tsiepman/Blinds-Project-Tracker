@@ -45,6 +45,7 @@ async function main() {
   // admin consent exists. SharePoint is only touched once there is something to write.
   const projects = await si.projects();
   console.log(`Projects published to the integration: ${projects.length}`);
+  try { await showProjectShape(si, projects); } catch (e) { console.log(`  (project shape check failed: ${String(e.message).slice(0, 120)})`); }
 
   // Vendor is resolved against the catalog rather than the project item, so one catalog
   // fix reaches every job instead of needing an item-by-item edit in each one.
@@ -468,6 +469,76 @@ function showTaskShape(tasks) {
     }
   } else {
     console.log('  nothing on the task looks like a note field.');
+  }
+}
+
+/* How a CHANGE ORDER looks in the feed, printed on a manual dry run (or when the repository
+   variable PROJECT_SHAPE is true). A change order stays Approved after the job it belongs
+   to is Completed, so the Orders page keeps showing it -- and its products are already in
+   the main project, so they are counted twice. To skip change orders the sync needs the
+   field that marks one, or that points at its parent. The task and project records are
+   not documented, so this prints what they actually carry.
+
+   THIS REPOSITORY IS PUBLIC and so is its log, so nothing here prints a client, address,
+   price or any free text. It prints field NAMES, their types, booleans and numbers, and
+   the value of enum-like fields (status, type, kind...). An id is reported only as
+   "id of ANOTHER project" or not, which is the parent link if there is one.
+
+   PROJECT_SHAPE_NUMBER picks the job to look at (default ADVAN-3705, the first known case).
+   Read the log, then delete the variable. */
+async function showProjectShape(si, projects) {
+  if (!(dryRun || String(process.env.PROJECT_SHAPE || '') === 'true')) return;
+  const target = process.env.PROJECT_SHAPE_NUMBER || 'ADVAN-3705';
+  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ids = new Set(projects.map(p => String(p.Id)));
+  const ENUMISH = /type|kind|status|progress|state|phase|stage|class|categ|origin|source|parent|master|version|revision|order/i;
+  const describe = (rec) => Object.keys(rec).sort().map(k => {
+    const v = rec[k]; let d;
+    if (v == null) d = 'null';
+    else if (Array.isArray(v)) d = `array of ${v.length}`;
+    else if (typeof v === 'object') d = `object {${Object.keys(v).slice(0, 12).join(', ')}}`;
+    else if (typeof v === 'boolean') d = String(v);
+    else if (typeof v === 'number') d = (Number.isInteger(v) && Math.abs(v) <= 20) ? String(v) : 'a number';   // never a price
+    else if (GUID.test(String(v))) d = (ids.has(String(v)) && String(v) !== String(rec.Id)) ? 'id of ANOTHER project  <-- a link' : 'an id';
+    else if (/^\d{4}-\d{2}-\d{2}T/.test(String(v))) d = 'a date';
+    else if (ENUMISH.test(k) && String(v).length <= 40) d = JSON.stringify(String(v));
+    else d = `text (${String(v).length} chars)`;
+    return `    ${k.padEnd(30)} ${d}`;
+  });
+
+  console.log('\n  PROJECT_SHAPE');
+  const dup = new Map();
+  for (const p of projects) { const n = String(p.Number ?? ''); if (n) dup.set(n, (dup.get(n) ?? 0) + 1); }
+  const repeated = [...dup].filter(([, c]) => c > 1);
+  console.log(`  job numbers used by more than one project record: ${repeated.length}` +
+    (repeated.length ? `  (e.g. ${repeated.slice(0, 6).map(([n, c]) => `${n} x${c}`).join(', ')})` : ''));
+
+  // Across every project: which fields are booleans that are true for some, and which ids
+  // point at another project. A change-order flag or a parent link would show up here.
+  const boolStats = new Map(), linkStats = new Map();
+  for (const p of projects) for (const [k, v] of Object.entries(p)) {
+    if (typeof v === 'boolean') { const s = boolStats.get(k) ?? { t: 0, f: 0 }; v ? s.t++ : s.f++; boolStats.set(k, s); }
+    else if (typeof v === 'string' && GUID.test(v) && ids.has(v) && v !== String(p.Id)) linkStats.set(k, (linkStats.get(k) ?? 0) + 1);
+  }
+  console.log('  yes/no fields on the project list (true / false):');
+  for (const [k, s] of [...boolStats].sort()) console.log(`    ${k.padEnd(30)} ${s.t} / ${s.f}`);
+  console.log(linkStats.size
+    ? '  fields holding the id of ANOTHER project (parent link candidates, records affected):\n' + [...linkStats].map(([k, n]) => `    ${k.padEnd(30)} ${n}`).join('\n')
+    : '  no field on the project list holds the id of another project.');
+
+  const mine = projects.filter(p => String(p.Number) === target);
+  const other = projects.find(p => String(p.Number) !== target && /^installing$/i.test(String(p.Progress || '').trim()));
+  console.log(`\n  records numbered ${target}: ${mine.length}`);
+  // Every record under that number (up to three): a change order and its parent can share it.
+  const shown = [...mine.slice(0, 3).map((p, i) => [`${target} record ${i + 1} of ${mine.length} (list)`, p]), ['an Installing job, for contrast (list)', other]];
+  for (const [label, p] of shown) {
+    if (p) console.log(`  ${label}:\n${describe(p).join('\n')}`);
+  }
+  const full = [...mine.slice(0, 3).map((p, i) => [`${target} record ${i + 1} of ${mine.length} (full)`, p]), ['the Installing job (full)', other]];
+  for (const [label, p] of full) {
+    if (!p) continue;
+    try { console.log(`  ${label}:\n${describe(await si.projectDetail(p.Id)).join('\n')}`); }
+    catch (e) { console.log(`  ${label}: could not read (${String(e.message).slice(0, 100)})`); }
   }
 }
 
