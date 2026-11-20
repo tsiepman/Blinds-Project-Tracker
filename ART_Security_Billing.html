@@ -160,10 +160,10 @@ const CLIENT_ID = '7b0d92bf-6e34-497e-9938-7860ba268631';
 const SITE_HOSTNAME = 'advanceelectronics.sharepoint.com';
 const SITE_PATH = '/sites/ART43';
 const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All', 'offline_access'];
-const LIST = { accounts: 'SecurityAccounts', payments: 'SecurityPayments' };
+const LIST = { accounts: 'SecurityAccounts', payments: 'SecurityPayments', transmitters: 'SecurityTransmitters' };
 
 let msal_ = null, siteId = null, listIds = {};
-let accounts = [], payments = [], usingSample = false;
+let accounts = [], payments = [], transmitters = [], usingSample = false;
 let view = (() => { try { return localStorage.getItem('secbill.view') || 'chase'; } catch { return 'chase'; } })();
 let search = '', statusFilter = 'active', stationFilter = 'all';
 let openId = null;      // account currently shown in the drawer, or null
@@ -232,12 +232,16 @@ function setStatus(cls, txt) { const e = document.getElementById('spStatus'); e.
 async function load() {
   setStatus('loading', 'Loading…');
   try {
-    const [ac, pay] = await Promise.all([
+    const [ac, pay, tx] = await Promise.all([
       items(LIST.accounts),
-      items(LIST.payments).catch(() => [])
+      items(LIST.payments).catch(() => []),
+      // The cost side is optional: the page worked for months without it and still does.
+      // A missing SecurityTransmitters list means no cost columns, not a broken page.
+      items(LIST.transmitters).catch(() => [])
     ]);
     accounts = ac.map(i => ({ itemId: i.id, ...(i.fields || {}) }));
     payments = pay.map(i => ({ itemId: i.id, ...(i.fields || {}) }));
+    transmitters = tx.map(i => ({ itemId: i.id, ...(i.fields || {}) }));
     usingSample = false;
     if (!accounts.length) loadSample();
     setStatus('connected', 'SharePoint');
@@ -299,7 +303,67 @@ function cycleDates(a) {
   return { last: iso(last), next: iso(next), step };
 }
 
-function shape(a) {
+/* ---------- the cost side ----------
+   What the customer pays is only half the account. The other half is what WE pay the
+   station to monitor it, and that goes out whether the customer pays or not -- which is
+   the whole reason a quietly declining account is expensive rather than merely untidy.
+
+   It comes off the station's monthly wholesale billing detail, which is per TRANSMITTER,
+   not per customer: one customer can carry two monitored systems (a house and a cottage)
+   and pays twice. So transmitters are their own list and an account sums its own.
+
+   Two line items matter per transmitter: the monitoring charge itself, and the station's
+   per-account billing-and-collections fee. On the SecurTek book the fee is frequently the
+   LARGER of the two ($3.63 against $4.00), so costing an account at the monitoring rate
+   alone understates what carrying it actually costs by nearly half. */
+
+function nameKey(s) {
+  return String(s ?? '').toLowerCase()
+    .replace(/\s*-\s*owes.*$/, '')                       // the "- Owes Jun 2026 - Declined" suffix
+    .replace(/\b(c\/o|aka|ltd|inc|corp|shop|office)\b/g, ' ')
+    .replace(/[^a-z0-9& ]/g, ' ')
+    .split(/\s+/).filter(Boolean).join(' ');
+}
+
+/* Transmitters indexed both ways round, because the join is unreliable in both directions:
+   StationAccountId is the clean key but is blank on plenty of accounts, and the name on
+   the wholesale sheet is hand-typed and drifts from the one on the statement
+   (Tsyuki/Tsuyuki, Kramps Gibson/Kramps-Gibson). Try the number, fall back to the name. */
+function txIndex() {
+  const byTx = new Map(), byName = new Map();
+  for (const t of transmitters) {
+    const id = String(t.TransmitterId || '').trim();
+    if (id) byTx.set(id.toUpperCase(), t);
+    const k = nameKey(t.CustomerName);
+    if (k) { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(t); }
+  }
+  return { byTx, byName };
+}
+
+function costOf(a, idx) {
+  if (!transmitters.length) return null;
+  let rows = [];
+  const id = String(a.StationAccountId || '').trim().toUpperCase();
+  if (id && idx.byTx.has(id)) {
+    // Matched on the number: take every transmitter filed under this customer's name, so
+    // a second system on the same account is counted rather than silently halved.
+    const hit = idx.byTx.get(id);
+    rows = idx.byName.get(nameKey(hit.CustomerName)) || [hit];
+  } else {
+    rows = idx.byName.get(nameKey(a.CustomerName)) || [];
+  }
+  if (!rows.length) return null;
+  const monitoring = rows.reduce((n, t) => n + (Number(t.Monitoring) || 0), 0);
+  const fee = rows.reduce((n, t) => n + (Number(t.BillingFee) || 0), 0);
+  const alt = rows.reduce((n, t) => n + (Number(t.AltComm) || 0), 0);
+  return {
+    monitoring, fee, alt, total: monitoring + fee + alt,
+    systems: rows.filter(t => (Number(t.Monitoring) || 0) > 0).length,
+    ids: rows.map(t => t.TransmitterId).filter(Boolean)
+  };
+}
+
+function shape(a, idx) {
   const status = (a.Status || 'active').toLowerCase();
   // MonthlyRate is the SharePoint column name, but it holds the amount charged per
   // BILLING CYCLE -- $252 on an annual account, not $252 a month. perMonth below is the
@@ -333,7 +397,24 @@ function shape(a) {
     while (cursor <= now) { cyclesBehind++; cursor = new Date(cursor.getFullYear(), cursor.getMonth() + step, cursor.getDate()); }
     daysBehind = Math.max(0, dayDiff(firstMissed, today()));
   }
+  const cost = costOf(a, idx || txIndex());
+  /* Sunk is the money already gone: the monthly cost multiplied by how long this account
+     has been behind. It is not recoverable and it is not part of the balance the customer
+     owes -- it is what the delay itself cost, and it is the number that makes the case for
+     picking up the phone this month rather than next. */
+  const carry = cost ? cost.total : 0;
+  /* How long we have been carrying it. daysBehind only counts from the first cycle the
+     tool KNOWS was missed, which on an account imported with a balance and no payment
+     history is a few days -- understating the oldest accounts worst of all. Where there is
+     a balance, the balance itself says how many cycles have gone by, so take whichever
+     measure is longer. */
+  const impliedMonths = owed > 0 && perMonth > 0 ? owed / (perMonth * 1.12) : 0;
+  const monthsBehind = behind ? Math.max(daysBehind / 30.4, impliedMonths) : 0;
+  const sunk = cost ? Math.round(carry * monthsBehind * 100) / 100 : 0;
+
   return {
+    cost, carry, sunk,
+    margin: cost ? perMonth - carry : null,
     id: a.itemId, accountId: a.AccountId || '', name: a.CustomerName || '', address: a.Address || '',
     phone: a.Phone || '', email: a.Email || '',
     station: a.Station || '', stationAccountId: a.StationAccountId || '', panel: a.Panel || '',
@@ -406,12 +487,121 @@ function rowHtml(v) {
     // The cycle has to be on the amount, or $252 reads as a monthly account.
     '<div class="r-amt"><b>' + money(v.rate) + '</b><span class="lbl">' + v.freqLabel + ' · day ' + v.billDay +
       (v.freq === 'monthly' ? '' : ' · ' + money(v.perMonth) + '/mo') + '</span></div>' +
+    // Only on accounts that are behind: on a paying account the cost is just normal
+    // trading and putting it on every row turns a call list into a ledger.
+    (v.cost && v.behind
+      ? '<div class="r-amt"><b style="color:var(--red)">' + money(v.carry) + '</b><span class="lbl">/mo we pay' +
+        (v.sunk > 0 ? ' · ' + money(v.sunk) + ' spent' : '') + '</span></div>'
+      : '') +
     '<div class="r-amt">' + statusTag(v) + '</div>' +
   '</div>';
 }
 
+/* ---------- reconciliation ----------
+   Two lists that should describe the same book and don't. Every transmitter we pay for
+   should have a billing account behind it, and every billing account should have a
+   transmitter under it. Each way round is its own kind of money:
+
+   - A transmitter with no account is monitoring we pay for and bill nobody for. It does
+     not appear on any statement, so unlike a decline it never surfaces on its own.
+   - An account with no transmitter is billing a customer for monitoring that may have
+     been cancelled at the station.
+
+   Neither is automatically wrong. Staff accounts, builder jobsites and customers invoiced
+   direct through Advance AR all land in the first bucket legitimately. The point is to
+   make the list short enough to go through by hand, not to decide anything for you --
+   cancelling monitoring on a customer who has been paying Advance directly leaves a house
+   unmonitored, which is a different order of mistake from a billing one. */
+function reconcile(all) {
+  const claimed = new Set();
+  const matched = [];
+  for (const v of all) {
+    if (v.cost && v.cost.ids.length) { v.cost.ids.forEach(id => claimed.add(String(id).toUpperCase())); matched.push(v); }
+  }
+  const txOnly = transmitters.filter(t =>
+    (Number(t.Monitoring) || 0) > 0 && !claimed.has(String(t.TransmitterId || '').toUpperCase()));
+  const acctOnly = all.filter(v => v.status === 'active' && !v.cost);
+  return { matched, txOnly, acctOnly };
+}
+
+function reconcileHtml(all) {
+  if (!transmitters.length) return '<div class="empty">No transmitter data yet. Import the station\'s monthly wholesale billing detail to reconcile what we pay against what we bill.</div>';
+  const r = reconcile(all);
+  const txCost = r.txOnly.reduce((n, t) => n + (Number(t.Monitoring) || 0) + (Number(t.BillingFee) || 0), 0);
+  const grp = (title, sub, rows, cls) =>
+    '<div class="group"><div class="group-head"><span class="group-name">' + title + '</span>' +
+    '<span class="group-meta">' + sub + '</span></div>' + (rows || '<div class="empty">None.</div>') + '</div>';
+  const txRows = r.txOnly.sort((a, b) => String(a.CustomerName).localeCompare(String(b.CustomerName))).map(t =>
+    '<div class="row" style="cursor:default">' +
+      '<div class="r-main"><div class="r-name">' + esc(t.CustomerName || '(no name)') + '</div>' +
+        '<div class="r-sub"><span class="num">' + esc(t.TransmitterId || '') + '</span>' +
+        (t.Station ? ' · ' + esc(t.Station) : '') + '</div></div>' +
+      '<div class="r-amt"><b>' + money((Number(t.Monitoring) || 0) + (Number(t.BillingFee) || 0)) + '</b><span class="lbl">/mo we pay</span></div>' +
+      '<div class="r-amt"><span class="tag t-late">not billed</span></div>' +
+    '</div>').join('');
+  const acRows = r.acctOnly.sort((a, b) => b.perMonth - a.perMonth).map(v =>
+    '<div class="row" tabindex="0" role="button" onclick="openDrawer(\'' + v.id + '\')">' +
+      '<div class="r-main"><div class="r-name">' + esc(v.name) + '</div>' +
+        '<div class="r-sub">' + esc([v.address, v.station, v.stationAccountId].filter(Boolean).join(' · ') || 'no transmitter number on file') + '</div></div>' +
+      '<div class="r-amt"><b>' + money(v.rate) + '</b><span class="lbl">' + v.freqLabel + '</span></div>' +
+      '<div class="r-amt"><span class="tag t-miss">no transmitter</span></div>' +
+    '</div>').join('');
+  return '<div class="banner">Not on this list does not mean wrong. Staff accounts, builder jobsites and customers invoiced directly through Advance AR all belong in the first group legitimately. Check each against AR before changing anything at the station.</div>' +
+    grp('We pay, nobody is billed', r.txOnly.length + ' transmitters · ' + money(txCost) + '/mo · ' + money(txCost * 12) + '/yr', txRows) +
+    grp('Billed, no transmitter behind it', r.acctOnly.length + ' accounts', acRows) +
+    grp('Matched', r.matched.length + ' accounts reconcile cleanly', '<div class="empty">Nothing to do here.</div>');
+}
+
+/* ---------- economics ----------
+   The book as a business rather than as a chase list. Everything here is normalised per
+   month, so a $252 annual account counts as $21 and the totals mean something. */
+function economicsHtml(all) {
+  const active = all.filter(v => v.status === 'active');
+  const book = active.reduce((n, v) => n + v.perMonth, 0);
+  const priced = active.filter(v => v.cost);
+  const cost = priced.reduce((n, v) => n + v.carry, 0);
+  const margin = priced.reduce((n, v) => n + v.perMonth, 0) - cost;
+  const behindList = active.filter(v => v.behind && v.cost);
+  const bleed = behindList.reduce((n, v) => n + v.carry, 0);
+  const sunk = active.reduce((n, v) => n + v.sunk, 0);
+  const owed = active.reduce((n, v) => n + v.owed, 0);
+  /* Collection rate is the number that actually tells you whether this is fixed. The
+     arrears balance is a stock and moves when someone writes an old account off; the
+     rate is the flow, and if it drifts the balance rebuilds itself no matter how many
+     calls get made. */
+  const rate = book > 0 ? 100 * (1 - (behindList.reduce((n, v) => n + v.perMonth, 0) / book)) : 0;
+  const line = (label, value, note, cls) =>
+    '<div class="row" style="cursor:default"><div class="r-main"><div class="r-name">' + label + '</div>' +
+    (note ? '<div class="r-sub">' + note + '</div>' : '') + '</div>' +
+    '<div class="r-amt"><b' + (cls ? ' style="color:var(--' + cls + ')"' : '') + '>' + value + '</b></div></div>';
+  return '<div class="totals">' +
+      tot('good', money(book), 'book value per month') +
+      tot('', money(cost), 'station cost per month') +
+      tot(margin > 0 ? 'good' : 'late', money(margin), 'gross margin per month') +
+      tot(rate >= 95 ? 'good' : rate >= 85 ? 'miss' : 'late', rate.toFixed(1) + '%', 'collecting') +
+    '</div>' +
+    '<div class="group"><div class="group-head"><span class="group-name">Annualised</span>' +
+      '<span class="group-meta">' + priced.length + ' of ' + active.length + ' accounts have cost data</span></div>' +
+      line('Book value', money(book * 12) + '/yr', 'what the active book bills in a year at current rates') +
+      line('Station cost', money(cost * 12) + '/yr', 'monitoring plus per-account billing fees') +
+      line('Gross margin', money(margin * 12) + '/yr', 'before anyone\'s time', margin > 0 ? 'green' : 'red') +
+    '</div>' +
+    '<div class="group"><div class="group-head"><span class="group-name">What being behind costs</span>' +
+      '<span class="group-meta">' + behindList.length + ' accounts behind</span></div>' +
+      line('Owed by customers', money(owed), 'recoverable, and the reason to call', 'yellow') +
+      line('Carrying cost', money(bleed) + '/mo', 'paid to the station for accounts paying us nothing', 'red') +
+      line('Already spent carrying them', money(sunk), 'gone, not recoverable — the cost of the delay itself', 'red') +
+    '</div>' +
+    (priced.length < active.length
+      ? '<div class="banner">' + (active.length - priced.length) + ' active accounts have no transmitter matched, so they are missing from the cost and margin figures above. Import the wholesale billing detail, or check the reconcile view.</div>'
+      : '');
+}
+
 function render() {
-  const all = accounts.map(shape);
+  // Built once and handed down: Array.map would otherwise pass the loop index as the
+  // second argument, and rebuilding the transmitter index per account is 200 maps a render.
+  const idx = txIndex();
+  const all = accounts.map(a => shape(a, idx));
   const q = search.trim().toLowerCase();
   const matches = v => !q || [v.name, v.accountId, v.address, v.station, v.stationAccountId].join(' ').toLowerCase().includes(q);
 
@@ -421,6 +611,7 @@ function render() {
   const totalOwed = active.reduce((n, v) => n + v.owed, 0);
   // Normalised, so a $252 annual account contributes $21 and not $252.
   const monthlyBook = active.reduce((n, v) => n + v.perMonth, 0);
+  const monthlyCarry = active.reduce((n, v) => n + v.carry, 0);
 
   const shown = view === 'chase' ? owingList
     : all.filter(v => statusFilter === 'all' || v.status === statusFilter)
@@ -433,9 +624,13 @@ function render() {
   const stationCounts = new Map();
   for (const v of all) { const s = v.station || '(not set)'; stationCounts.set(s, (stationCounts.get(s) || 0) + 1); }
 
-  const body = !shown.length
-    ? '<div class="empty">' + (view === 'chase' ? 'Nothing owing — every active account is current.' : 'No accounts match.') + '</div>'
-    : '<div class="group">' + shown.map(rowHtml).join('') + '</div>';
+  const body =
+    view === 'economics' ? economicsHtml(all) :
+    view === 'reconcile' ? reconcileHtml(all) :
+    !shown.length
+      ? '<div class="empty">' + (view === 'chase' ? 'Nothing owing — every active account is current.' : 'No accounts match.') + '</div>'
+      : '<div class="group">' + shown.map(rowHtml).join('') + '</div>';
+  const listView = view === 'chase' || view === 'all';
 
   document.getElementById('app').innerHTML =
     (usingSample ? '<div class="banner" style="text-align:center">Sample data — the SecurityAccounts list is empty or not yet created</div>' : '') +
@@ -445,6 +640,8 @@ function render() {
       '<div><label class="fld">View</label><div class="seg" role="tablist">' +
         '<button role="tab" aria-selected="' + (view === 'chase') + '" class="' + (view === 'chase' ? 'on' : '') + '" onclick="setView(\'chase\')">Chase queue</button>' +
         '<button role="tab" aria-selected="' + (view === 'all') + '" class="' + (view === 'all' ? 'on' : '') + '" onclick="setView(\'all\')">All accounts</button>' +
+        '<button role="tab" aria-selected="' + (view === 'reconcile') + '" class="' + (view === 'reconcile' ? 'on' : '') + '" onclick="setView(\'reconcile\')">Reconcile</button>' +
+        '<button role="tab" aria-selected="' + (view === 'economics') + '" class="' + (view === 'economics' ? 'on' : '') + '" onclick="setView(\'economics\')">Economics</button>' +
       '</div></div>' +
       (view === 'all' ? '<div><label class="fld">Status</label><select onchange="setStatusFilter(this.value)">' +
         ['active', 'suspended', 'cancelled', 'all'].map(s => '<option value="' + s + '"' + (s === statusFilter ? ' selected' : '') + '>' + s[0].toUpperCase() + s.slice(1) + '</option>').join('') +
@@ -454,19 +651,23 @@ function render() {
         [...stationCounts.entries()].sort((a, b) => b[1] - a[1]).map(([s, n]) =>
           '<option value="' + esc(s) + '"' + (s === stationFilter ? ' selected' : '') + '>' + esc(s) + ' (' + n + ')</option>').join('') +
       '</select></div>' : '') +
-      '<div style="flex:1 1 220px"><label class="fld" for="q">Find</label><input id="q" style="width:100%" placeholder="Name, account #, address" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' +
+      (listView ? '<div style="flex:1 1 220px"><label class="fld" for="q">Find</label><input id="q" style="width:100%" placeholder="Name, account #, address" value="' + esc(search) + '" oninput="setSearch(this.value)"></div>' : '<div style="flex:1"></div>') +
       '<div style="display:flex;gap:6px">' +
         '<button class="btn btn-primary btn-sm" onclick="openDrawer(null)">+ New account</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="toggleImport()">Import SecurTek export</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="toggleImport()">Import</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="load()">Refresh</button>' +
       '</div>' +
     '</div>' +
+    // The economics view carries its own totals, and showing both sets at once reads as
+    // two different answers to the same question.
+    (view === 'economics' ? '' :
     '<div class="totals">' +
       tot('', active.length, 'active accounts') +
       tot('good', money(monthlyBook), 'per month (all cycles)') +
       tot(totalOwed > 0 ? 'late' : 'good', money(totalOwed), 'owing right now') +
       tot(owingList.length ? 'miss' : 'good', owingList.length, 'need a look') +
-    '</div>' + importPanel() + body +
+      (monthlyCarry > 0 ? tot('late', money(monthlyCarry), 'station cost per month') : '') +
+    '</div>') + importPanel() + body +
     (openId !== null || openId === '' ? drawerHtml() : '') +
     '</div>';
 }
@@ -1121,11 +1322,83 @@ function loadSheetJs() {
 // A workbook has more than one sheet (the customer list and the dealer statement), so pick
 // whichever one actually carries the customer table rather than assuming it is the first.
 function sheetToCsv(wb) {
+  /* Two different workbooks arrive at this panel. The B&C statement is the customer side
+     and wins if it is here at all. The wholesale billing detail is the cost side, and it
+     is one sheet PER MONTH oldest first -- so the last transmitter sheet in the book is
+     the one that is true now. That matters: the monitoring rate stepped from $4.50 to
+     $4.00 when the book crossed 200 accounts, and reading an early sheet would cost every
+     account 12% too much for ever. */
+  let tx = null;
   for (const name of wb.SheetNames) {
     const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
     if (/payment\s*type/i.test(csv)) return csv;
+    if (/transmitter\s*#/i.test(csv)) tx = csv;
   }
-  return XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+  return tx || XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+}
+
+/* ---------- import from the wholesale billing detail ----------
+   The other half of the station's monthly paperwork: TRANSMITTER # / NAME / MONITORING /
+   ALTERNATIVE COMMUNICATOR / BILLING & COLLECTIONS / CELL BACKUP, one row per transmitter.
+   This is what we are charged, and nothing else we hold says it. */
+function parseWholesale(raw) {
+  const rows = parseDelimitedSB(raw.trim());
+  const hIdx = rows.findIndex(r => /transmitter/i.test(String(r[0] || '')));
+  if (hIdx < 0) return { error: 'No "TRANSMITTER #" column here, so this is not the wholesale billing detail.' };
+  const known = new Map(transmitters.map(t => [String(t.TransmitterId || '').toUpperCase(), t]));
+  const ready = [], update = [], already = [];
+  for (const r of rows.slice(hIdx + 1)) {
+    const id = String(r[0] || '').trim();
+    if (!id || /^(total|subtotal|gst|pst)/i.test(id)) continue;
+    const rec = {
+      TransmitterId: id,
+      CustomerName: String(r[1] || '').trim(),
+      // A blank monitoring cell is a real value, not a gap: IP-backup transmitters ride
+      // alongside a monitored one and carry no charge of their own.
+      Monitoring: Number(String(r[2] || '').replace(/[^0-9.]/g, '')) || 0,
+      AltComm: Number(String(r[3] || '').replace(/[^0-9.]/g, '')) || 0,
+      BillingFee: Number(String(r[4] || '').replace(/[^0-9.]/g, '')) || 0,
+      Station: 'SecurTek'
+    };
+    const prev = known.get(id.toUpperCase());
+    if (!prev) { ready.push(rec); continue; }
+    const changes = {};
+    for (const k of ['CustomerName', 'Monitoring', 'AltComm', 'BillingFee']) {
+      if (String(prev[k] ?? '') !== String(rec[k])) changes[k] = rec[k];
+    }
+    if (Object.keys(changes).length) update.push({ itemId: prev.itemId, name: rec.CustomerName, changes });
+    else already.push(rec);
+  }
+  if (!ready.length && !update.length && !already.length) return { error: 'Found the transmitter column but no rows under it.' };
+  const monthly = [...ready, ...already].reduce((n, t) => n + t.Monitoring + t.BillingFee + t.AltComm, 0);
+  return { kind: 'transmitters', ready, update, already, skipped: [], monthly };
+}
+
+async function runTransmitterImport(which) {
+  const p = importParsed;
+  if (busy || !p || p.kind !== 'transmitters') return;
+  const rows = which === 'update' ? p.update : p.ready;
+  if (!rows.length) return;
+  busy = true;
+  try {
+    const lid = await listId(LIST.transmitters);
+    let n = 0;
+    for (const r of rows) {
+      if (which === 'update') await graph('PATCH', '/sites/' + siteId + '/lists/' + lid + '/items/' + r.itemId + '/fields', r.changes);
+      else await graph('POST', '/sites/' + siteId + '/lists/' + lid + '/items', { fields: { Title: r.TransmitterId, ...r } });
+      importProgress = (++n) + ' of ' + rows.length; render();
+    }
+    toast('✓ ' + n + ' transmitter' + (n === 1 ? '' : 's') + (which === 'update' ? ' updated' : ' imported'));
+  } catch (e) {
+    // A 404 here almost always means the list was never made. Graph won't create one from
+    // this page (it 403s), and "POST -> 404" tells nobody that.
+    toast(/404/.test(e.message)
+      ? 'No SecurityTransmitters list on the ART43 site yet — create it with columns TransmitterId, CustomerName, Monitoring, AltComm, BillingFee, Station, then import again.'
+      : 'Import failed: ' + e.message, true);
+  }
+  busy = false; importProgress = null;
+  importOpen = false; importText = ''; importParsed = null;
+  await load();
 }
 
 async function importFromFile(file) {
@@ -1161,7 +1434,12 @@ function toggleImport() { importOpen = !importOpen; if (!importOpen) { importTex
 function setImportText(v) { importText = v; }
 function parseImport() {
   if (!importText.trim()) { toast('Paste the SecurTek sheet first', true); return; }
-  const result = parseSecurtekExport(importText);
+  // Which workbook this is, decided by what is in it rather than by asking. The two come
+  // from the same supplier in the same month and nobody should have to know which button
+  // to press first.
+  const result = /transmitter\s*#/i.test(importText.slice(0, 4000))
+    ? parseWholesale(importText)
+    : parseSecurtekExport(importText);
   // A rejected file used to say so in a toast, which is gone in three seconds -- long
   // enough to miss, and then the panel just sits there with no buttons and no reason
   // given. The error stays on screen now until another file is loaded.
@@ -1173,10 +1451,17 @@ function parseImport() {
 function importPanel() {
   if (!importOpen) return '';
   const p = importParsed;
+  const tx = p && p.kind === 'transmitters';
   return '<div class="lt open" style="margin-bottom:14px">' +
-    '<div class="lt-head" onclick="toggleImport()"><span class="panel-title">Import SecurTek export</span>' +
+    '<div class="lt-head" onclick="toggleImport()"><span class="panel-title">Import from SecurTek</span>' +
       '<span class="spacer"></span><span style="color:var(--text3);font-size:12px">close</span></div>' +
     '<div class="lt-body">' +
+      (tx ? '<div class="banner" style="background:var(--accent-dim);color:var(--accent)">Read as the <b>wholesale billing detail</b> — the cost side. ' +
+        p.ready.length + ' new · ' + p.update.length + ' changed · ' + p.already.length + ' unchanged · ' +
+        money(p.monthly) + ' a month charged to us.</div>' : '') +
+      '<p class="lt-hint">Takes either of the two workbooks SecurTek sends each month, and works out which is which. ' +
+      'The <b>Billing &amp; Collections</b> sheet is the customer side: who pays what. The <b>wholesale billing detail</b> is the cost side: ' +
+      'what we are charged per transmitter, which is what the Economics and Reconcile views run on. Drop both in each month.</p>' +
       '<p class="lt-hint">Paste the Billing &amp; Collections sheet — straight out of Excel (select all, copy, paste below) or as a .csv. ' +
       'The most recent monthly rate for each customer is picked up, and the SecurTek account number carries over so re-pasting a later export ' +
       "won't create duplicates. Balances and the “Owes… Declined” flags are not imported — start clean and let the chase queue take it from here.</p>" +
@@ -1191,12 +1476,14 @@ function importPanel() {
       '<textarea id="importPaste" rows="4" placeholder="Paste the sheet here" oninput="setImportText(this.value)">' + esc(importText) + '</textarea>' +
       '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
         '<button class="btn btn-sm" onclick="parseImport()">Check what would import</button>' +
-        (p && p.ready.length ? '<button class="btn btn-primary btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="runImport()">Import ' + p.ready.length + ' account' + (p.ready.length === 1 ? '' : 's') + '</button>' : '') +
-        (p && p.update.length ? '<button class="btn btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="runUpdate()">Update ' + p.update.length + ' existing</button>' : '') +
+        (p && p.ready.length ? '<button class="btn btn-primary btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="' + (tx ? 'runTransmitterImport(\'new\')' : 'runImport()') + '">Import ' + p.ready.length + (tx ? ' transmitter' : ' account') + (p.ready.length === 1 ? '' : 's') + '</button>' : '') +
+        (p && p.update.length ? '<button class="btn btn-sm" ' + (busy ? 'disabled' : '') + ' onclick="' + (tx ? 'runTransmitterImport(\'update\')' : 'runUpdate()') + '">Update ' + p.update.length + ' existing</button>' : '') +
         (importProgress ? '<span class="sm2">' + esc(importProgress) + '</span>' : '') +
       '</div>' +
       (importError ? '<div class="banner" style="margin:10px 0 0">' + esc(importError) + '</div>' : '') +
-      (p ? '<p class="lt-hint" style="margin-top:10px">' +
+      // The breakdown below is about billing cycles and payment methods, which a
+      // transmitter row has none of — its summary is the banner at the top instead.
+      (p && !tx ? '<p class="lt-hint" style="margin-top:10px">' +
         p.ready.length + ' ready to import' +
         (p.update.length ? ' · <b>' + p.update.length + ' already here but out of date</b>' : '') +
         (p.already.length ? ' · ' + p.already.length + ' already in the list and correct' : '') +
