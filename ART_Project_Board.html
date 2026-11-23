@@ -196,8 +196,10 @@ async function load() {
     }
     rows = all.map(i => i.fields || {})
       .filter(f => Number(f.Price || 0) >= MIN_PRICE)
-      // A Lost job is never worked, so it has no place on a board of what the crew is doing.
-      .filter(f => !/^lost\b/i.test(String(f.Progress || '').trim()))
+      // Lost, On Hold and Estimating jobs are not being worked, so they have no place on a
+      // board of what the crew is doing. Anything else shows -- including a blank status,
+      // which is a data problem to fix rather than a reason to drop a job.
+      .filter(f => !/^(lost|on[ -]?hold|estimating)\b/i.test(String(f.Progress || '').trim()))
       .map(shape);
     usingSample = false;
     if (!rows.length) { rows = SAMPLE.map(shape); usingSample = true; }
