@@ -303,6 +303,13 @@ thead .bname{background:var(--surface2);z-index:3}
 .a-warn{background:var(--warnwash);border-color:rgba(232,163,61,.4);color:var(--yellow)}
 .avail b{display:block;font-family:var(--disp);text-transform:uppercase;letter-spacing:.08em;font-size:12.5px;margin-bottom:3px}
 .avail ul{margin:6px 0 0;padding-left:17px}
+/* ---------- employment agreements ---------- */
+.agr{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.5fr) auto;gap:10px 16px;align-items:center;padding:11px 15px;border-bottom:1px solid var(--line2)}
+.agr:last-child{border-bottom:0}
+.agr .nmx{font-weight:600}
+.agr .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:900px){.agr{grid-template-columns:1fr}.agr .acts{justify-content:flex-start}}
+
 /* ---------- auth gate ---------- */
 .authgate{min-height:100vh;display:grid;place-items:center;background:var(--bg);padding:20px}
 .authgate .box{background:var(--panel);border-radius:10px;max-width:380px;width:100%;padding:26px 26px 24px;box-shadow:0 20px 50px rgba(0,0,0,.35);text-align:center}
@@ -398,7 +405,7 @@ async function getToken(){
    ========================================================================= */
 const LIST={employees:"HR_Employees",timeOff:"HR_TimeOff",training:"HR_Training",tools:"HR_Tools",
   toolLog:"HR_ToolLog",vehicles:"HR_Vehicles",service:"HR_Service",incidents:"HR_Incidents",
-  acks:"HR_Acks",posAcks:"HR_PositionContracts",fuel:"HR_Fuel",settings:"HR_Settings"};
+  acks:"HR_Acks",posAcks:"HR_PositionContracts",fuel:"HR_Fuel",agreements:"HR_Agreements",settings:"HR_Settings"};
 /* Lists that may not exist yet, or that a user may not have permission to read (HR_Fuel is
    meant to be locked to managers in SharePoint). The hub loads without them, and never
    writes to one it could not read -- an empty read must not look like "delete everything". */
@@ -475,6 +482,13 @@ const M={
       sent:f.SentDate||"",signed:f.SignedDate||"",envId:f.EnvelopeId||""}),
     to:r=>({Title:(r.code||"")+" — "+(r.empId||""),AppKey:r.id,EmpId:r.empId,PosCode:r.code,
       Status:r.status,SentDate:r.sent,SignedDate:r.signed,EnvelopeId:r.envId})
+  },
+  /* Each person's Schedule A, pay included, as one JSON blob. HR_Agreements is meant to be
+     locked to managers in SharePoint, like HR_Fuel: the hub never shows pay to anyone else,
+     but the lock itself is SharePoint's, not this page's. */
+  agreements:{
+    from:f=>{ let d={}; try{ d=JSON.parse(f.Data||"{}"); }catch(e){} return {id:f.AppKey||uid(),empId:f.EmpId||"",data:d}; },
+    to:r=>({Title:"Schedule A — "+(r.empId||""),AppKey:r.id,EmpId:r.empId,Data:JSON.stringify(r.data||{})})
   },
   employees:{
     from:f=>({id:f.AppKey||uid(),name:f.Title||"",role:f.Role||"",hired:f.Hired||"",
@@ -580,7 +594,7 @@ async function saveSettings(settings){
 const Store={
   async load(){
     await getSiteId();
-    const OPTIONAL=["posAcks","fuel"];
+    const OPTIONAL=["posAcks","fuel","agreements"];
     UNAVAILABLE.clear();
     for(const key of Object.keys(LIST)){
       try{ await getListId(LIST[key]); }
@@ -797,7 +811,7 @@ function seed(){
   employees.forEach((e,i)=>{ if(i<4){ acks.push({id:uid(),empId:e.id,polId:"p1",at:iso(addD(today(),-200))});
                                        acks.push({id:uid(),empId:e.id,polId:"p2",at:iso(addD(today(),-200))}); } });
   return {
-    employees,timeOff,training,tools,toolLog:[],vehicles,service,incidents,policies,acks,fuel:[],
+    employees,timeOff,training,tools,toolLog:[],vehicles,service,incidents,policies,acks,fuel:[],agreements:[],
     settings:{
       fuelCards:[], fuelVisibility:"managers",
       seasonStart:Y+"-06-15", seasonEnd:Y+"-09-05",
@@ -986,8 +1000,9 @@ function posToggle(c){ posOpen[c]=!posOpen[c]; render(); }
 function posSetTab(t){ posTab=t; render(); }
 
 function vPositions(){
-  const signed=db.posAcks.filter(a=>a.status==="completed").length;
-  const out=db.posAcks.filter(a=>a.status==="sent").length;
+  /* Employment-agreement records share this list under the code EMP-AGR; they are counted on the Agreements page. */
+  const signed=db.posAcks.filter(a=>a.code!==AGR_CODE&&a.status==="completed").length;
+  const out=db.posAcks.filter(a=>a.code!==AGR_CODE&&a.status==="sent").length;
   const body = posTab==="div"
     ? POSDIVS.map(d=>{
         const g=POSITIONS.filter(p=>p.div===d);
@@ -1030,6 +1045,305 @@ function vPositions(){
   </div>
   ${body}`;
 }
+
+/* =========================================================================
+   EMPLOYMENT AGREEMENTS
+   -------------------------------------------------------------------------
+   One agreement per person: Schedule A (their own terms) + Part B (the standard terms,
+   AGR_PARTB below, the same for everyone and versioned in AGR_VERSION). The Position
+   Contracts above are attached to it, not repeated in it.
+
+   WHERE THINGS ARE KEPT
+   - Schedule A, pay included: HR_Agreements (one JSON blob per person). Meant to be
+     MANAGERS-ONLY in SharePoint, like HR_Fuel -- that permission is the only real lock,
+     because anything this page can show, a person's browser has downloaded.
+   - Sent / signed: HR_PositionContracts, under the position code EMP-AGR.
+   - Employer name, signer, defaults, "reviewed by counsel": settings.agr (HR_Settings).
+   Marking an agreement signed also ticks the "Employment Agreement" policy sign-off.
+
+   The wording has NOT been reviewed by a lawyer. Every printed page says DRAFT until
+   "Reviewed by counsel" is ticked on the Agreements page.
+   ========================================================================= */
+const AGR_CODE="EMP-AGR", AGR_VERSION="1.0";
+const AGR_PARTB=[
+  {h:"1. Your position and duties",c:[
+    ["1.1","You will carry out the duties of the position(s) in Schedule A as described in your Position Contract(s), and other reasonable duties that fit your skills and training."],
+    ["1.2","ART may update your duties as the business changes. If a change would significantly alter your role or reduce your pay, ART will discuss it with you first and the change will be made in writing."]]},
+  {h:"2. Probation",c:[
+    ["2.1","If Schedule A sets a probation period, it applies to the start of your employment. During probation ART will review how you are doing and tell you how you are getting on. Your rights under the Code apply throughout."]]},
+  {h:"3. Hours and place of work",c:[
+    ["3.1","Your normal hours and place of work are in Schedule A. ART may adjust start times and job sites to suit the work, with reasonable notice."],
+    ["3.2","Time spent travelling between ART\u0027s shop and job sites, and between job sites, during the workday is paid time. Your ordinary trip from home to the shop or to your first job site of the day is not, unless ART has asked you to start from somewhere else."]]},
+  {h:"4. Pay",c:[
+    ["4.1","ART will pay you the wage in Schedule A on its regular paydays, less deductions required by law and any you have agreed to in writing."],
+    ["4.2","ART will pay overtime, general holiday pay and vacation pay as the Code requires."],
+    ["4.3","If ART makes a payroll error in either direction, it will be corrected promptly and handled as the law allows."]]},
+  {h:"5. Vacation, general holidays and other leave",c:[
+    ["5.1","You are entitled to the vacation in Schedule A, and never less than the Code requires."],
+    ["5.2","Time off is requested and approved through ART\u0027s time-off process described in the Time Off \u0026 Leave Policy, including the rules for how summer vacation is allotted. ART will consider requests fairly and will not unreasonably refuse them."],
+    ["5.3","You will receive general holidays and any other leave the Code provides."]]},
+  {h:"6. Benefits and expenses",c:[
+    ["6.1","ART will provide the benefits in Schedule A. ART may change benefit plans or providers if the overall coverage stays substantially similar."],
+    ["6.2","ART will reimburse reasonable business expenses that were approved in advance or that ART\u0027s policies allow, on receipt of an itemized claim."]]},
+  {h:"7. Company property, vehicles and tools",c:[
+    ["7.1","Vehicles, tools, test equipment, phones, fuel cards, keys, access cards and anything else ART gives you remain ART\u0027s property. Use them for ART business, except where ART has allowed personal use in writing."],
+    ["7.2","Signed-out tools are recorded in ART\u0027s sign-out register. You must return them when you finish with them, and tell ART right away if one is lost, stolen or damaged."],
+    ["7.3","If you drive an ART vehicle: you must hold a valid licence, provide a current driver\u0027s abstract when asked, follow the law, and never drive while impaired or distracted. Traffic and parking tickets are your responsibility. You must report any collision, damage or near-miss to ART the same day."],
+    ["7.4","You must return all ART property when your employment ends, or earlier on request."]]},
+  {h:"8. Job records and time reporting",c:[
+    ["8.1","Accurate job records are part of your job. They decide what a client is billed, what material is ordered, and how much stock ART holds."],
+    ["8.2","After each work visit, you will complete the work-order write-up for that visit, normally the same day. It will record the hours you worked, your travel time, the work completed, anything left outstanding, and the material you used."],
+    ["8.3","On rough-in and wiring work, your write-up will include the wire used, counted by type in feet (for example Cat6, speaker wire, Lutron wire, Z wire and coax), as a \"wire count\"."],
+    ["8.4","Product taken from stock must be scanned out to the job it is for. Wire boxes must be scanned out and back in with the footage in the box."],
+    ["8.5","You must never enter records you know to be false, or leave out something you know to be material. Falsifying records is serious misconduct."]]},
+  {h:"9. Health and safety",c:[
+    ["9.1","ART will provide a safe and healthy workplace as the law requires. You will follow The Workplace Safety and Health Act, its regulations, and ART\u0027s Workplace Safety \u0026 Health Policy, and will use the safety equipment provided."],
+    ["9.2","You must report injuries, incidents, near misses and unsafe conditions right away. You have the right to refuse work you reasonably believe is unsafe, as the law provides, and ART will not penalize you for using it."],
+    ["9.3","ART will not tolerate harassment or discrimination, and you must follow the Workplace Harassment Prevention Policy."]]},
+  {h:"10. Training and certifications",c:[
+    ["10.1","ART may require training or certifications for your role, such as those listed in Schedule A. You must keep them current and tell ART in good time before one expires. ART will tell you which training it will pay for and which it expects you to arrange."]]},
+  {h:"11. Confidentiality and client systems",c:[
+    ["11.1","During your employment and afterwards, you will not use or share ART\u0027s confidential information except as your job requires. This means client lists, client addresses and floor plans, quotes and prices, ART\u0027s costs and margins, supplier terms, business plans, and internal records."],
+    ["11.2","Our work gives you access to clients\u0027 homes and systems. Passwords, access codes, alarm codes, network and camera credentials, and programming files belong to the client or to ART, never to you. You may use them only to do your assigned work. You must not copy them, keep them after the job is done, or use them for any other purpose."],
+    ["11.3","When your employment ends you must return or delete all ART and client information you hold, including on personal devices."],
+    ["11.4","Nothing in this agreement stops you from reporting a legal violation to the proper authority, exercising your rights under any law, or discussing your own pay and working conditions."]]},
+  {h:"12. Work you create",c:[
+    ["12.1","Programming files, drawings, labels, configurations, documents and other work you create as part of your job belong to ART. You keep your own general skills and knowledge."]]},
+  {h:"13. Outside work and conflicts of interest",c:[
+    ["13.1","While you work for ART you will not do paid work for ART\u0027s clients on your own account, or for a competitor, without ART\u0027s written permission."],
+    ["13.2","You will tell ART promptly about anything that could be a conflict of interest, such as a financial interest in a supplier or a client."]]},
+  {h:"14. After your employment",c:[
+    ["14.1","For {{months}} months after your employment ends, you will not directly solicit, for a competing business, clients you personally served in your last 12 months with ART, and you will not encourage ART employees to leave."],
+    ["14.2","This section is meant to protect ART\u0027s legitimate interests only. It does not stop you from working in the industry, including for a competitor."]]},
+  {h:"15. Ending your employment",c:[
+    ["15.1","**If you resign:** you will give ART the written notice the Code requires and are asked to give {{noticeAsk}} where you can. This helps ART hand over your jobs properly."],
+    ["15.2","**If ART ends your employment without cause:** ART will give you the notice, or pay instead of notice, that the Code requires, and any additional notice stated in Schedule A. ART will also pay all wages earned, vacation pay owing, and anything else the Code requires, on time."],
+    ["15.3","**For cause:** ART may end your employment without notice or pay in place of notice only where the Code allows it. Examples of conduct that may qualify include theft or fraud, falsified records, violence or harassment, serious breaches of safety rules, working while impaired, and serious breaches of confidentiality."],
+    ["15.4","During probation, ART\u0027s obligations on termination are the minimum the Code requires."],
+    ["15.5","Nothing in this section gives you less than the Code requires. If any part of this section would give you less, the Code applies instead."]]},
+  {h:"16. Changes to this agreement",c:[
+    ["16.1","Changes to your position, pay, hours or other Schedule A terms must be in writing and agreed by both of us. ART may update its written policies, and Part B if the law changes, by giving you a copy; where a change would reduce your rights, it needs your agreement."]]},
+  {h:"17. General",c:[
+    ["17.1","This agreement, together with your Position Contract(s) and ART\u0027s written policies, is the whole agreement between us about your employment and replaces earlier agreements about the same subject."],
+    ["17.2","If part of this agreement is found unenforceable, the rest stays in effect."],
+    ["17.3","Manitoba law governs this agreement, and Manitoba courts have jurisdiction."],
+    ["17.4","You confirm that you have read this agreement, had time to consider it, had the opportunity to get independent legal advice, and are signing it voluntarily."],
+    ["17.5","This agreement may be signed electronically and in counterparts."]]}
+];
+
+const AGR_FIELDS=[
+  ["position","1. Position(s)","text"],["reportsTo","2. Reports to","text"],
+  ["start","3. Start date","date"],["service","    Continuous service began (if earlier)","date"],
+  ["type","4. Employment type","text"],["probation","5. Probation, in days (blank or 0 = none)","text"],
+  ["place","6. Place of work","area"],["hours","7. Normal hours, and on-call if any","area"],
+  ["pay","8. Pay, e.g. $__ per hour or $__ per year","text"],["payFreq","    Paid","text"],
+  ["overtime","9. Overtime","area"],["bonus","10. Commission or bonus","area"],
+  ["vacation","11. Vacation, weeks per year","text"],["vacPay","    Vacation pay, %","text"],
+  ["benefits","12. Benefits","area"],["vehicle","13. Vehicle, phone, fuel card","text"],
+  ["tickets","14. Tickets and licences required","area"],["noticeExtra","15. Notice beyond the legal minimum","text"],
+  ["consideration","16. Payment for signing (existing employees)","area"],["other","17. Other agreed terms","area"]
+];
+
+const agrCfg=()=>Object.assign({employer:"",address:"",shop:"",signer:"",signerTitle:"",
+  probation:"90",noticeAsk:"two weeks",months:"12",reviewed:false},(db.settings&&db.settings.agr)||{});
+function agrSetting(k,v){
+  if(!isManager) return;
+  db.settings.agr=Object.assign(agrCfg(),{[k]:v});
+  commit();
+}
+const agrRecFor=empId=>db.agreements.find(r=>r.empId===empId)||null;
+
+function agrDefaults(e){
+  const c=agrCfg(), first=(e.name||"").split(" ")[0];
+  const titles=(POSBY[first]||[]).map(k=>POSBYCODE[k].title);
+  return {position:titles.length?titles.join("; "):(e.role||""),reportsTo:"",start:e.hired||"",service:"",
+    type:"Full-time",probation:c.probation,
+    place:"ART's shop"+(c.shop?" at "+c.shop:"")+" and client job sites, mainly in Winnipeg and the surrounding area. Occasional travel outside the city may be required.",
+    hours:"",pay:"",payFreq:"every two weeks",overtime:"Paid as required by the Code.",bonus:"None.",
+    vacation:"",vacPay:"",benefits:"None beyond those required by law.",vehicle:"None.",tickets:"",
+    noticeExtra:"None.",consideration:"",other:"None."};
+}
+function agrData(e){ const r=agrRecFor(e.id); return Object.assign(agrDefaults(e),(r&&r.data)||{}); }
+function agrComplete(e){ const d=agrData(e); return ["reportsTo","hours","pay","vacation"].every(k=>String(d[k]||"").trim()); }
+
+function agrOpen(empId){
+  if(!isManager) return;
+  if(UNAVAILABLE.has("agreements")){ toast("The HR_Agreements list isn't set up yet — see the box on this page"); return; }
+  const e=emp(empId); if(!e) return;
+  const d=agrData(e);
+  const fld=([k,l,t])=>t==="area"
+    ?`<label class="f" style="grid-column:1/-1"><span class="lb">${esc(l.trim())}</span><textarea id="ag_${k}" rows="2">${esc(d[k]||"")}</textarea></label>`
+    :`<label class="f"><span class="lb">${esc(l.trim())}</span><input type="${t==="date"?"date":"text"}" id="ag_${k}" value="${esc(d[k]||"")}"></label>`;
+  mo("Schedule A — "+e.name,`
+    <p class="lede" style="margin-bottom:10px">Saved to <b>HR_Agreements</b>, which should be managers-only in SharePoint.
+    Anything left blank prints as a line to fill in by hand.</p>
+    <div class="grid g2" style="gap:0 12px">${AGR_FIELDS.map(fld).join("")}</div>`,
+    `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="agrSave('${empId}')">Save Schedule A</button>`);
+}
+function agrSave(empId){
+  if(!isManager) return;
+  if(UNAVAILABLE.has("agreements")){ toast("The HR_Agreements list isn't set up yet"); return; }
+  const data={}; AGR_FIELDS.forEach(f=>{ data[f[0]]=val("ag_"+f[0]).trim(); });
+  let r=agrRecFor(empId);
+  if(!r){ r={id:uid(),empId,data}; db.agreements.push(r); } else r.data=data;
+  modal=null; commit("Schedule A saved");
+}
+
+function agrMark(empId,status){
+  if(!isManager) return;
+  let r=posRec(AGR_CODE,empId);
+  if(!r){ r={id:uid(),empId,code:AGR_CODE,status:"",sent:"",signed:"",envId:""}; db.posAcks.push(r); }
+  if(status==="sent"){ r.status="sent"; r.sent=iso(today()); r.signed=""; }
+  else if(status==="completed"){
+    r.status="completed"; r.signed=iso(today()); if(!r.sent) r.sent=iso(today());
+    // The same document, so the Policies page should agree that it has been signed.
+    if(!db.acks.some(a=>a.empId===empId&&a.polId==="p4")) db.acks.push({id:uid(),empId,polId:"p4",at:iso(today())});
+  }
+  else { r.status=""; r.sent=""; r.signed=""; }
+  commit(status==="completed"?"Marked signed":status==="sent"?"Marked sent":"Cleared");
+}
+
+/* ---- the printable agreement ---- */
+const agrBlank='<span class="blank">&nbsp;</span>';
+const agrFill=v=>{ v=String(v==null?"":v).trim(); return v?esc(v):agrBlank; };
+function agrTxt(s,c){
+  return esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
+    .replace(/\{\{months\}\}/g,esc(c.months||"12")).replace(/\{\{noticeAsk\}\}/g,esc(c.noticeAsk||"two weeks"));
+}
+function agreementHtml(e){
+  const c=agrCfg(), d=agrData(e), draft=!c.reviewed;
+  const R=(n,l,h)=>`<tr><th>${n}. ${l}</th><td>${h}</td></tr>`;
+  const sched=[
+    R(1,"Position(s)",agrFill(d.position)+" Your duties are described in your Position Contract(s), issued with this agreement."),
+    R(2,"Reports to",agrFill(d.reportsTo)),
+    R(3,"Start date",(d.start?esc(fmt(d.start)):agrBlank)+"."+(d.service?" Continuous service began on "+esc(fmt(d.service))+".":"")),
+    R(4,"Employment type",agrFill(d.type)+", permanent."),
+    R(5,"Probation",Number(d.probation)>0?"The first "+esc(String(d.probation))+" days of employment.":"None."),
+    R(6,"Place of work",agrFill(d.place)),
+    R(7,"Normal hours",agrFill(d.hours)),
+    R(8,"Pay",agrFill(d.pay)+(d.payFreq?", paid "+esc(d.payFreq)+" by direct deposit.":".")),
+    R(9,"Overtime",agrFill(d.overtime)),
+    R(10,"Commission or bonus",agrFill(d.bonus)),
+    R(11,"Vacation",(d.vacation?esc(d.vacation)+" weeks per year, never less than the Code requires":agrBlank)+(d.vacPay?", with vacation pay of "+esc(d.vacPay)+"%.":".")),
+    R(12,"Benefits",agrFill(d.benefits)),
+    R(13,"Vehicle, phone, fuel card",agrFill(d.vehicle)),
+    R(14,"Tickets and licences required",agrFill(d.tickets||"None.")),
+    R(15,"Notice beyond the legal minimum",agrFill(d.noticeExtra)),
+    R(16,"Payment for signing",agrFill(d.consideration||"Not applicable.")),
+    R(17,"Other agreed terms",agrFill(d.other))
+  ].join("");
+  const partB=AGR_PARTB.map(s=>`<h3>${esc(s.h)}</h3>`+s.c.map(([n,t])=>
+    `<p class="cl"><span class="n">${esc(n)}</span><span class="t">${agrTxt(t,c)}</span></p>`).join("")).join("");
+  const sig=n=>`<div class="line"></div><div class="lbl">${n}</div>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Employment agreement — ${esc(e.name)}</title><style>
+    @page{size:letter;margin:0.8in 0.9in 0.9in;@bottom-center{content:"Employment Agreement · ART Standard Terms v${AGR_VERSION}${draft?" · DRAFT":""} · Page " counter(page) " of " counter(pages);font-size:8pt;color:#777}}
+    body{font-family:Calibri,Arial,sans-serif;font-size:10.5pt;line-height:1.45;color:#17191C;margin:0}
+    h1{font-size:21pt;text-align:center;margin:0 0 2px;letter-spacing:.5px}
+    .sub{text-align:center;font-style:italic;color:#666;margin-bottom:16px}
+    h2{font-size:13pt;color:#B1171C;border-bottom:1.5px solid #B1171C;padding-bottom:2px;margin:22px 0 8px;page-break-after:avoid}
+    h3{font-size:11pt;margin:14px 0 4px;page-break-after:avoid}
+    p{margin:0 0 7px} .cl{display:flex;gap:10px} .cl .n{min-width:34px;font-weight:700} .cl .t{flex:1}
+    table{border-collapse:collapse;width:100%;margin:6px 0}
+    th,td{border:1px solid #BFBFBF;padding:5px 8px;vertical-align:top;font-size:10pt;text-align:left}
+    th{width:32%;background:#F5F5F5;font-weight:700} tr{page-break-inside:avoid}
+    .blank{display:inline-block;min-width:220px;border-bottom:1px solid #17191C;background:#FFF6CC}
+    .sig{margin-top:28px;display:flex;gap:40px;page-break-inside:avoid} .sig>div{flex:1}
+    .line{border-bottom:1px solid #17191C;height:34px;margin-top:6px}
+    .lbl{font-size:8.5pt;text-transform:uppercase;letter-spacing:1px;color:#666;margin:3px 0 12px}
+    .wm{position:fixed;top:38%;left:0;right:0;text-align:center;font-size:120pt;font-weight:700;color:rgba(177,23,28,.09);transform:rotate(-28deg);z-index:-1;pointer-events:none}
+    .draft{background:#FFF1F1;border:1px solid #E6B3B3;color:#8C1216;padding:6px 10px;margin-bottom:12px;font-size:9.5pt;text-align:center}
+    @media print{.noprint{display:none}.draft{display:none}}
+    .noprint{position:fixed;top:12px;right:12px;background:#B1171C;color:#fff;border:0;padding:9px 16px;font-size:13px;border-radius:4px;cursor:pointer;font-family:inherit}
+  </style></head><body>
+  <button class="noprint" onclick="window.print()">Print / Save as PDF</button>
+  ${draft?'<div class="wm">DRAFT</div><div class="draft"><b>DRAFT</b> — this wording has not been reviewed by counsel. Tick “Reviewed by counsel” on the Agreements page to remove this mark.</div>':""}
+  <h1>EMPLOYMENT AGREEMENT</h1><div class="sub">Advanced Residential Technology · ART Standard Terms v${AGR_VERSION}</div>
+  <p>This Agreement is made on <b>${esc(fmt(iso(today())))}</b> between:</p>
+  <p><b>${agrFill(c.employer)}</b>, operating as Advanced Residential Technology (“<b>ART</b>”), of ${agrFill(c.address)};</p>
+  <p>and</p>
+  <p><b>${esc(e.name)}</b> (“<b>you</b>”).</p>
+  <h2>How this agreement is organized</h2>
+  <p>This agreement has two parts. <b>Schedule A</b> holds the terms that are specific to you: your position, pay, hours and vacation. <b>Part B</b> holds the terms that apply to everyone at ART.</p>
+  <p>Your Position Contract(s) and ART's written policies, including the Workplace Safety &amp; Health Policy, the Workplace Harassment Prevention Policy and the Time Off &amp; Leave Policy, form part of this agreement. If Schedule A and Part B conflict, Schedule A applies, but nothing in this agreement gives you less than The Employment Standards Code of Manitoba (the “<b>Code</b>”) requires. Where the Code gives you more than this agreement does, you get what the Code gives.</p>
+  <h2>Schedule A — Terms specific to you</h2>
+  <table>${sched}</table>
+  <h2>Part B — Standard terms</h2>
+  ${partB}
+  <h2>Signatures</h2>
+  <div class="sig">
+    <div><b>For ART</b>${sig("Signature")}<div>${c.signer?esc(c.signer):agrBlank}${c.signerTitle?", "+esc(c.signerTitle):""}</div>${sig("Date")}</div>
+    <div><b>Employee</b>${sig("Signature")}<div>${esc(e.name)}</div>${sig("Date")}</div>
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+  </body></html>`;
+}
+function agrPrint(empId){
+  if(!isManager) return;
+  const e=emp(empId); if(!e) return;
+  const w=window.open("","_blank");
+  if(!w){ toast("Allow pop-ups for this site to open the agreement"); return; }
+  w.document.write(agreementHtml(e));
+  w.document.close();
+}
+
+/* ---- the page ---- */
+function agrStatusTag(r){
+  return r&&r.status==="completed"?'<span class="tag t-ok">Signed '+esc(fmt(r.signed))+'</span>'
+       : r&&r.status==="sent"?'<span class="tag t-warn">Sent '+esc(fmt(r.sent))+'</span>'
+       : '<span class="tag t-grey">Not sent</span>';
+}
+function vAgreements(){
+  const c=agrCfg(), people=db.employees.filter(e=>e.active).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const recs=people.map(e=>posRec(AGR_CODE,e.id));
+  const signed=recs.filter(r=>r&&r.status==="completed").length, sent=recs.filter(r=>r&&r.status==="sent").length;
+  const noList=UNAVAILABLE.has("agreements"), noPos=UNAVAILABLE.has("posAcks");
+  const set=(k,l,ph)=>`<label class="f"><span class="lb">${l}</span><input type="text" value="${esc(c[k])}" placeholder="${esc(ph||"")}" onchange="agrSetting('${k}',this.value)"></label>`;
+  const rows=people.map((e,i)=>{
+    const r=recs[i], done=r&&r.status==="completed", okA=agrComplete(e), has=!!agrRecFor(e.id);
+    return `<div class="agr"><div><div class="nmx">${esc(e.name)}</div><div class="sm2">${esc(agrData(e).position||"No position")}</div></div>
+      <div>${agrStatusTag(r)} ${has?(okA?'<span class="tag t-ok">Schedule A complete</span>':'<span class="tag t-warn">Schedule A incomplete</span>'):'<span class="tag t-grey">No Schedule A yet</span>'}</div>
+      <div class="acts"><button class="btn sm" ${noList?"disabled":""} onclick="agrOpen('${e.id}')">${has?"Edit":"Fill in"} Schedule A</button>
+        <button class="btn sm pri" onclick="agrPrint('${e.id}')">Print agreement</button>
+        ${noPos?"":done?`<button class="btn sm" onclick="agrMark('${e.id}','')">Undo</button>`
+          :`<button class="btn sm" onclick="agrMark('${e.id}','sent')">Mark sent</button><button class="btn sm ok" onclick="agrMark('${e.id}','completed')">Mark signed</button>`}</div></div>`;
+  }).join("");
+  return `
+  <p class="lede">One employment agreement per person: their own Schedule A plus the standard Part B. Position Contracts stay on the Positions page and are attached, not repeated.
+  Reissue only Schedule A when pay or role changes.</p>
+  ${draftBanner(c)}
+  ${noList?`<div class="banner b-warn"><span class="bi">▲</span><div><b>The HR_Agreements list isn't set up yet</b>
+    Create a list called <b style="display:inline">HR_Agreements</b> on ART43 with these columns, then reload: <b style="display:inline">AppKey</b> and <b style="display:inline">EmpId</b>
+    (single line of text) and <b style="display:inline">Data</b> (multiple lines of text, plain). <b style="display:inline">Paste the names, don't type them.</b>
+    Then set the list to <b style="display:inline">managers only</b> (List settings → Permissions → Stop inheriting) — pay is stored in it.
+    Until then you can print agreements with blanks, but Schedule A can't be saved.</div></div>`:""}
+  ${noPos?`<div class="banner b-warn"><span class="bi">▲</span><div><b>HR_PositionContracts isn't available</b>Sent and signed status can't be saved without it.</div></div>`:""}
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="stat"><div class="n">${people.length}</div><div class="l">Active people</div></div>
+    <div class="stat good"><div class="n">${signed}</div><div class="l">Signed</div></div>
+    <div class="stat"><div class="n">${sent}</div><div class="l">Out for signature</div></div>
+    <div class="stat ${people.length-signed-sent?"alert":""}"><div class="n">${people.length-signed-sent}</div><div class="l">Not sent</div></div>
+  </div>
+  <div class="card" style="margin-bottom:16px"><div class="hd"><h3>For every agreement</h3></div><div class="bd">
+    <div class="grid g2" style="gap:0 14px">
+      ${set("employer","Employer's legal name","e.g. the company that employs them")}
+      ${set("address","Employer's address")}
+      ${set("shop","Shop address (for place of work)")}
+      ${set("signer","Signs for ART")}
+      ${set("signerTitle","Signer's title")}
+      ${set("probation","Default probation, days","90")}
+      ${set("noticeAsk","Resignation notice asked for","two weeks")}
+      ${set("months","Non-solicit lasts, months","12")}
+    </div>
+    <label class="chk"><input type="checkbox" ${c.reviewed?"checked":""} onchange="agrSetting('reviewed',this.checked)">
+      <span><b>Reviewed by counsel</b> — removes the DRAFT mark from printed agreements. Only tick this after a lawyer has approved the wording (Part B v${AGR_VERSION}).</span></label>
+  </div></div>
+  <div class="card"><div class="hd"><h3>People</h3></div><div class="bd tight">${rows||'<div class="empty"><div class="big">No active employees</div></div>'}</div></div>
+  <p class="mini" style="margin-top:11px">Settings → Export JSON now includes Schedule A and pay. Keep that file somewhere private.</p>`;
+}
+function draftBanner(c){
+  return c.reviewed?"":`<div class="banner b-red"><span class="bi">▲</span><div><b>Draft wording</b>The standard terms have not been reviewed by a lawyer. Printed agreements carry a DRAFT mark until you tick “Reviewed by counsel” below.</div></div>`;
+}
+
 /* =========================================================================
    APP STATE
    ========================================================================= */
@@ -2259,7 +2573,7 @@ function saveFuelImport(){
 /* =========================================================================
    ACTIONS
    ========================================================================= */
-function go(v){ if(!isManager&&(v==="team"||v==="settings"))return; view=v;modal=null;window.scrollTo(0,0);render();}
+function go(v){ if(!isManager&&(v==="team"||v==="settings"||v==="agreements"))return; view=v;modal=null;window.scrollTo(0,0);render();}
 function setS(k,v){ if(!isManager)return; db.settings[k]=v;commit();}
 function del(coll,id){ if(!isManager)return; db[coll]=db[coll].filter(x=>x.id!==id);commit("Removed");}
 function delReq(id){
@@ -2304,7 +2618,7 @@ function clearDemo(){
   if(!confirm("Remove all sample data and start empty?"))return;
   const s=db.settings; s.demo=false;
   db={employees:[],timeOff:[],training:[],tools:[],toolLog:[],vehicles:[],service:[],incidents:[],
-      policies:db.policies,acks:[],posAcks:db.posAcks||[],fuel:[],settings:s};
+      policies:db.policies,acks:[],posAcks:db.posAcks||[],fuel:[],agreements:db.agreements||[],settings:s};
   commit("Cleared — add your crew on the Team page");
 }
 
@@ -2314,13 +2628,14 @@ function clearDemo(){
 const NAV=[
   ["dash","Dashboard","▣"],["timeoff","Time off","◷"],["team","Team","☰"],
   ["training","Training","✦"],["tools","Tools","⚒"],["vehicles","Vehicles","▤"],
-  ["safety","Safety","⚠"],["policies","Policies","§"],["positions","Positions","◆"],["settings","Settings","⚙"]
+  ["safety","Safety","⚠"],["policies","Policies","§"],["positions","Positions","◆"],["agreements","Agreements","✎"],["settings","Settings","⚙"]
 ];
 const TITLES={dash:["Dashboard","What needs you today"],timeoff:["Time off","Requests, coverage, and the summer schedule"],
   team:["Team","Roster, seniority, and emergency contacts"],training:["Training","Tickets, certifications, and expiries"],
   tools:["Tools","Sign-out register and inspections"],vehicles:["Vehicles","Service, odometers, and renewals"],
   safety:["Safety","Incident and near-miss log"],policies:["Policies","The handbook and who's signed it"],
   positions:["Positions","What each position is accountable for"],
+  agreements:["Agreements","Employment agreements: Schedule A, printing, and who has signed"],
   settings:["Settings","Rules, intervals, and your data"]};
 
 function renderGate(){
@@ -2362,13 +2677,13 @@ function renderGate(){
 function render(){
   if(phaseAuth!=="ready"){ renderGate(); return; }
   const A=alerts();
-  const nav=NAV.filter(([k])=>isManager||(k!=="team"&&k!=="settings"));
-  if(!isManager&&(view==="team"||view==="settings")) view="dash";
+  const nav=NAV.filter(([k])=>isManager||(k!=="team"&&k!=="settings"&&k!=="agreements"));
+  if(!isManager&&(view==="team"||view==="settings"||view==="agreements")) view="dash";
   const pips={timeoff:(isManager?A.pending.length+(phase()==="toAllocate"?db.timeOff.filter(r=>r.status==="bid").length:0):0),
               training:A.certExp.length,vehicles:A.vehDue.length,policies:A.ackMissing.length};
   const body={dash:vDash,timeoff:vTimeOff,team:vTeam,training:vTraining,tools:vTools,
               vehicles:vVehicles,safety:vSafety,policies:vPolicies,positions:vPositions,
-              settings:vSettings}[view]();
+              agreements:vAgreements,settings:vSettings}[view]();
   const [t1,t2]=TITLES[view];
   document.getElementById("root").innerHTML=`
   <div class="app">
